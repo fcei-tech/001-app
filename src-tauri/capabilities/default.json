@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permessi minimi necessari alla finestra principale: avviare il server interno (sidecar) e controllare gli aggiornamenti.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-execute",
+    "updater:default",
+    "process:default"
+  ]
+}

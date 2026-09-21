@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "BATCH_",
+  "version": "0.1.0",
+  "identifier": "it.posterclub.batch",
+  "build": {
+    "frontendDist": "loading"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "BATCH_ — Posterclub",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1000,
+        "minHeight": 700,
+        "url": "http://127.0.0.1:17683",
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "app"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns"
+    ],
+    "externalBin": ["binaries/node"],
+    "resources": ["resources/standalone/**/*"],
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE3RTAwMjNCMkE4Rjc4NTcKUldSWGVJOHFPd0xncDUrZjJ1R0FvQkU4M3VzVEsyWGozYjVBZTc4YmRuemtoK3dHWGJUQ3orblIK",
+      "endpoints": [
+        "https://github.com/fcei-tech/posterclub-app/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}
