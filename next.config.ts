@@ -10,6 +10,13 @@ const nextConfig: NextConfig = {
   // che il guscio Tauri (src-tauri/) impacchetta dentro l'app nativa Mac,
   // vedi RELEASE.md per il flusso completo.
   output: "standalone",
+
+  // Le migrazioni del database (cartella "drizzle": file SQL che creano le
+  // tabelle al primo collegamento) vengono lette a runtime, non importate:
+  // senza questa riga Next.js non le copierebbe dentro .next/standalone.
+  outputFileTracingIncludes: {
+    "/*": ["./drizzle/**/*"],
+  },
 };
 
 export default nextConfig;

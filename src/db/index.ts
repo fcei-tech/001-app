@@ -1,3 +1,4 @@
+import path from "node:path";
 import * as schema from "./schema";
 
 // Due modalita' di connessione al database, scelte automaticamente in base
@@ -21,9 +22,18 @@ export const db = databaseUrl
 
 async function createRealDb(connectionString: string) {
   const { drizzle } = await import("drizzle-orm/node-postgres");
+  const { migrate } = await import("drizzle-orm/node-postgres/migrator");
   const { Pool } = await import("pg");
   const pool = new Pool({ connectionString });
-  return drizzle(pool, { schema });
+  const realDb = drizzle(pool, { schema });
+  // Crea/aggiorna le tabelle da solo (cartella "drizzle" = file SQL generati
+  // con "drizzle-kit generate"). Sicuro da rilanciare: applica solo le
+  // migrazioni mancanti. Dentro l'app nativa la cartella sta accanto a
+  // server.js (vedi il passo "assembla le risorse" in release.yml).
+  await migrate(realDb, {
+    migrationsFolder: path.join(process.cwd(), "drizzle"),
+  });
+  return realDb;
 }
 
 async function createDevDb() {
