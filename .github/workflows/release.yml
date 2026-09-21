@@ -1,0 +1,59 @@
+name: Pubblica nuova versione
+
+# Si attiva da solo quando arriva un tag "v*" (es. v0.2.0) - vedi
+# RELEASE.md per il comando esatto per creare una release.
+#
+# Cosa fa: compila l'app nativa per Mac Apple Silicon, firma
+# l'aggiornamento con la chiave privata (secret del repository) e
+# pubblica tutto su GitHub Releases. I due Mac gia' installati
+# controllano da soli quella pagina e si aggiornano (vedi
+# src/components/update-checker.tsx).
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    # Runner Apple Silicon (arm64) - stessa architettura dei due Mac di
+    # destinazione, cosi' non serve cross-compilare.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Installa dipendenze
+        run: npm ci
+
+      - name: Prepara il runtime Node interno (sidecar)
+        run: bash scripts/fetch-node-sidecar.sh
+
+      - name: Compila il sito e assembla le risorse dell'app
+        run: |
+          npm run build
+          cp -r public .next/standalone/
+          cp -r .next/static .next/standalone/.next/
+          mkdir -p src-tauri/resources/standalone
+          cp -r .next/standalone/. src-tauri/resources/standalone/
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # La chiave e' stata generata senza password (uso interno,
+          # solo due installazioni): questo secret resta vuoto/assente.
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "BATCH_ ${{ github.ref_name }}"
+          releaseBody: "Aggiornamento pubblicato automaticamente. Dettagli in RELEASE.md."
+          releaseDraft: false
+          prerelease: false
