@@ -42,7 +42,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE3RTAwMjNCMkE4Rjc4NTcKUldSWGVJOHFPd0xncDUrZjJ1R0FvQkU4M3VzVEsyWGozYjVBZTc4YmRuemtoK3dHWGJUQ3orblIK",
       "endpoints": [
-        "https://github.com/fcei-tech/posterclub-app/releases/latest/download/latest.json"
+        "https://github.com/fcei-tech/001-app/releases/latest/download/latest.json"
       ]
     }
   }
