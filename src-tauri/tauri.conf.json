@@ -40,7 +40,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE3RTAwMjNCMkE4Rjc4NTcKUldSWGVJOHFPd0xncDUrZjJ1R0FvQkU4M3VzVEsyWGozYjVBZTc4YmRuemtoK3dHWGJUQ3orblIK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVCNzI0OEQ0NzA5RTI4REEKUldUYUtKNXcxRWh5VzBFcFZsSEJvZHFpeVZUNk9tQ3JuRHRTTFMweU5ucTNjRDhhYko5WWk3MzYK",
       "endpoints": [
         "https://github.com/fcei-tech/001-app/releases/latest/download/latest.json"
       ]
