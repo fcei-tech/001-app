@@ -1,12 +1,20 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permessi minimi necessari alla finestra principale: avviare il server interno (sidecar) e controllare gli aggiornamenti.",
-  "windows": ["main"],
+  "description": "Permessi minimi necessari alla finestra principale: avviare il server interno (sidecar), controllare gli aggiornamenti e riavviare l'app. La pagina e' servita da 127.0.0.1:17683, quindi va dichiarata come origine ammessa.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "shell:allow-execute",
     "updater:default",
-    "process:default"
-  ]
+    "process:default",
+    "process:allow-restart"
+  ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:17683/*"
+    ]
+  }
 }

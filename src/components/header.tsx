@@ -29,6 +29,9 @@ export function Header() {
             Magazzino
           </Link>
           <span className="opacity-50">Pubblicazione</span>
+          <Link href="/impostazioni" className="hover:text-foreground">
+            Impostazioni
+          </Link>
         </nav>
         <ThemeToggle />
       </div>

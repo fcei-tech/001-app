@@ -1,33 +1,13 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { Pool } from "pg";
+import { isSameOrigin, writeConfig } from "@/lib/app-config";
 
-// Salva la credenziale del database nel file di configurazione dell'app
-// (lo stesso che legge il guscio Tauri all'avvio: vedi
-// src-tauri/src/main.rs > read_mac_config). Su macOS il percorso e'
-// ~/Library/Application Support/<identifier di tauri.conf.json>/config.json.
+// Salva la credenziale del database nel file di configurazione dell'app.
 // Prima di salvare verifica che la connessione funzioni davvero, cosi'
-// non si puo' salvare per errore una credenziale sbagliata.
-const APP_IDENTIFIER = "it.posterclub.batch";
-
-function configPath() {
-  return path.join(
-    os.homedir(),
-    "Library",
-    "Application Support",
-    APP_IDENTIFIER,
-    "config.json",
-  );
-}
-
+// non si puo' salvare per errore una credenziale sbagliata. Vale dal
+// riavvio successivo dell'app.
 export async function POST(request: Request) {
-  // Solo al primo avvio: a credenziale gia' presente questa via e' chiusa.
-  if (process.env.DATABASE_URL) {
-    return Response.json(
-      { ok: false, errore: "Il database e' gia' collegato." },
-      { status: 409 },
-    );
+  if (!isSameOrigin(request)) {
+    return Response.json({ ok: false, errore: "Richiesta non ammessa." }, { status: 403 });
   }
 
   let url = "";
@@ -75,17 +55,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const file = configPath();
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    let esistente: Record<string, unknown> = {};
-    try {
-      esistente = JSON.parse(fs.readFileSync(file, "utf8"));
-    } catch {
-      // file assente o illeggibile: si riparte da zero
-    }
-    fs.writeFileSync(file, JSON.stringify({ ...esistente, database_url: cleaned }, null, 2), {
-      mode: 0o600,
-    });
+    writeConfig({ database_url: cleaned });
   } catch (err) {
     const motivo = err instanceof Error ? err.message : String(err);
     return Response.json(

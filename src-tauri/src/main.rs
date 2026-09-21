@@ -213,6 +213,18 @@ fn main() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("errore durante l'avvio dell'app Posterclub");
+        .build(tauri::generate_context!())
+        .expect("errore durante l'avvio dell'app Posterclub")
+        .run(|app_handle, event| {
+            // Con Cmd+Q (o al riavvio dopo un aggiornamento) la finestra non
+            // sempre riceve "CloseRequested": senza questo, il server interno
+            // resterebbe acceso in background sulla stessa porta e la nuova
+            // apertura si collegherebbe a quello vecchio (con la vecchia
+            // configurazione). Qui lo si chiude sempre all'uscita.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(child) = app_handle.state::<SidecarHandle>().0.lock().unwrap().take() {
+                    let _ = child.kill();
+                }
+            }
+        });
 }

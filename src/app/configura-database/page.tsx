@@ -14,6 +14,17 @@ export default function ConfiguraDatabasePage() {
   const [stato, setStato] = useState<"attesa" | "verifica" | "fatto">("attesa");
   const [errore, setErrore] = useState("");
 
+  const [riavvioFallito, setRiavvioFallito] = useState(false);
+
+  async function riavvia() {
+    try {
+      const { relaunch } = await import("@tauri-apps/plugin-process");
+      await relaunch();
+    } catch {
+      setRiavvioFallito(true);
+    }
+  }
+
   async function salva(e: React.FormEvent) {
     e.preventDefault();
     setErrore("");
@@ -53,9 +64,17 @@ export default function ConfiguraDatabasePage() {
             <div className="space-y-2 text-sm">
               <p className="font-medium">Collegamento verificato e salvato.</p>
               <p>
-                Ora chiudi l&apos;app (Cmd+Q) e riaprila: al riavvio creo le tabelle da solo e
-                trovi il magazzino pronto.
+                Ora riavvia l&apos;app: al riavvio creo le tabelle da solo e trovi il magazzino
+                pronto (il primo avvio puo&apos; richiedere circa 30 secondi).
               </p>
+              <Button type="button" onClick={riavvia}>
+                Riavvia ora
+              </Button>
+              {riavvioFallito ? (
+                <p className="text-muted-foreground">
+                  Non riesco a riavviare da solo: chiudi l&apos;app (Cmd+Q) e riaprila.
+                </p>
+              ) : null}
             </div>
           ) : (
             <form onSubmit={salva} className="space-y-4">

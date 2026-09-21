@@ -30,9 +30,17 @@ async function createRealDb(connectionString: string) {
   // con "drizzle-kit generate"). Sicuro da rilanciare: applica solo le
   // migrazioni mancanti. Dentro l'app nativa la cartella sta accanto a
   // server.js (vedi il passo "assembla le risorse" in release.yml).
-  await migrate(realDb, {
-    migrationsFolder: path.join(process.cwd(), "drizzle"),
-  });
+  // Se un collegamento con permessi di sola lettura/scrittura dati (senza
+  // diritto di modificare la struttura) non puo' applicare migrazioni, non si
+  // blocca tutto: le tabelle esistono gia' (create dal collegamento
+  // "proprietario"); l'errore resta visibile nei log.
+  try {
+    await migrate(realDb, {
+      migrationsFolder: path.join(process.cwd(), "drizzle"),
+    });
+  } catch (err) {
+    console.error("Migrazioni database non applicate:", err);
+  }
   return realDb;
 }
 

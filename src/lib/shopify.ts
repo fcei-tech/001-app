@@ -12,38 +12,79 @@
 // e lo rinnova da solo quando manca poco alla scadenza - nessun bisogno di
 // intervento manuale.
 
-const SHOPIFY_SHOP = process.env.SHOPIFY_SHOP; // es. "nome-negozio.myshopify.com"
-const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
-const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
+import { readConfig, SHOPIFY_SHOP_RE } from "@/lib/app-config";
+
 const SHOPIFY_API_VERSION = "2026-07";
 
+// Le credenziali si leggono a ogni chiamata (non all'avvio): nello sviluppo
+// arrivano da .env.local (variabili d'ambiente), nell'app installata dal
+// file di configurazione salvato dalla pagina Impostazioni (vedi
+// src/lib/app-config.ts) - cosi' funzionano subito dopo il salvataggio,
+// senza riavviare. Il dominio e' vincolato a *.myshopify.com.
 function assertConfig() {
-  if (!SHOPIFY_SHOP || !SHOPIFY_CLIENT_ID || !SHOPIFY_CLIENT_SECRET) {
+  const file = readConfig();
+  const shop = process.env.SHOPIFY_SHOP ?? file.shopify_shop;
+  const clientId = process.env.SHOPIFY_CLIENT_ID ?? file.shopify_client_id;
+  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET ?? file.shopify_client_secret;
+  if (!shop || !clientId || !clientSecret) {
     throw new Error(
-      "Config Shopify mancante: servono SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET in .env"
+      "Credenziali Shopify non configurate: apri Impostazioni (in alto) e inseriscile."
     );
+  }
+  if (!SHOPIFY_SHOP_RE.test(shop)) {
+    throw new Error("Il negozio Shopify configurato non e' nel formato nome-negozio.myshopify.com");
+  }
+  return { shop, clientId, clientSecret };
+}
+
+// Controlla con Shopify che le credenziali siano valide (senza salvare nulla).
+export async function verificaCredenzialiShopify(
+  shop: string,
+  clientId: string,
+  clientSecret: string
+): Promise<void> {
+  if (!SHOPIFY_SHOP_RE.test(shop)) {
+    throw new Error("Il negozio deve essere nel formato nome-negozio.myshopify.com");
+  }
+  let res: Response;
+  try {
+    res = await fetch(`https://${shop}/admin/oauth/access_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+    });
+  } catch {
+    throw new Error("Non riesco a raggiungere Shopify: controlla la connessione e il nome del negozio.");
+  }
+  if (!res.ok) {
+    throw new Error(`Shopify ha rifiutato le credenziali (HTTP ${res.status}): controlla negozio, Client ID e Client secret.`);
   }
 }
 
-let tokenCache: { token: string; scadeAlle: number } | null = null;
+let tokenCache: { token: string; scadeAlle: number; chiave: string } | null = null;
 
 // Scambia client_id+client_secret per un access token (grant client_credentials).
 // Rinnova con 60s di margine prima della scadenza reale, come da esempio
 // ufficiale Shopify.
 async function ottieniAccessToken(): Promise<string> {
-  assertConfig();
+  const cfg = assertConfig();
+  const chiave = `${cfg.shop}|${cfg.clientId}`;
 
-  if (tokenCache && Date.now() < tokenCache.scadeAlle - 60_000) {
+  if (tokenCache && tokenCache.chiave === chiave && Date.now() < tokenCache.scadeAlle - 60_000) {
     return tokenCache.token;
   }
 
-  const res = await fetch(`https://${SHOPIFY_SHOP}/admin/oauth/access_token`, {
+  const res = await fetch(`https://${cfg.shop}/admin/oauth/access_token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "client_credentials",
-      client_id: SHOPIFY_CLIENT_ID!,
-      client_secret: SHOPIFY_CLIENT_SECRET!,
+      client_id: cfg.clientId,
+      client_secret: cfg.clientSecret,
     }),
   });
 
@@ -56,14 +97,16 @@ async function ottieniAccessToken(): Promise<string> {
   tokenCache = {
     token: dati.access_token,
     scadeAlle: Date.now() + dati.expires_in * 1000,
+    chiave,
   };
   return tokenCache.token;
 }
 
 async function graphql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+  const cfg = assertConfig();
   const token = await ottieniAccessToken();
   const res = await fetch(
-    `https://${SHOPIFY_SHOP}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+    `https://${cfg.shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
     {
       method: "POST",
       headers: {
