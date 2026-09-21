@@ -181,6 +181,12 @@ fn main() {
                 let addr = format!("127.0.0.1:{SERVER_PORT}");
                 for _ in 0..150 {
                     if tokio::net::TcpStream::connect(&addr).await.is_ok() {
+                        // Il webview tenta di caricare la pagina appena creato,
+                        // quando il server interno non e' ancora pronto: resta
+                        // bianco. Ora che il server risponde, lo si rimanda li'.
+                        if let Ok(url) = tauri::Url::parse(&format!("http://{addr}")) {
+                            let _ = window.navigate(url);
+                        }
                         let _ = window.show();
                         return;
                     }
