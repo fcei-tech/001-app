@@ -23,7 +23,7 @@
 use serde::Deserialize;
 use std::io::Read;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
@@ -41,6 +41,44 @@ struct MacConfig {
 /// Tiene il riferimento al processo Node interno, per poterlo chiudere
 /// quando l'app si chiude.
 struct SidecarHandle(Mutex<Option<CommandChild>>);
+
+/// Aggiunge testo al registro delle ultime righe del server interno,
+/// tenendone al massimo ~6000 caratteri.
+fn push_log(buf: &Arc<Mutex<String>>, text: &str) {
+    if let Ok(mut b) = buf.lock() {
+        b.push_str(text);
+        if !text.ends_with('\n') {
+            b.push('\n');
+        }
+        const MAX: usize = 6000;
+        if b.len() > MAX {
+            let mut cut = b.len() - MAX;
+            while !b.is_char_boundary(cut) {
+                cut += 1;
+            }
+            let rest = b[cut..].to_string();
+            *b = rest;
+        }
+    }
+}
+
+/// Pagina mostrata nella finestra se il server interno non parte:
+/// riporta il motivo a schermo, in testo copiabile.
+fn error_page(tail: &str) -> String {
+    let escaped = tail
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    let body = if escaped.trim().is_empty() {
+        "(nessun messaggio dal server)".to_string()
+    } else {
+        escaped
+    };
+    format!(
+        "<html><body style=\"font-family:-apple-system,sans-serif;padding:32px;background:#111;color:#eee\"><h2>Il server interno non si e' avviato</h2><p>Seleziona il testo qui sotto, copialo (Cmd+C) e incollalo nella chat.</p><pre style=\"white-space:pre-wrap;background:#222;padding:16px;border-radius:8px\">{}</pre></body></html>",
+        body
+    )
+}
 
 fn read_mac_config(app: &tauri::AppHandle) -> MacConfig {
     let Ok(config_dir) = app.path().app_config_dir() else {
@@ -71,8 +109,20 @@ fn main() {
                 .sidecar("node")
                 .expect("sidecar 'node' non trovato: verifica src-tauri/binaries e tauri.conf.json > bundle.externalBin");
 
+            // Percorso ASSOLUTO del server dentro l'app installata. Con un
+            // percorso relativo il server non veniva trovato quando l'app si
+            // avvia con il doppio clic (la cartella di partenza non e' quella
+            // dell'app).
+            let resource_dir = app
+                .path()
+                .resource_dir()
+                .expect("cartella delle risorse dell'app non trovata");
+            let server_dir = resource_dir.join("resources").join("standalone");
+            let server_js = server_dir.join("server.js");
+
             let mut sidecar = sidecar
-                .arg("resources/standalone/server.js")
+                .arg(server_js.to_string_lossy().to_string())
+                .current_dir(server_dir)
                 .env("PORT", SERVER_PORT.to_string())
                 .env("HOSTNAME", "127.0.0.1")
                 .env("NODE_ENV", "production");
@@ -84,17 +134,35 @@ fn main() {
             let (mut rx, child) = sidecar.spawn().expect("avvio del server interno fallito");
             *app.state::<SidecarHandle>().0.lock().unwrap() = Some(child);
 
-            // Logga stdout/stderr del server interno nella console di
-            // sviluppo (utile in fase di build/debug, invisibile
-            // all'utente finale).
+            // Ultime righe scritte dal server interno: servono a mostrare il
+            // motivo a schermo se il server non parte (vedi piu' sotto).
+            let log_tail: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+            let log_writer = Arc::clone(&log_tail);
+
             tauri::async_runtime::spawn(async move {
                 while let Some(event) = rx.recv().await {
                     match event {
                         CommandEvent::Stdout(line) => {
-                            print!("[server] {}", String::from_utf8_lossy(&line));
+                            let text = String::from_utf8_lossy(&line).to_string();
+                            print!("[server] {}", text);
+                            push_log(&log_writer, &text);
                         }
                         CommandEvent::Stderr(line) => {
-                            eprint!("[server] {}", String::from_utf8_lossy(&line));
+                            let text = String::from_utf8_lossy(&line).to_string();
+                            eprint!("[server] {}", text);
+                            push_log(&log_writer, &text);
+                        }
+                        CommandEvent::Error(err) => {
+                            push_log(&log_writer, &format!("errore di avvio: {err}"));
+                        }
+                        CommandEvent::Terminated(payload) => {
+                            push_log(
+                                &log_writer,
+                                &format!(
+                                    "server terminato (codice {:?}, segnale {:?})",
+                                    payload.code, payload.signal
+                                ),
+                            );
                         }
                         _ => {}
                     }
@@ -108,6 +176,7 @@ fn main() {
             let window = app
                 .get_webview_window("main")
                 .expect("finestra 'main' non trovata in tauri.conf.json");
+            let log_reader = Arc::clone(&log_tail);
             tauri::async_runtime::spawn(async move {
                 let addr = format!("127.0.0.1:{SERVER_PORT}");
                 for _ in 0..150 {
@@ -117,10 +186,16 @@ fn main() {
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                 }
-                // Dopo ~30s il server non ha risposto: mostra comunque la
-                // finestra, cosi' l'errore (se c'e') e' visibile invece
-                // di restare con l'app apparentemente ferma.
+                // Dopo ~30s il server non ha risposto: mostra la finestra con
+                // il motivo scritto (testo copiabile) invece di lasciarla vuota.
+                let tail = log_reader.lock().map(|b| b.clone()).unwrap_or_default();
+                let page = error_page(&tail);
+                let js = format!(
+                    "document.open();document.write({});document.close();",
+                    serde_json::to_string(&page).unwrap_or_else(|_| "\"errore\"".to_string())
+                );
                 let _ = window.show();
+                let _ = window.eval(js);
             });
 
             Ok(())
