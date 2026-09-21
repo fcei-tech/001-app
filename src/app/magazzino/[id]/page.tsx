@@ -61,6 +61,10 @@ const MESSAGGI: Record<string, string> = {
   fotoeliminata: "Foto rimossa dalla galleria.",
 };
 
+// Questa pagina legge dal database: va costruita a ogni richiesta, mai
+// "pre-generata" durante la build (in build il database non esiste).
+export const dynamic = "force-dynamic";
+
 export default async function ModificaSkuPage({
   params,
   searchParams,

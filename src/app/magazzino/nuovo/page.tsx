@@ -5,6 +5,10 @@ import { Button } from "@/components/ui/button";
 import { getTipiOggetto, getUbicazioniAttive } from "@/db/queries";
 import { NuovoSkuFlow } from "./nuovo-sku-flow";
 
+// Questa pagina legge dal database: va costruita a ogni richiesta, mai
+// "pre-generata" durante la build (in build il database non esiste).
+export const dynamic = "force-dynamic";
+
 export default async function NuovoSkuPage() {
   const [tipi, ubicazioni] = await Promise.all([getTipiOggetto(), getUbicazioniAttive()]);
 
