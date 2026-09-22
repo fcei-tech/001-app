@@ -17,6 +17,15 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/*": ["./drizzle/**/*"],
   },
+
+  // Limite di default dei Server Actions (1MB) troppo basso per un caricamento
+  // foto reale: alzato a 40MB (vedi modulo_foto_sku_2026_09_17, upload diretto
+  // via <form action={caricaFotoSku}>, nessun endpoint API dedicato).
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "40mb",
+    },
+  },
 };
 
 export default nextConfig;
