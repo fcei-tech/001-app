@@ -39,6 +39,7 @@ import {
 import { modificaSku, eliminaFotoSku } from "@/app/magazzino/actions";
 import { MovimentoForm } from "./movimento-form";
 import { FotoForm } from "./foto-form";
+import { EliminaSkuButton } from "./elimina-sku-button";
 
 const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"];
 
@@ -124,9 +125,12 @@ export default async function ModificaSkuPage({
               {item.artista} — {item.opera}
             </p>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Disponibile: <span className="font-medium text-foreground">{disponibile}</span>
-          </p>
+          <div className="flex items-center gap-4">
+            <p className="text-sm text-muted-foreground">
+              Disponibile: <span className="font-medium text-foreground">{disponibile}</span>
+            </p>
+            <EliminaSkuButton skuId={item.id} skuCode={item.skuCode} />
+          </div>
         </div>
 
         <Card className="mb-6">
