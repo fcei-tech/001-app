@@ -32,10 +32,10 @@ const SERVER_PORT: u16 = 17683;
 
 #[derive(Deserialize, Default)]
 struct MacConfig {
-    /// Stringa di connessione al database di questo Mac (Neon in
-    /// produzione). Assente = si usa il fallback di sviluppo (vedi
-    /// src/db/index.ts).
-    database_url: Option<String>,
+        /// Stringa di connessione al database di questo Mac (Neon in
+        /// produzione). Assente = si usa il fallback di sviluppo (vedi
+        /// src/db/index.ts).
+        database_url: Option<String>,
 }
 
 /// Tiene il riferimento al processo Node interno, per poterlo chiudere
@@ -45,186 +45,214 @@ struct SidecarHandle(Mutex<Option<CommandChild>>);
 /// Aggiunge testo al registro delle ultime righe del server interno,
 /// tenendone al massimo ~6000 caratteri.
 fn push_log(buf: &Arc<Mutex<String>>, text: &str) {
-    if let Ok(mut b) = buf.lock() {
-        b.push_str(text);
-        if !text.ends_with('\n') {
-            b.push('\n');
+        if let Ok(mut b) = buf.lock() {
+                    b.push_str(text);
+                    if !text.ends_with('\n') {
+                                    b.push('\n');
+                    }
+                    const MAX: usize = 6000;
+                    if b.len() > MAX {
+                                    let mut cut = b.len() - MAX;
+                                    while !b.is_char_boundary(cut) {
+                                                        cut += 1;
+                                    }
+                                    let rest = b[cut..].to_string();
+                                    *b = rest;
+                    }
         }
-        const MAX: usize = 6000;
-        if b.len() > MAX {
-            let mut cut = b.len() - MAX;
-            while !b.is_char_boundary(cut) {
-                cut += 1;
-            }
-            let rest = b[cut..].to_string();
-            *b = rest;
+}
+
+/// Codifica minima per URL "data:": basta escapare i byte che
+/// romperebbero l'URL stesso, il resto passa cosi' com'e'.
+fn percent_encode(input: &str) -> String {
+        let mut out = String::with_capacity(input.len());
+        for byte in input.as_bytes() {
+                    match byte {
+                                    b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                                                        out.push(*byte as char)
+                                    }
+                                                    _ => out.push_str(&format!("%{:02X}", byte)),
+                    }
         }
-    }
+        out
 }
 
 /// Pagina mostrata nella finestra se il server interno non parte:
 /// riporta il motivo a schermo, in testo copiabile.
 fn error_page(tail: &str) -> String {
-    let escaped = tail
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;");
-    let body = if escaped.trim().is_empty() {
-        "(nessun messaggio dal server)".to_string()
-    } else {
-        escaped
-    };
-    format!(
-        "<html><body style=\"font-family:-apple-system,sans-serif;padding:32px;background:#111;color:#eee\"><h2>Il server interno non si e' avviato</h2><p>Seleziona il testo qui sotto, copialo (Cmd+C) e incollalo nella chat.</p><pre style=\"white-space:pre-wrap;background:#222;padding:16px;border-radius:8px\">{}</pre></body></html>",
-        body
-    )
+        let escaped = tail
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;");
+        let body = if escaped.trim().is_empty() {
+                    "(nessun messaggio dal server)".to_string()
+        } else {
+                    escaped
+        };
+        format!(
+                    "<html><body style=\"font-family:-apple-system,sans-serif;padding:32px;background:#111;color:#eee\"><h2>Il server interno non si e' avviato</h2><p>Seleziona il testo qui sotto, copialo (Cmd+C) e incollalo nella chat.</p><pre style=\"white-space:pre-wrap;background:#222;padding:16px;border-radius:8px\">{}</pre></body></html>",
+                    body
+                )
 }
 
 fn read_mac_config(app: &tauri::AppHandle) -> MacConfig {
-    let Ok(config_dir) = app.path().app_config_dir() else {
-        return MacConfig::default();
-    };
-    let config_path: PathBuf = config_dir.join("config.json");
-    let Ok(mut file) = std::fs::File::open(&config_path) else {
-        return MacConfig::default();
-    };
-    let mut contents = String::new();
-    if file.read_to_string(&mut contents).is_err() {
-        return MacConfig::default();
-    }
-    serde_json::from_str(&contents).unwrap_or_default()
+        let Ok(config_dir) = app.path().app_config_dir() else {
+                    return MacConfig::default();
+        };
+        let config_path: PathBuf = config_dir.join("config.json");
+        let Ok(mut file) = std::fs::File::open(&config_path) else {
+                    return MacConfig::default();
+        };
+        let mut contents = String::new();
+        if file.read_to_string(&mut contents).is_err() {
+                    return MacConfig::default();
+        }
+        serde_json::from_str(&contents).unwrap_or_default()
 }
 
 fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
-        .manage(SidecarHandle(Mutex::new(None)))
-        .setup(|app| {
-            let config = read_mac_config(&app.handle());
+        tauri::Builder::default()
+            .plugin(tauri_plugin_shell::init())
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .plugin(tauri_plugin_process::init())
+            .manage(SidecarHandle(Mutex::new(None)))
+            .setup(|app| {
+                            let config = read_mac_config(&app.handle());
 
-            let sidecar = app
-                .shell()
-                .sidecar("node")
-                .expect("sidecar 'node' non trovato: verifica src-tauri/binaries e tauri.conf.json > bundle.externalBin");
+                            let sidecar = app
+                                                .shell()
+                                                .sidecar("node")
+                                                .expect("sidecar 'node' non trovato: verifica src-tauri/binaries e tauri.conf.json > bundle.externalBin");
 
-            // Percorso ASSOLUTO del server dentro l'app installata. Con un
-            // percorso relativo il server non veniva trovato quando l'app si
-            // avvia con il doppio clic (la cartella di partenza non e' quella
-            // dell'app).
-            let resource_dir = app
-                .path()
-                .resource_dir()
-                .expect("cartella delle risorse dell'app non trovata");
-            let server_dir = resource_dir.join("resources").join("standalone");
-            let server_js = server_dir.join("server.js");
+                            // Percorso ASSOLUTO del server dentro l'app installata. Con un
+                            // percorso relativo il server non veniva trovato quando l'app si
+                            // avvia con il doppio clic (la cartella di partenza non e' quella
+                            // dell'app).
+                            let resource_dir = app
+                                                .path()
+                                                .resource_dir()
+                                                .expect("cartella delle risorse dell'app non trovata");
+                            let server_dir = resource_dir.join("resources").join("standalone");
+                            let server_js = server_dir.join("server.js");
 
-            let mut sidecar = sidecar
-                .arg(server_js.to_string_lossy().to_string())
-                .current_dir(server_dir)
-                .env("PORT", SERVER_PORT.to_string())
-                .env("HOSTNAME", "127.0.0.1")
-                .env("NODE_ENV", "production");
+                            let mut sidecar = sidecar
+                                                .arg(server_js.to_string_lossy().to_string())
+                                                .current_dir(server_dir)
+                                                .env("PORT", SERVER_PORT.to_string())
+                                                .env("HOSTNAME", "127.0.0.1")
+                                                .env("NODE_ENV", "production");
 
-            if let Some(database_url) = config.database_url {
-                sidecar = sidecar.env("DATABASE_URL", database_url);
-            }
+                            if let Some(database_url) = config.database_url {
+                                                sidecar = sidecar.env("DATABASE_URL", database_url);
+                            }
 
-            let (mut rx, child) = sidecar.spawn().expect("avvio del server interno fallito");
-            *app.state::<SidecarHandle>().0.lock().unwrap() = Some(child);
+                            let (mut rx, child) = sidecar.spawn().expect("avvio del server interno fallito");
+                            *app.state::<SidecarHandle>().0.lock().unwrap() = Some(child);
 
-            // Ultime righe scritte dal server interno: servono a mostrare il
-            // motivo a schermo se il server non parte (vedi piu' sotto).
-            let log_tail: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
-            let log_writer = Arc::clone(&log_tail);
+                            // Ultime righe scritte dal server interno: servono a mostrare il
+                            // motivo a schermo se il server non parte (vedi piu' sotto).
+                            let log_tail: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+                            let log_writer = Arc::clone(&log_tail);
 
-            tauri::async_runtime::spawn(async move {
-                while let Some(event) = rx.recv().await {
-                    match event {
-                        CommandEvent::Stdout(line) => {
-                            let text = String::from_utf8_lossy(&line).to_string();
-                            print!("[server] {}", text);
-                            push_log(&log_writer, &text);
-                        }
-                        CommandEvent::Stderr(line) => {
-                            let text = String::from_utf8_lossy(&line).to_string();
-                            eprint!("[server] {}", text);
-                            push_log(&log_writer, &text);
-                        }
-                        CommandEvent::Error(err) => {
-                            push_log(&log_writer, &format!("errore di avvio: {err}"));
-                        }
-                        CommandEvent::Terminated(payload) => {
-                            push_log(
-                                &log_writer,
-                                &format!(
-                                    "server terminato (codice {:?}, segnale {:?})",
-                                    payload.code, payload.signal
-                                ),
-                            );
-                        }
-                        _ => {}
-                    }
-                }
+                            tauri::async_runtime::spawn(async move {
+                                                while let Some(event) = rx.recv().await {
+                                                                        match event {
+                                                                                                    CommandEvent::Stdout(line) => {
+                                                                                                                                    let text = String::from_utf8_lossy(&line).to_string();
+                                                                                                                                    print!("[server] {}", text);
+                                                                                                                                    push_log(&log_writer, &text);
+                                                                                                        }
+                                                                                                                                CommandEvent::Stderr(line) => {
+                                                                                                                                                                let text = String::from_utf8_lossy(&line).to_string();
+                                                                                                                                                                eprint!("[server] {}", text);
+                                                                                                                                                                push_log(&log_writer, &text);
+                                                                                                                                    }
+                                                                                                                                                            CommandEvent::Error(err) => {
+                                                                                                                                                                                            push_log(&log_writer, &format!("errore di avvio: {err}"));
+                                                                                                                                                                }
+                                                                                                                                                                                        CommandEvent::Terminated(payload) => {
+                                                                                                                                                                                                                        push_log(
+                                                                                                                                                                                                                                                            &log_writer,
+                                                                                                                                                                                                                                                            &format!(
+                                                                                                                                                                                                                                                                                                    "server terminato (codice {:?}, segnale {:?})",
+                                                                                                                                                                                                                                                                                                    payload.code, payload.signal
+                                                                                                                                                                                                                                                                                                ),
+                                                                                                                                                                                                                                                        );
+                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                    _ => {}
+                                                                                                                                                                                                                                            }
+                                                }
+                            });
+
+                            // La finestra principale parte da "about:blank" e invisibile
+                            // (vedi tauri.conf.json): non tenta mai da sola di raggiungere
+                            // il server prima che sia pronto, cosi' non puo' finire in una
+                            // pagina di errore nativa del webview. Viene mostrata solo qui
+                            // sotto, con una navigazione esplicita verso l'URL vero (server
+                            // pronto) o verso la pagina d'errore (timeout).
+                            let window = app
+                                                .get_webview_window("main")
+                                                .expect("finestra 'main' non trovata in tauri.conf.json");
+                            let log_reader = Arc::clone(&log_tail);
+                            tauri::async_runtime::spawn(async move {
+                                                let addr = format!("127.0.0.1:{SERVER_PORT}");
+                                                for _ in 0..150 {
+                                                                        if tokio::net::TcpStream::connect(&addr).await.is_ok() {
+                                                                                                    // Server pronto: prima navigazione reale della finestra.
+                                                                                                    if let Ok(url) = tauri::Url::parse(&format!("http://{addr}")) {
+                                                                                                                                    let _ = window.navigate(url);
+                                                                                                        }
+                                                                                                    let _ = window.show();
+                                                                                                    return;
+                                                                        }
+                                                                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                                                }
+                                                // Dopo ~30s il server non ha risposto: mostra la finestra con
+                                                // il motivo scritto (testo copiabile) invece di lasciarla vuota.
+                                                //
+                                                // Prima si usava window.eval() con document.write() per
+                                                // scrivere questa pagina sopra a quella gia' caricata: se
+                                                // pero' il tentativo iniziale del webview di raggiungere il
+                                                // server (fallito, perche' non ancora pronto) lo lascia in
+                                                // una pagina di errore nativa di WKWebView, quel eval() non
+                                                // sostituisce nulla e la finestra resta bianca - bug reale
+                                                // osservato su un'installazione pulita. Ora si naviga sempre
+                                                // con un URL "data:", che sostituisce il contenuto in ogni
+                                                // caso qualunque fosse lo stato precedente della pagina (la
+                                                // finestra parte da "about:blank" in tauri.conf.json, mai
+                                                // dall'URL vero, cosi' questo e' l'unico tentativo di
+                                                // navigazione reale prima che il server risponda).
+                                                let tail = log_reader.lock().map(|b| b.clone()).unwrap_or_default();
+                                                let page = error_page(&tail);
+                                                let data_url = format!("data:text/html;charset=utf-8,{}", percent_encode(&page));
+                                                let _ = window.show();
+                                                if let Ok(url) = tauri::Url::parse(&data_url) {
+                                                                        let _ = window.navigate(url);
+                                                }
+                            });
+
+                            Ok(())
+            })
+            .on_window_event(|window, event| {
+                            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                                                if let Some(child) = window.state::<SidecarHandle>().0.lock().unwrap().take() {
+                                                                        let _ = child.kill();
+                                                }
+                            }
+            })
+            .build(tauri::generate_context!())
+            .expect("errore durante l'avvio dell'app Posterclub")
+            .run(|app_handle, event| {
+                            // Con Cmd+Q (o al riavvio dopo un aggiornamento) la finestra non
+                            // sempre riceve "CloseRequested": senza questo, il server interno
+                            // resterebbe acceso in background sulla stessa porta e la nuova
+                            // apertura si collegherebbe a quello vecchio (con la vecchia
+                            // configurazione). Qui lo si chiude sempre all'uscita.
+                            if let tauri::RunEvent::Exit = event {
+                                                if let Some(child) = app_handle.state::<SidecarHandle>().0.lock().unwrap().take() {
+                                                                        let _ = child.kill();
+                                                }
+                            }
             });
-
-            // La finestra principale (definita in tauri.conf.json con
-            // visible=false) viene mostrata solo quando il server interno
-            // risponde davvero, per evitare la schermata di errore
-            // "impossibile raggiungere il sito" nel primo istante.
-            let window = app
-                .get_webview_window("main")
-                .expect("finestra 'main' non trovata in tauri.conf.json");
-            let log_reader = Arc::clone(&log_tail);
-            tauri::async_runtime::spawn(async move {
-                let addr = format!("127.0.0.1:{SERVER_PORT}");
-                for _ in 0..150 {
-                    if tokio::net::TcpStream::connect(&addr).await.is_ok() {
-                        // Il webview tenta di caricare la pagina appena creato,
-                        // quando il server interno non e' ancora pronto: resta
-                        // bianco. Ora che il server risponde, lo si rimanda li'.
-                        if let Ok(url) = tauri::Url::parse(&format!("http://{addr}")) {
-                            let _ = window.navigate(url);
-                        }
-                        let _ = window.show();
-                        return;
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                }
-                // Dopo ~30s il server non ha risposto: mostra la finestra con
-                // il motivo scritto (testo copiabile) invece di lasciarla vuota.
-                let tail = log_reader.lock().map(|b| b.clone()).unwrap_or_default();
-                let page = error_page(&tail);
-                let js = format!(
-                    "document.open();document.write({});document.close();",
-                    serde_json::to_string(&page).unwrap_or_else(|_| "\"errore\"".to_string())
-                );
-                let _ = window.show();
-                let _ = window.eval(js);
-            });
-
-            Ok(())
-        })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                if let Some(child) = window.state::<SidecarHandle>().0.lock().unwrap().take() {
-                    let _ = child.kill();
-                }
-            }
-        })
-        .build(tauri::generate_context!())
-        .expect("errore durante l'avvio dell'app Posterclub")
-        .run(|app_handle, event| {
-            // Con Cmd+Q (o al riavvio dopo un aggiornamento) la finestra non
-            // sempre riceve "CloseRequested": senza questo, il server interno
-            // resterebbe acceso in background sulla stessa porta e la nuova
-            // apertura si collegherebbe a quello vecchio (con la vecchia
-            // configurazione). Qui lo si chiude sempre all'uscita.
-            if let tauri::RunEvent::Exit = event {
-                if let Some(child) = app_handle.state::<SidecarHandle>().0.lock().unwrap().take() {
-                    let _ = child.kill();
-                }
-            }
-        });
 }
+
