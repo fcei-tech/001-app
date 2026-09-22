@@ -33,15 +33,20 @@ export const dynamic = "force-dynamic";
 export default async function MagazzinoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; skueliminato?: string }>;
 }) {
-  const { q } = await searchParams;
+  const { q, skueliminato } = await searchParams;
   const righe = await getMagazzino(q);
 
   return (
     <div className="min-h-full flex flex-col">
       <Header />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+        {skueliminato && (
+          <div className="mb-4 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+            Sku eliminato.
+          </div>
+        )}
         <div className="mb-6 flex items-center justify-between gap-4">
           <div className="flex flex-col gap-1">
             <h1 className="text-xl font-semibold tracking-tight">Magazzino</h1>
