@@ -1,0 +1,39 @@
+# Dipendenze e cache npm - mai nel repository, si ricreano con "npm ci"
+node_modules/
+.npm-cache/
+
+# Output di build Next.js
+.next/
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# Database di sviluppo locale (PGlite, usato solo se DATABASE_URL non e'
+# definita - vedi src/db/index.ts). Contiene solo dati di prova, mai reali.
+pgdata-locale/
+
+# Variabili d'ambiente locali (es. DATABASE_URL di sviluppo) - personali per
+# ogni Mac, mai condivise.
+.env
+.env.local
+.env*.local
+
+# Runtime Node scaricato a parte per l'avvio senza terminale (vedi
+# ambiente_locale_mac_lancio_zero_terminale nell'indice progetto) - si
+# riscarica da solo, non va nel repository.
+.node-runtime/
+
+# Build del guscio nativo Tauri/Rust
+src-tauri/target/
+src-tauri/binaries/
+src-tauri/resources/standalone/
+
+# File di sistema macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Log
+*.log
+npm-debug.log*
