@@ -1,42 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronUp, ChevronDown } from "lucide-react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import {
-  getSkuById,
-  getTipiOggetto,
-  getUbicazioniAttive,
-  getMovimentiSku,
-  getFotoSku,
-} from "@/db/queries";
-import { modificaSku, eliminaFotoSku } from "@/app/magazzino/actions";
+import { getSkuById, getTipiOggetto, getUbicazioniAttive, getMovimentiSku, getFotoSku } from "@/db/queries";
+import { modificaSku, eliminaFotoSku, spostaFotoSku } from "@/app/magazzino/actions";
 import { MovimentoForm } from "./movimento-form";
 import { FotoForm } from "./foto-form";
 import { EliminaSkuButton } from "./elimina-sku-button";
@@ -44,13 +19,7 @@ import { EliminaSkuButton } from "./elimina-sku-button";
 const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"];
 
 function formatData(d: Date) {
-  return new Intl.DateTimeFormat("it-IT", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
+  return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
 }
 
 const MESSAGGI: Record<string, string> = {
@@ -62,8 +31,6 @@ const MESSAGGI: Record<string, string> = {
   fotoeliminata: "Foto rimossa dalla galleria.",
 };
 
-// Questa pagina legge dal database: va costruita a ogni richiesta, mai
-// "pre-generata" durante la build (in build il database non esiste).
 export const dynamic = "force-dynamic";
 
 export default async function ModificaSkuPage({
@@ -121,9 +88,7 @@ export default async function ModificaSkuPage({
         <div className="mb-6 flex items-baseline justify-between">
           <div>
             <h1 className="font-mono text-lg font-semibold tracking-tight">{item.skuCode}</h1>
-            <p className="text-sm text-muted-foreground">
-              {item.artista} — {item.opera}
-            </p>
+            <p className="text-sm text-muted-foreground">{item.artista} — {item.opera}</p>
           </div>
           <div className="flex items-center gap-4">
             <p className="text-sm text-muted-foreground">
@@ -173,9 +138,7 @@ export default async function ModificaSkuPage({
                     </SelectTrigger>
                     <SelectContent>
                       {tipi.map((t) => (
-                        <SelectItem key={t.id} value={String(t.id)}>
-                          {t.nome}
-                        </SelectItem>
+                        <SelectItem key={t.id} value={String(t.id)}>{t.nome}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -188,9 +151,7 @@ export default async function ModificaSkuPage({
                     </SelectTrigger>
                     <SelectContent>
                       {CONDIZIONI.map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {c}
-                        </SelectItem>
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -242,9 +203,7 @@ export default async function ModificaSkuPage({
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>Foto</CardTitle>
-            <CardDescription>
-              Galleria ordinata su Shopify CDN — la prima e&apos; la copertina.
-            </CardDescription>
+            <CardDescription>Galleria ordinata su Shopify CDN — la prima e&apos; la copertina.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {foto.length > 0 && (
@@ -252,29 +211,33 @@ export default async function ModificaSkuPage({
                 {foto.map((f, i) => (
                   <div key={f.id} className="relative">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={f.url}
-                      alt=""
-                      className="size-24 rounded-md border object-cover"
-                    />
+                    <img src={f.url} alt="" className="size-24 rounded-md border object-cover" />
                     {i === 0 && (
-                      <span className="absolute left-1 top-1 rounded bg-background/90 px-1.5 py-0.5 text-[10px] font-medium">
-                        copertina
-                      </span>
+                      <span className="absolute left-1 top-1 rounded bg-background/90 px-1.5 py-0.5 text-[10px] font-medium">copertina</span>
                     )}
                     <form action={eliminaFotoSku} className="absolute -right-2 -top-2">
                       <input type="hidden" name="fotoId" value={f.id} />
                       <input type="hidden" name="skuId" value={item.id} />
-                      <Button
-                        type="submit"
-                        variant="destructive"
-                        size="icon"
-                        className="size-5 rounded-full"
-                        title="Rimuovi foto"
-                      >
-                        ×
-                      </Button>
+                      <Button type="submit" variant="destructive" size="icon" className="size-5 rounded-full" title="Rimuovi foto">×</Button>
                     </form>
+                    <div className="absolute -left-2 -bottom-2 flex flex-col gap-0.5">
+                      <form action={spostaFotoSku}>
+                        <input type="hidden" name="fotoId" value={f.id} />
+                        <input type="hidden" name="skuId" value={item.id} />
+                        <input type="hidden" name="direzione" value="su" />
+                        <Button type="submit" variant="secondary" size="icon" className="size-5 rounded-full" title="Sposta su (copertina se in cima)" disabled={i === 0}>
+                          <ChevronUp className="size-3" />
+                        </Button>
+                      </form>
+                      <form action={spostaFotoSku}>
+                        <input type="hidden" name="fotoId" value={f.id} />
+                        <input type="hidden" name="skuId" value={item.id} />
+                        <input type="hidden" name="direzione" value="giu" />
+                        <Button type="submit" variant="secondary" size="icon" className="size-5 rounded-full" title="Sposta giu'" disabled={i === foto.length - 1}>
+                          <ChevronDown className="size-3" />
+                        </Button>
+                      </form>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -286,13 +249,10 @@ export default async function ModificaSkuPage({
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>Movimenti</CardTitle>
-            <CardDescription>
-              La quantita&apos; disponibile e&apos; sempre calcolata dalla somma di questi movimenti.
-            </CardDescription>
+            <CardDescription>La quantita&apos; disponibile e&apos; sempre calcolata dalla somma di questi movimenti.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <MovimentoForm skuId={item.id} ubicazioni={ubicazioni} />
-
             <div className="rounded-lg border">
               {movimenti.length === 0 ? (
                 <TableEmpty>Nessun movimento registrato.</TableEmpty>
@@ -311,15 +271,11 @@ export default async function ModificaSkuPage({
                   <TableBody>
                     {movimenti.map((m) => (
                       <TableRow key={m.id}>
-                        <TableCell className="text-muted-foreground">
-                          {formatData(m.createdAt)}
-                        </TableCell>
+                        <TableCell className="text-muted-foreground">{formatData(m.createdAt)}</TableCell>
                         <TableCell>{m.causale}</TableCell>
                         <TableCell>{m.proprieta}</TableCell>
                         <TableCell>{m.ubicazione}</TableCell>
-                        <TableCell
-                          className={`text-right tabular-nums ${m.quantitaDelta < 0 ? "text-destructive" : ""}`}
-                        >
+                        <TableCell className={`text-right tabular-nums ${m.quantitaDelta < 0 ? "text-destructive" : ""}`}>
                           {m.quantitaDelta > 0 ? `+${m.quantitaDelta}` : m.quantitaDelta}
                         </TableCell>
                         <TableCell className="text-muted-foreground">{m.note ?? "—"}</TableCell>
