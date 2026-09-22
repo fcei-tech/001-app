@@ -1,6 +1,6 @@
-import { asc, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, ilike, notExists, or, sql } from "drizzle-orm";
 import { db } from "./index";
-import { fotoSku, movimentiMagazzino, sku, tipiOggetto, ubicazioni } from "./schema";
+import { condizioneEnum, fotoSku, movimentiMagazzino, sku, tipiOggetto, ubicazioni } from "./schema";
 
 export type RigaMagazzino = {
   id: number;
@@ -16,13 +16,56 @@ export type RigaMagazzino = {
   quantitaDisponibile: number;
 };
 
-// Legge il Magazzino: per ogni sku, la quantita' disponibile e' la somma
-// dei movimenti nel registro (mai un campo sovrascritto), coerente con
-// stock_come_registro_movimenti in 09_python_checklist.yaml.
-export async function getMagazzino(ricerca?: string): Promise<RigaMagazzino[]> {
-  const filtro = ricerca?.trim()
-    ? or(ilike(sku.artista, `%${ricerca}%`), ilike(sku.opera, `%${ricerca}%`), ilike(sku.skuCode, `%${ricerca}%`))
-    : undefined;
+export type FiltriMagazzino = {
+  ricerca?: string;
+  tipoId?: number;
+  condizione?: string;
+  proprieta?: "FP" | "CV";
+  bloccato?: "si" | "no";
+  disponibilita?: "disponibile" | "esaurito";
+  senzaFoto?: boolean;
+};
+
+export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMagazzino[]> {
+  const condizioniWhere = [];
+
+  if (filtri.ricerca?.trim()) {
+    condizioniWhere.push(
+      or(
+        ilike(sku.artista, `%${filtri.ricerca}%`),
+        ilike(sku.opera, `%${filtri.ricerca}%`),
+        ilike(sku.skuCode, `%${filtri.ricerca}%`)
+      )
+    );
+  }
+  if (filtri.tipoId) condizioniWhere.push(eq(sku.tipoId, filtri.tipoId));
+  if (filtri.condizione) {
+    condizioniWhere.push(eq(sku.condizione, filtri.condizione as (typeof condizioneEnum.enumValues)[number]));
+  }
+  if (filtri.bloccato === "si") condizioniWhere.push(eq(sku.bloccatoVendita, true));
+  if (filtri.bloccato === "no") condizioniWhere.push(eq(sku.bloccatoVendita, false));
+  if (filtri.proprieta) {
+    condizioniWhere.push(
+      exists(
+        db
+          .select({ uno: sql`1` })
+          .from(movimentiMagazzino)
+          .where(and(eq(movimentiMagazzino.skuId, sku.id), eq(movimentiMagazzino.proprieta, filtri.proprieta!)))
+      )
+    );
+  }
+  if (filtri.senzaFoto) {
+    condizioniWhere.push(
+      notExists(db.select({ uno: sql`1` }).from(fotoSku).where(eq(fotoSku.skuId, sku.id)))
+    );
+  }
+
+  const having =
+    filtri.disponibilita === "disponibile"
+      ? sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0) > 0`
+      : filtri.disponibilita === "esaurito"
+        ? sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0) <= 0`
+        : undefined;
 
   const righe = await db
     .select({
@@ -41,8 +84,9 @@ export async function getMagazzino(ricerca?: string): Promise<RigaMagazzino[]> {
     .from(sku)
     .innerJoin(tipiOggetto, eq(sku.tipoId, tipiOggetto.id))
     .leftJoin(movimentiMagazzino, eq(movimentiMagazzino.skuId, sku.id))
-    .where(filtro)
+    .where(condizioniWhere.length ? and(...condizioniWhere) : undefined)
     .groupBy(sku.id, tipiOggetto.nome)
+    .having(having)
     .orderBy(asc(sku.skuCode));
 
   return righe;
@@ -53,9 +97,6 @@ export async function contaSku(): Promise<number> {
   return count;
 }
 
-// Ricerca duplicati per l'inserimento nuovo sku: SOLO artista+opera, testuale,
-// nessun riconoscimento visivo/AI immagine (scelta deliberata, vedi
-// modulo_inserimento_nuovo_sku_2026_09_11/ricerca_duplicati).
 export async function cercaCandidatiDuplicati(query: string) {
   const q = query.trim();
   if (!q) return [];
@@ -97,8 +138,6 @@ export async function getSkuById(id: number) {
   });
 }
 
-// Galleria foto sku, copertina (ordine=0) prima - vedi lib/shopify.ts per
-// l'upload che le genera (Shopify CDN, decisione 2026-09-17).
 export async function getFotoSku(skuId: number) {
   return db
     .select({ id: fotoSku.id, url: fotoSku.url, ordine: fotoSku.ordine })
