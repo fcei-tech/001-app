@@ -234,3 +234,22 @@ export async function eliminaFotoSku(formData: FormData) {
   revalidatePath(`/magazzino/${skuId}`);
   redirect(`/magazzino/${skuId}?fotoeliminata=1`);
 }
+
+// Elimina definitivamente uno sku e tutto cio' che gli e' collegato
+// (foto in galleria, registro movimenti). Le foto restano su Shopify CDN
+// (nessuna fileDelete, stessa scelta di eliminaFotoSku) - solo i nostri
+// riferimenti vengono rimossi. Azione irreversibile: la conferma e'
+// responsabilita' della UI (vedi elimina-sku-button.tsx).
+export async function eliminaSku(formData: FormData) {
+  const id = Number(formData.get("id"));
+  if (!id) throw new Error("Sku non valido");
+
+  await db.transaction(async (tx) => {
+    await tx.delete(fotoSku).where(eq(fotoSku.skuId, id));
+    await tx.delete(movimentiMagazzino).where(eq(movimentiMagazzino.skuId, id));
+    await tx.delete(sku).where(eq(sku.id, id));
+  });
+
+  revalidatePath("/");
+  redirect("/?skueliminato=1");
+}
