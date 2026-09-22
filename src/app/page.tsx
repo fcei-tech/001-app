@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
 import { getMagazzino } from "@/db/queries";
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, FileSpreadsheet } from "lucide-react";
 
 function formatMisura(l: string | null, h: string | null) {
   if (!l && !h) return "—";
@@ -54,11 +54,18 @@ export default async function MagazzinoPage({
               {righe.length} {righe.length === 1 ? "sku" : "sku"} {q ? `per "${q}"` : "totali"}
             </p>
           </div>
-          <Button asChild>
-            <Link href="/magazzino/nuovo">
-              <Plus /> Nuovo sku
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="secondary">
+              <Link href="/importa-excel">
+                <FileSpreadsheet /> Importa da Excel
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link href="/magazzino/nuovo">
+                <Plus /> Nuovo sku
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <form className="mb-4 flex max-w-sm items-center gap-2" action="/">
