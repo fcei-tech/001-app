@@ -7,6 +7,12 @@ import { fotoSku, movimentiMagazzino, sku } from "@/db/schema";
 import { asc, eq, sql } from "drizzle-orm";
 import { cercaCandidatiDuplicati } from "@/db/queries";
 import { caricaFotoSuShopify } from "@/lib/shopify";
+import type {
+  CampoEditabileInline,
+  PrecedentiModificaInline,
+  ValoreCampoInline,
+  VoceModificaInline,
+} from "@/lib/campi-inline";
 
 export async function cercaCandidati(query: string) {
   return cercaCandidatiDuplicati(query);
@@ -247,6 +253,101 @@ export async function spostaFotoSku(formData: FormData) {
   }
 
   revalidatePath(`/magazzino/${skuId}`);
+}
+
+// --- Editing inline da tabella Magazzino (2026-09-23) -------------------
+// Un solo campo puo' non bastare per una voce (es. "misura" tocca
+// larghezza+altezza insieme): ogni voce porta un id + una mappa parziale
+// campo->valore. Stesso meccanismo serve sia per il salvataggio (singola
+// cella o applicazione in blocco su piu' righe selezionate) sia per
+// l'annulla-ultima-modifica: il chiamante rimanda indietro i "precedenti"
+// gia' restituiti da questa stessa funzione, senza dover ricalcolare nulla.
+// CAMPI_EDITABILI_INLINE e i tipi associati vivono in @/lib/campi-inline
+// (un file "use server" puo' esportare solo funzioni async).
+
+const COLONNE_SKU_INLINE = {
+  artista: sku.artista,
+  opera: sku.opera,
+  larghezza: sku.larghezza,
+  altezza: sku.altezza,
+  supporto: sku.supporto,
+  anno: sku.anno,
+  tipoId: sku.tipoId,
+  condizione: sku.condizione,
+  tag: sku.tag,
+  note: sku.note,
+  bloccatoVendita: sku.bloccatoVendita,
+  valoreCarico: sku.valoreCarico,
+  prezzoEbay: sku.prezzoEbay,
+  prezzoCatawiki: sku.prezzoCatawiki,
+  riservaCatawiki: sku.riservaCatawiki,
+} as const;
+
+function validaCampoInline(campo: CampoEditabileInline, valore: ValoreCampoInline): ValoreCampoInline {
+  switch (campo) {
+    case "artista":
+    case "opera": {
+      const v = testoOVuoto(valore as string);
+      if (!v) throw new Error(campo === "artista" ? "Artista non puo' essere vuoto" : "Opera non puo' essere vuota");
+      return v;
+    }
+    case "supporto":
+    case "anno":
+    case "tag":
+    case "note":
+      return testoOVuoto(valore as string);
+    case "larghezza":
+    case "altezza":
+    case "valoreCarico":
+    case "prezzoEbay":
+    case "prezzoCatawiki":
+    case "riservaCatawiki":
+      return numeroOVuoto(valore as string);
+    case "condizione": {
+      const v = (valore ?? "").toString();
+      if (!CONDIZIONI.includes(v as (typeof CONDIZIONI)[number])) throw new Error("Condizione non valida");
+      return v;
+    }
+    case "tipoId": {
+      const n = Number(valore);
+      if (!Number.isFinite(n) || n <= 0) throw new Error("Tipo non valido");
+      return n;
+    }
+    case "bloccatoVendita":
+      return Boolean(valore);
+  }
+}
+
+export async function aggiornaCampiSkuInline(
+  voci: VoceModificaInline[]
+): Promise<{ precedenti: PrecedentiModificaInline[] }> {
+  if (!voci.length) return { precedenti: [] };
+
+  const precedenti = await db.transaction(async (tx) => {
+    const risultato: PrecedentiModificaInline[] = [];
+    for (const voce of voci) {
+      const campiRichiesti = Object.keys(voce.campi) as CampoEditabileInline[];
+      if (!campiRichiesti.length) continue;
+
+      const campiValidati: Partial<Record<CampoEditabileInline, ValoreCampoInline>> = {};
+      for (const campo of campiRichiesti) {
+        campiValidati[campo] = validaCampoInline(campo, voce.campi[campo] ?? null);
+      }
+
+      const selezione = Object.fromEntries(campiRichiesti.map((c) => [c, COLONNE_SKU_INLINE[c]]));
+      const [prima] = await tx.select(selezione).from(sku).where(eq(sku.id, voce.id));
+      if (!prima) throw new Error(`Sku ${voce.id} non trovato`);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await tx.update(sku).set({ ...(campiValidati as any), updatedAt: new Date() }).where(eq(sku.id, voce.id));
+
+      risultato.push({ id: voce.id, campi: prima as Partial<Record<CampoEditabileInline, ValoreCampoInline>> });
+    }
+    return risultato;
+  });
+
+  revalidatePath("/");
+  return { precedenti };
 }
 
 export async function eliminaSku(formData: FormData) {
