@@ -23,10 +23,13 @@ export const dynamic = "force-dynamic";
 
 export default async function CanalePubblicazionePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ canaleId: string }>;
+  searchParams: Promise<{ eliminato?: string }>;
 }) {
   const { canaleId } = await params;
+  const sp = await searchParams;
   const id = Number(canaleId);
   const [canale, batch] = await Promise.all([getCanaleById(id), getBatchPerCanale(id)]);
 
@@ -42,6 +45,12 @@ export default async function CanalePubblicazionePage({
         >
           <ChevronLeft className="size-4" /> Tutti i canali
         </Link>
+
+        {sp.eliminato && (
+          <div className="mb-4 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+            Batch eliminato.
+          </div>
+        )}
 
         <div className="mb-6 flex items-center justify-between gap-4">
           <div className="flex flex-col gap-1">
