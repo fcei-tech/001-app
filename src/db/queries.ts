@@ -31,7 +31,32 @@ export type RigaMagazzino = {
   updatedAt: string;
 };
 
-export type ColonnaOrdinabile = "skuCode" | "artista" | "opera" | "larghezza" | "supporto" | "anno" | "tipo" | "condizione";
+// REGOLA PERMANENTE (2026-09-23): tutte le colonne della tabella Magazzino
+// devono essere ordinabili, non solo un sottoinsieme - vedi
+// MAPPA_ORDINABILI (Record totale, non Partial) in
+// src/components/magazzino/vista-magazzino.tsx, che forza a compilazione
+// una voce qui per ogni ColonnaId lato client.
+export type ColonnaOrdinabile =
+  | "skuCode"
+  | "artista"
+  | "opera"
+  | "larghezza"
+  | "supporto"
+  | "anno"
+  | "tipo"
+  | "condizione"
+  | "proprieta"
+  | "disponibile"
+  | "numeroFoto"
+  | "valoreCarico"
+  | "prezzoEbay"
+  | "prezzoCatawiki"
+  | "riservaCatawiki"
+  | "tag"
+  | "note"
+  | "stato"
+  | "creato"
+  | "aggiornato";
 
 export type FiltriMagazzino = {
   ricerca?: string;
@@ -58,6 +83,19 @@ const RANGO_CONDIZIONE = sql`case ${sku.condizione}
   when 'B-' then 5
   when 'C' then 6
   else 7 end`;
+
+// Frammenti SQL aggregati/derivati condivisi fra la select e l'ordinamento
+// (2026-09-23) - stessa espressione usata in entrambi i punti cosi'
+// l'ordinamento su "disponibile"/"proprieta"/"numeroFoto" resta coerente col
+// valore mostrato in colonna. Ordinare su un'espressione aggregata ripetuta
+// in ORDER BY e' valido in Postgres nello stesso contesto GROUP BY della
+// select principale. Funzioni (non costanti) apposta: sql`` costruisce un
+// oggetto SQL mutabile (.mapWith imposta un decoder in place) - una
+// funzione garantisce un'istanza fresca per ogni chiamata invece di
+// condividerne una fra tutte le esecuzioni concorrenti di getMagazzino.
+const quantitaDisponibileSql = () => sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`;
+const proprietaSql = () => sql`coalesce(string_agg(distinct ${movimentiMagazzino.proprieta}::text, ', '), '')`;
+const numeroFotoSql = () => sql`(select count(*) from foto_sku fs where fs.sku_id = ${sku.id})`;
 
 export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMagazzino[]> {
   const condizioniWhere = [];
@@ -100,7 +138,9 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
         ? sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0) <= 0`
         : undefined;
 
-  // Colonne cliccabili in intestazione per l'ordinamento lista (2026-09-23).
+  // Colonne cliccabili in intestazione per l'ordinamento lista (2026-09-23,
+  // esteso lo stesso giorno a TUTTE le colonne della tabella per regola
+  // permanente - vedi commento su ColonnaOrdinabile sopra).
   // Whitelist esplicita: mai interpolare filtri.ordina direttamente in SQL.
   const COLONNE_ORDINABILI = {
     skuCode: sku.skuCode,
@@ -111,6 +151,18 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
     anno: sku.anno,
     tipo: tipiOggetto.nome,
     condizione: RANGO_CONDIZIONE,
+    proprieta: proprietaSql(),
+    disponibile: quantitaDisponibileSql(),
+    numeroFoto: numeroFotoSql(),
+    valoreCarico: sku.valoreCarico,
+    prezzoEbay: sku.prezzoEbay,
+    prezzoCatawiki: sku.prezzoCatawiki,
+    riservaCatawiki: sku.riservaCatawiki,
+    tag: sku.tag,
+    note: sku.note,
+    stato: sku.bloccatoVendita,
+    creato: sku.createdAt,
+    aggiornato: sku.updatedAt,
   };
   const colonnaOrdinamento = filtri.ordina ? COLONNE_ORDINABILI[filtri.ordina] : sku.skuCode;
   const direzioneOrdinamento = filtri.direzione === "desc" ? desc : asc;
@@ -135,15 +187,15 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
       prezzoEbay: sku.prezzoEbay,
       prezzoCatawiki: sku.prezzoCatawiki,
       riservaCatawiki: sku.riservaCatawiki,
-      quantitaDisponibile: sql<number>`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`.mapWith(Number),
+      quantitaDisponibile: quantitaDisponibileSql().mapWith(Number),
       // string_agg ignora da solo i NULL (righe senza movimenti per via del
       // left join) - nessun gate esplicito necessario.
-      proprieta: sql<string>`coalesce(string_agg(distinct ${movimentiMagazzino.proprieta}::text, ', '), '')`,
+      proprieta: proprietaSql().mapWith(String),
       // Subquery correlata (non un altro left join): un secondo left join a
       // foto_sku qui creerebbe un fan-out incrociato con i movimenti gia'
       // joinati, gonfiando quantitaDisponibile. Stesso pattern gia' in uso
       // in cercaCandidatiDuplicati sotto.
-      numeroFoto: sql<number>`(select count(*) from foto_sku fs where fs.sku_id = ${sku.id})`.mapWith(Number),
+      numeroFoto: numeroFotoSql().mapWith(Number),
       createdAt: sku.createdAt,
       updatedAt: sku.updatedAt,
     })
