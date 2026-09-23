@@ -1,25 +1,9 @@
 import Link from "next/link";
 import { Header } from "@/components/header";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { TableEmpty } from "@/components/ui/table-empty";
 import { getMagazzino, getTipiOggetto } from "@/db/queries";
-import { Search, Plus, FileSpreadsheet, Images, X } from "lucide-react";
-
-const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"];
-
-function formatMisura(l: string | null, h: string | null) {
-  if (!l && !h) return "—";
-  return `${l ?? "?"} × ${h ?? "?"} cm`;
-}
-function condizioneVariant(c: string) {
-  if (c === "A" || c === "A-") return "success" as const;
-  if (c === "B+" || c === "B") return "secondary" as const;
-  return "warning" as const;
-}
+import { Plus, FileSpreadsheet, Images } from "lucide-react";
+import { VistaMagazzino } from "@/components/magazzino/vista-magazzino";
 
 type SearchParams = {
   q?: string;
@@ -71,101 +55,20 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
           </div>
         </div>
 
-        <form className="mb-4 flex flex-col gap-3" action="/">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative w-full max-w-sm">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input name="q" defaultValue={q ?? ""} placeholder="Cerca artista, opera o sku..." className="pl-8" />
-            </div>
-
-            <Select name="tipo" defaultValue={tipoId ? String(tipoId) : "tutti"}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="Tipo" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="tutti">Tutti i tipi</SelectItem>
-                {tipi.map((t) => <SelectItem key={t.id} value={String(t.id)}>{t.nome}</SelectItem>)}
-              </SelectContent>
-            </Select>
-
-            <Select name="condizione" defaultValue={condizione ?? "tutti"}>
-              <SelectTrigger className="w-36"><SelectValue placeholder="Condizione" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="tutti">Tutte le condizioni</SelectItem>
-                {CONDIZIONI.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
-
-            <Select name="proprieta" defaultValue={proprieta ?? "tutti"}>
-              <SelectTrigger className="w-36"><SelectValue placeholder="Proprieta'" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="tutti">Tutte le proprieta&apos;</SelectItem>
-                <SelectItem value="FP">FP</SelectItem>
-                <SelectItem value="CV">CV</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select name="bloccato" defaultValue={bloccato ?? "tutti"}>
-              <SelectTrigger className="w-44"><SelectValue placeholder="Bloccato vendita" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="tutti">Bloccato: tutti</SelectItem>
-                <SelectItem value="si">Solo bloccati</SelectItem>
-                <SelectItem value="no">Solo non bloccati</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select name="disponibilita" defaultValue={disponibilita ?? "tutti"}>
-              <SelectTrigger className="w-44"><SelectValue placeholder="Disponibilita'" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="tutti">Disponibilita&apos;: tutti</SelectItem>
-                <SelectItem value="disponibile">Disponibile (&gt;0)</SelectItem>
-                <SelectItem value="esaurito">Esaurito (=0)</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select name="senzafoto" defaultValue={senzaFoto ? "si" : "no"}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="Foto" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="no">Foto: tutti</SelectItem>
-                <SelectItem value="si">Solo senza foto</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Button type="submit" variant="secondary">Applica filtri</Button>
-            {filtriAttivi && (
-              <Button asChild type="button" variant="ghost" size="sm"><Link href="/"><X /> Azzera filtri</Link></Button>
-            )}
-          </div>
-        </form>
-
-        <div className="rounded-xl border">
-          {righe.length === 0 ? (
-            <TableEmpty><p className="font-medium text-foreground">Nessuno sku trovato</p><p>Prova a modificare la ricerca o i filtri.</p></TableEmpty>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>SKU</TableHead><TableHead>Artista</TableHead><TableHead>Opera</TableHead><TableHead>Misura</TableHead>
-                  <TableHead>Tipo</TableHead><TableHead>Condizione</TableHead><TableHead className="text-right">Disponibile</TableHead>
-                  <TableHead className="text-right">Prezzo eBay</TableHead><TableHead>Stato</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {righe.map((r) => (
-                  <TableRow key={r.id} className="cursor-pointer">
-                    <TableCell className="p-0"><Link href={`/magazzino/${r.id}`} className="block font-mono text-xs p-3">{r.skuCode}</Link></TableCell>
-                    <TableCell className="p-0"><Link href={`/magazzino/${r.id}`} className="block p-3">{r.artista}</Link></TableCell>
-                    <TableCell className="p-0"><Link href={`/magazzino/${r.id}`} className="block p-3">{r.opera}</Link></TableCell>
-                    <TableCell className="text-muted-foreground">{formatMisura(r.larghezza, r.altezza)}</TableCell>
-                    <TableCell className="text-muted-foreground">{r.tipo}</TableCell>
-                    <TableCell><Badge variant={condizioneVariant(r.condizione)}>{r.condizione}</Badge></TableCell>
-                    <TableCell className="text-right tabular-nums">{r.quantitaDisponibile}</TableCell>
-                    <TableCell className="text-right tabular-nums">{r.prezzoEbay ? `€ ${r.prezzoEbay}` : "—"}</TableCell>
-                    <TableCell>{r.bloccatoVendita ? <Badge variant="destructive">Bloccato</Badge> : <span className="text-muted-foreground">—</span>}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </div>
+        <VistaMagazzino
+          righe={righe}
+          tipi={tipi}
+          filtriAttivi={filtriAttivi}
+          filtriIniziali={{
+            q: q ?? "",
+            tipo: tipoId ? String(tipoId) : "tutti",
+            condizione: condizione ?? "tutti",
+            proprieta: proprieta ?? "tutti",
+            bloccato: bloccato ?? "tutti",
+            disponibilita: disponibilita ?? "tutti",
+            senzafoto: senzaFoto ? "si" : "no",
+          }}
+        />
       </main>
     </div>
   );
