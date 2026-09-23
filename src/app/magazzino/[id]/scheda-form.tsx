@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { modificaSku } from "@/app/magazzino/actions";
 import { EliminaSkuButton } from "./elimina-sku-button";
+import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 
 const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"];
 
@@ -57,8 +57,20 @@ export function SchedaSkuForm({
   disponibile: number;
   esito?: string;
 }) {
-  const router = useRouter();
-  const [modificato, setModificato] = useState(false);
+  // Stato "modifiche non salvate" condiviso via context (non piu' locale):
+  // deve valere anche per i link dell'header, vedi unsaved-changes-provider.tsx
+  // per il dettaglio della correzione 2026-09-23 (window.confirm non
+  // funzionava nell'app installata).
+  const { hasUnsaved: modificato, setHasUnsaved: setModificato, guardedNavigate } = useUnsavedChanges();
+
+  // Entrando in una scheda sku si riparte sempre puliti (es. se una scheda
+  // precedente era rimasta "sporca" per qualche motivo), e uscendo si
+  // rilascia lo stato condiviso cosi' non resta agganciato ad altre pagine.
+  useEffect(() => {
+    setModificato(false);
+    return () => setModificato(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Copre chiusura tab, refresh (F5) o uscita verso un altro sito: eventi
   // di unload reale del browser, non la navigazione interna di Next.
@@ -72,14 +84,8 @@ export function SchedaSkuForm({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [modificato]);
 
-  function confermaSeModificato() {
-    if (!modificato) return true;
-    return window.confirm("Hai modifiche non salvate su questo sku. Vuoi uscire comunque senza salvare?");
-  }
-
   function tornaAlMagazzino() {
-    if (!confermaSeModificato()) return;
-    router.push("/");
+    guardedNavigate("/");
   }
 
   return (
