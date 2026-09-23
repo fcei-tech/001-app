@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { db } from "./index";
-import { tipiOggetto, ubicazioni, sku, movimentiMagazzino } from "./schema";
+import { tipiOggetto, ubicazioni, sku, movimentiMagazzino, canali } from "./schema";
 
 async function main() {
   console.log("Seed: vocabolari iniziali...");
@@ -18,6 +18,30 @@ async function main() {
     { nome: "Wannenes", tipo: "asta_fisica" },
   ];
   await db.insert(ubicazioni).values(ubicazioniIniziali).onConflictDoNothing();
+
+  // Canali (modulo Pubblicazione, struttura di base 2026-09-23): elenco
+  // dei portali gia' noti dal vecchio Master, ognuno con tipo/esclusivita'
+  // gia' decisi (vedi meccanismo_aste_candidato_accettato_2026_09_14 e
+  // controllo_scorte_aste_2026_09_09/scope_confermato). Nota: i 4 canali
+  // asta_fisica condividono il nome con le ubicazioni omonime sopra, ma
+  // sono un asse distinto e intenzionale - ubicazioni traccia DOVE sta
+  // fisicamente il pezzo, canali traccia la candidatura/accettazione di
+  // vendita presso quella casa d'asta (vedi ubicazione_fisica_asta_fisica_
+  // CORRETTA_2026_09_14 in 00_index.yaml: candidarsi non sposta il pezzo).
+  const canaliIniziali: (typeof canali.$inferInsert)[] = [
+    { nome: "Shopify", tipo: "statico", esclusivo: false },
+    { nome: "eBay", tipo: "statico", esclusivo: false },
+    { nome: "Etsy", tipo: "statico", esclusivo: false },
+    { nome: "Subito", tipo: "statico", esclusivo: false },
+    { nome: "Catawiki", tipo: "asta_online", esclusivo: true },
+    { nome: "Bidspirit", tipo: "asta_online", esclusivo: true },
+    { nome: "eBay Asta", tipo: "asta_online", esclusivo: true },
+    { nome: "Cambi", tipo: "asta_fisica", esclusivo: true },
+    { nome: "Bolaffi", tipo: "asta_fisica", esclusivo: true },
+    { nome: "Wannenes", tipo: "asta_fisica", esclusivo: true },
+    { nome: "Libero", tipo: "asta_fisica", esclusivo: true },
+  ];
+  await db.insert(canali).values(canaliIniziali).onConflictDoNothing();
 
   const tipoPoster =
     poster ?? (await db.query.tipiOggetto.findFirst({ where: (t, { eq }) => eq(t.nome, "Poster") }));
