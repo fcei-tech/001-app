@@ -30,6 +30,8 @@ export type RigaMagazzino = {
   updatedAt: string;
 };
 
+export type ColonnaOrdinabile = "skuCode" | "artista" | "opera" | "larghezza" | "supporto" | "anno" | "tipo" | "condizione";
+
 export type FiltriMagazzino = {
   ricerca?: string;
   tipoId?: number;
@@ -38,7 +40,23 @@ export type FiltriMagazzino = {
   bloccato?: "si" | "no";
   disponibilita?: "disponibile" | "esaurito";
   senzaFoto?: boolean;
+  ordina?: ColonnaOrdinabile;
+  direzione?: "asc" | "desc";
 };
+
+// Condizione e' un codice testuale (A/A-/B+/B/B-/C), non ordinabile
+// alfabeticamente in modo sensato (l'ordine lessicografico mischia i gradi:
+// "A" < "A-" < "B" < "B+" < "B-" < "C"). Rango numerico esplicito che
+// rispecchia la scala qualitativa vera, vedi 09_python_checklist.yaml/
+// modulo_magazzino_design_2026_09_11/vocabolario_condizione_2026_09_11.
+const RANGO_CONDIZIONE = sql`case ${sku.condizione}
+  when 'A' then 1
+  when 'A-' then 2
+  when 'B+' then 3
+  when 'B' then 4
+  when 'B-' then 5
+  when 'C' then 6
+  else 7 end`;
 
 export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMagazzino[]> {
   const condizioniWhere = [];
@@ -81,6 +99,21 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
         ? sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0) <= 0`
         : undefined;
 
+  // Colonne cliccabili in intestazione per l'ordinamento lista (2026-09-23).
+  // Whitelist esplicita: mai interpolare filtri.ordina direttamente in SQL.
+  const COLONNE_ORDINABILI = {
+    skuCode: sku.skuCode,
+    artista: sku.artista,
+    opera: sku.opera,
+    larghezza: sku.larghezza,
+    supporto: sku.supporto,
+    anno: sku.anno,
+    tipo: tipiOggetto.nome,
+    condizione: RANGO_CONDIZIONE,
+  };
+  const colonnaOrdinamento = filtri.ordina ? COLONNE_ORDINABILI[filtri.ordina] : sku.skuCode;
+  const direzioneOrdinamento = filtri.direzione === "desc" ? desc : asc;
+
   const righe = await db
     .select({
       id: sku.id,
@@ -118,7 +151,7 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
     .where(condizioniWhere.length ? and(...condizioniWhere) : undefined)
     .groupBy(sku.id, tipiOggetto.nome)
     .having(having)
-    .orderBy(asc(sku.skuCode));
+    .orderBy(direzioneOrdinamento(colonnaOrdinamento), asc(sku.skuCode));
 
   return righe.map((r) => ({
     ...r,
