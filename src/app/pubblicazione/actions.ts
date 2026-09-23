@@ -7,6 +7,8 @@ import {
   aggiungiLotti as aggiungiLottiQuery,
   confermaBatch as confermaBatchQuery,
   rimuoviLotto as rimuoviLottoQuery,
+  accettaLotto as accettaLottoQuery,
+  eliminaBatch as eliminaBatchQuery,
   getBatch,
 } from "@/db/pubblicazione-queries";
 
@@ -51,6 +53,34 @@ export async function rimuoviLottoDaBatch(formData: FormData) {
   revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
 }
 
+// Accetta un lotto "candidato" (asta fisica): la casa d'asta lo ha preso in
+// consegna davvero, da qui in poi consuma disponibilita' (vedi
+// impegnatoSql). A differenza di aggiungi/rimuovi lotto, questa azione resta
+// disponibile anche a batch GIA' confermato - e' proprio il momento in cui
+// serve (la candidatura viene inviata alla conferma del batch, la risposta
+// della casa d'asta arriva sempre dopo). Verifica esplicita canale
+// asta_fisica + statoRiga candidato qui nell'azione, non solo lato UI.
+export async function accettaLottoAction(formData: FormData) {
+  const batchLottoId = Number(formData.get("batchLottoId"));
+  const batchId = Number(formData.get("batchId"));
+  const canaleId = Number(formData.get("canaleId"));
+  if (!batchLottoId || !batchId) throw new Error("Riferimento non valido");
+
+  const batch = await getBatch(batchId);
+  if (!batch) throw new Error("Batch non trovato");
+  if (batch.canale.tipo !== "asta_fisica") {
+    throw new Error("Accetta lotto si applica solo alle aste fisiche");
+  }
+  const lotto = batch.lotti.find((l) => l.id === batchLottoId);
+  if (!lotto) throw new Error("Lotto non trovato in questo batch");
+  if (lotto.statoRiga !== "candidato") {
+    throw new Error("Solo un lotto candidato puo' essere accettato");
+  }
+
+  await accettaLottoQuery(batchLottoId);
+  revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
+}
+
 export async function confermaBatchAction(formData: FormData) {
   const batchId = Number(formData.get("batchId"));
   const canaleId = Number(formData.get("canaleId"));
@@ -77,4 +107,18 @@ export async function confermaBatchAction(formData: FormData) {
   await confermaBatchQuery(batchId, snapshot);
   revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
   redirect(`/pubblicazione/${canaleId}/${batchId}?confermato=1`);
+}
+
+// Elimina un batch in bozza (2026-09-23 sera). La query rifiuta gia' da sola
+// un batch non-bozza (vedi eliminaBatch in pubblicazione-queries.ts) - qui
+// solo l'orchestrazione redirect/revalidate, stesso schema delle altre
+// action di questo file.
+export async function eliminaBatchAction(formData: FormData) {
+  const batchId = Number(formData.get("batchId"));
+  const canaleId = Number(formData.get("canaleId"));
+  if (!batchId) throw new Error("Batch non valido");
+
+  await eliminaBatchQuery(batchId);
+  revalidatePath(`/pubblicazione/${canaleId}`);
+  redirect(`/pubblicazione/${canaleId}?eliminato=1`);
 }
