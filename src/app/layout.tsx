@@ -4,6 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { UpdateChecker } from "@/components/update-checker";
+import { UnsavedChangesProvider } from "@/components/unsaved-changes-provider";
 
 export const metadata: Metadata = {
   title: "BATCH_",
@@ -24,8 +25,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           enableSystem
           disableTransitionOnChange
         >
-          {children}
-          <UpdateChecker />
+          <UnsavedChangesProvider>
+            {children}
+            <UpdateChecker />
+          </UnsavedChangesProvider>
         </ThemeProvider>
       </body>
     </html>
