@@ -15,6 +15,13 @@
       "when": 1790004303174,
       "tag": "0001_vocabolari_iniziali",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790170065940,
+      "tag": "0002_chemical_white_queen",
+      "breakpoints": true
     }
   ]
 }
