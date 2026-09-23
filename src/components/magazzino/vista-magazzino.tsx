@@ -17,8 +17,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { Search, Columns3, X } from "lucide-react";
-import type { RigaMagazzino } from "@/db/queries";
+import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 
 const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"];
 
@@ -70,6 +70,50 @@ function condizioneVariant(c: string) {
   if (c === "A" || c === "A-") return "success" as const;
   if (c === "B+" || c === "B") return "secondary" as const;
   return "warning" as const;
+}
+
+// Colonne su cui e' possibile ordinare la lista cliccando l'intestazione
+// (2026-09-23) -> chiave lato server in src/db/queries.ts/ColonnaOrdinabile.
+// "misura" (colonna visiva L x H) ordina per larghezza, unica dimensione
+// numerica delle due - stessa semplificazione gia' notata nel delta.
+const MAPPA_ORDINABILI: Partial<Record<ColonnaId, ColonnaOrdinabile>> = {
+  artista: "artista",
+  opera: "opera",
+  misura: "larghezza",
+  supporto: "supporto",
+  anno: "anno",
+  tipo: "tipo",
+  condizione: "condizione",
+};
+
+function IntestazioneOrdinabile({
+  etichetta,
+  chiave,
+  attiva,
+  direzione,
+  allineaDestra,
+  onOrdina,
+}: {
+  etichetta: string;
+  chiave: ColonnaOrdinabile;
+  attiva: boolean;
+  direzione: "asc" | "desc";
+  allineaDestra?: boolean;
+  onOrdina: (chiave: ColonnaOrdinabile) => void;
+}) {
+  const Icona = attiva ? (direzione === "desc" ? ArrowDown : ArrowUp) : ArrowUpDown;
+  return (
+    <TableHead className={allineaDestra ? "text-right" : undefined}>
+      <button
+        type="button"
+        onClick={() => onOrdina(chiave)}
+        className={`inline-flex items-center gap-1 whitespace-nowrap hover:text-foreground ${attiva ? "font-medium text-foreground" : "text-muted-foreground"}`}
+      >
+        {etichetta}
+        <Icona className={`size-3.5 ${attiva ? "" : "opacity-40"}`} />
+      </button>
+    </TableHead>
+  );
 }
 
 // Elenco colonne opzionali. Per aggiungerne una nuova in futuro: un'altra
@@ -160,14 +204,19 @@ export function VistaMagazzino({
   tipi,
   filtriIniziali,
   filtriAttivi,
+  ordinaAttuale,
+  direzioneAttuale,
 }: {
   righe: RigaMagazzino[];
   tipi: { id: number; nome: string }[];
   filtriIniziali: FiltriIniziali;
   filtriAttivi: boolean;
+  ordinaAttuale?: ColonnaOrdinabile;
+  direzioneAttuale: "asc" | "desc";
 }) {
   const router = useRouter();
   const [filtri, setFiltri] = useState(filtriIniziali);
+  const ordinamentoCorrente: ColonnaOrdinabile = ordinaAttuale ?? "skuCode";
   const colonne = useSyncExternalStore(sottoscriviColonne, leggiColonneSalvate, () => COLONNE_DI_DEFAULT);
 
   function impostaColonna(id: ColonnaId, visibile: boolean) {
@@ -176,7 +225,12 @@ export function VistaMagazzino({
 
   const colonneVisibili = useMemo(() => COLONNE.filter((c) => colonne[c.id]), [colonne]);
 
-  function applicaFiltri(f: typeof filtri) {
+  // ordinaOverride/direzioneOverride sono passati SOLO dal click su
+  // un'intestazione ordinabile - in quel caso sostituiscono l'ordinamento
+  // corrente mantenendo i filtri; un submit normale del form (bottone
+  // "Applica filtri" o azzeraFiltri sotto) mantiene invece l'ordinamento
+  // gia' attivo, per non perderlo ogni volta che si tocca un filtro.
+  function applicaFiltri(f: typeof filtri, ordinaOverride?: ColonnaOrdinabile, direzioneOverride?: "asc" | "desc") {
     const params = new URLSearchParams();
     if (f.q) params.set("q", f.q);
     if (f.tipo !== "tutti") params.set("tipo", f.tipo);
@@ -185,6 +239,10 @@ export function VistaMagazzino({
     if (f.bloccato !== "tutti") params.set("bloccato", f.bloccato);
     if (f.disponibilita !== "tutti") params.set("disponibilita", f.disponibilita);
     if (f.senzafoto === "si") params.set("senzafoto", "si");
+    const ordinaFinale = ordinaOverride ?? ordinaAttuale;
+    const direzioneFinale = ordinaOverride ? (direzioneOverride ?? "asc") : direzioneAttuale;
+    if (ordinaFinale) params.set("ordina", ordinaFinale);
+    if (ordinaFinale && direzioneFinale === "desc") params.set("direzione", "desc");
     const qs = params.toString();
     router.push(qs ? `/?${qs}` : "/");
   }
@@ -192,7 +250,13 @@ export function VistaMagazzino({
   function azzeraFiltri() {
     const vuoti: typeof filtri = { q: "", tipo: "tutti", condizione: "tutti", proprieta: "tutti", bloccato: "tutti", disponibilita: "tutti", senzafoto: "no" };
     setFiltri(vuoti);
-    router.push("/");
+    applicaFiltri(vuoti);
+  }
+
+  function gestisciOrdinamento(chiave: ColonnaOrdinabile) {
+    const attiva = ordinamentoCorrente === chiave;
+    const prossimaDirezione: "asc" | "desc" = attiva && direzioneAttuale === "asc" ? "desc" : "asc";
+    applicaFiltri(filtri, chiave, prossimaDirezione);
   }
 
   return (
@@ -304,10 +368,32 @@ export function VistaMagazzino({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>SKU</TableHead>
-                {colonneVisibili.map((c) => (
-                  <TableHead key={c.id} className={c.allineaDestra ? "text-right" : undefined}>{c.etichetta}</TableHead>
-                ))}
+                <IntestazioneOrdinabile
+                  etichetta="SKU"
+                  chiave="skuCode"
+                  attiva={ordinamentoCorrente === "skuCode"}
+                  direzione={direzioneAttuale}
+                  onOrdina={gestisciOrdinamento}
+                />
+                {colonneVisibili.map((c) => {
+                  const chiaveOrdinamento = MAPPA_ORDINABILI[c.id];
+                  if (!chiaveOrdinamento) {
+                    return (
+                      <TableHead key={c.id} className={c.allineaDestra ? "text-right" : undefined}>{c.etichetta}</TableHead>
+                    );
+                  }
+                  return (
+                    <IntestazioneOrdinabile
+                      key={c.id}
+                      etichetta={c.etichetta}
+                      chiave={chiaveOrdinamento}
+                      attiva={ordinamentoCorrente === chiaveOrdinamento}
+                      direzione={direzioneAttuale}
+                      allineaDestra={c.allineaDestra}
+                      onOrdina={gestisciOrdinamento}
+                    />
+                  );
+                })}
               </TableRow>
             </TableHeader>
             <TableBody>
