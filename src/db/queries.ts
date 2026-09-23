@@ -13,6 +13,7 @@ export type RigaMagazzino = {
   anno: string | null;
   condizione: string;
   tipo: string;
+  tipoId: number;
   tag: string | null;
   note: string | null;
   bloccatoVendita: boolean;
@@ -126,6 +127,7 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
       anno: sku.anno,
       condizione: sku.condizione,
       tipo: tipiOggetto.nome,
+      tipoId: sku.tipoId,
       tag: sku.tag,
       note: sku.note,
       bloccatoVendita: sku.bloccatoVendita,
