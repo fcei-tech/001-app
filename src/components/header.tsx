@@ -43,10 +43,12 @@ export function Header() {
           />
         </Link>
         <nav className="flex items-center gap-4 text-sm text-muted-foreground">
-          <Link href="/" onClick={vaiA("/")} className="text-foreground">
+          <Link href="/" onClick={vaiA("/")} className="hover:text-foreground">
             Magazzino
           </Link>
-          <span className="opacity-50">Pubblicazione</span>
+          <Link href="/pubblicazione" onClick={vaiA("/pubblicazione")} className="hover:text-foreground">
+            Pubblicazione
+          </Link>
           <Link href="/impostazioni" onClick={vaiA("/impostazioni")} className="hover:text-foreground">
             Impostazioni
           </Link>
