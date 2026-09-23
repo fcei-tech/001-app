@@ -9,11 +9,25 @@ export type RigaMagazzino = {
   opera: string;
   larghezza: string | null;
   altezza: string | null;
+  supporto: string | null;
+  anno: string | null;
   condizione: string;
   tipo: string;
+  tag: string | null;
+  note: string | null;
   bloccatoVendita: boolean;
+  valoreCarico: string | null;
   prezzoEbay: string | null;
+  prezzoCatawiki: string | null;
+  riservaCatawiki: string | null;
   quantitaDisponibile: number;
+  // Proprieta' viste sui movimenti di questo sku (puo' averne piu' di una,
+  // es. un carico FP e uno CV sullo stesso sku) - stringa gia' pronta per
+  // la colonna, es. "FP", "FP, CV", o "" se nessun movimento ancora.
+  proprieta: string;
+  numeroFoto: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type FiltriMagazzino = {
@@ -75,11 +89,28 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
       opera: sku.opera,
       larghezza: sku.larghezza,
       altezza: sku.altezza,
+      supporto: sku.supporto,
+      anno: sku.anno,
       condizione: sku.condizione,
       tipo: tipiOggetto.nome,
+      tag: sku.tag,
+      note: sku.note,
       bloccatoVendita: sku.bloccatoVendita,
+      valoreCarico: sku.valoreCarico,
       prezzoEbay: sku.prezzoEbay,
+      prezzoCatawiki: sku.prezzoCatawiki,
+      riservaCatawiki: sku.riservaCatawiki,
       quantitaDisponibile: sql<number>`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`.mapWith(Number),
+      // string_agg ignora da solo i NULL (righe senza movimenti per via del
+      // left join) - nessun gate esplicito necessario.
+      proprieta: sql<string>`coalesce(string_agg(distinct ${movimentiMagazzino.proprieta}::text, ', '), '')`,
+      // Subquery correlata (non un altro left join): un secondo left join a
+      // foto_sku qui creerebbe un fan-out incrociato con i movimenti gia'
+      // joinati, gonfiando quantitaDisponibile. Stesso pattern gia' in uso
+      // in cercaCandidatiDuplicati sotto.
+      numeroFoto: sql<number>`(select count(*) from foto_sku fs where fs.sku_id = ${sku.id})`.mapWith(Number),
+      createdAt: sku.createdAt,
+      updatedAt: sku.updatedAt,
     })
     .from(sku)
     .innerJoin(tipiOggetto, eq(sku.tipoId, tipiOggetto.id))
@@ -89,7 +120,11 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
     .having(having)
     .orderBy(asc(sku.skuCode));
 
-  return righe;
+  return righe.map((r) => ({
+    ...r,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+  }));
 }
 
 export async function contaSku(): Promise<number> {
