@@ -1,6 +1,16 @@
 import { and, asc, desc, eq, exists, ilike, notExists, or, sql } from "drizzle-orm";
 import { db } from "./index";
-import { condizioneEnum, fotoSku, movimentiMagazzino, sku, tipiOggetto, ubicazioni } from "./schema";
+import {
+  batchLotti,
+  batchPubblicazione,
+  canali,
+  condizioneEnum,
+  fotoSku,
+  movimentiMagazzino,
+  sku,
+  tipiOggetto,
+  ubicazioni,
+} from "./schema";
 
 export type RigaMagazzino = {
   id: number;
@@ -27,6 +37,14 @@ export type RigaMagazzino = {
   // la colonna, es. "FP", "FP, CV", o "" se nessun movimento ancora.
   proprieta: string;
   numeroFoto: number;
+  // Quanto di quantitaDisponibile e' gia' bloccato su un altro batch
+  // CONFERMATO su un canale ESCLUSIVO (vedi impegnatoSql sotto) - disponibile
+  // reale = quantitaDisponibile - impegnato. Spostato qui da
+  // pubblicazione-queries.ts (2026-09-23 sera): serve nella vista Magazzino
+  // generale tanto quanto nel picker lotti di Pubblicazione, e cosi'
+  // getMagazzino resta l'unica fonte per RigaMagazzino invece di duplicare
+  // il concetto in due punti.
+  impegnato: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -47,6 +65,7 @@ export type ColonnaOrdinabile =
   | "condizione"
   | "proprieta"
   | "disponibile"
+  | "impegnato"
   | "numeroFoto"
   | "valoreCarico"
   | "prezzoEbay"
@@ -66,6 +85,12 @@ export type FiltriMagazzino = {
   bloccato?: "si" | "no";
   disponibilita?: "disponibile" | "esaurito";
   senzaFoto?: boolean;
+  // Inverso di senzaFoto - solo sku con almeno una foto salvata. Dimensione
+  // indipendente (non un terzo valore sullo stesso campo) apposta: la vista
+  // Magazzino generale non la usa mai, solo il picker lotti di Pubblicazione
+  // (vedi getSkuSelezionabiliPerBatch sotto) - tenerla separata da senzaFoto
+  // evita di toccare il filtro gia' in uso su src/app/page.tsx.
+  conFoto?: boolean;
   ordina?: ColonnaOrdinabile;
   direzione?: "asc" | "desc";
 };
@@ -96,6 +121,42 @@ const RANGO_CONDIZIONE = sql`case ${sku.condizione}
 const quantitaDisponibileSql = () => sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`;
 const proprietaSql = () => sql`coalesce(string_agg(distinct ${movimentiMagazzino.proprieta}::text, ', '), '')`;
 const numeroFotoSql = () => sql`(select count(*) from foto_sku fs where fs.sku_id = ${sku.id})`;
+
+// Equivalente dinamico di MASTER!QTY_DISPONIBILE_REALE: conta le righe
+// batch_lotti dove il batch e' confermato, il canale e' esclusivo, e
+// (asta_fisica: statoRiga=accettato) OR (asta_online/statico: statoRiga=attivo).
+// Spostata qui da pubblicazione-queries.ts (2026-09-23 sera, insieme al
+// campo impegnato su RigaMagazzino sopra). Stringa letterale "sku"."id" (non
+// ${sku.id} interpolato) DELIBERATA: interpolare un oggetto Column di
+// Drizzle in una subquery correlata dentro una select che unisce piu'
+// tabelle con colonne dallo stesso nome puo' perdere il prefisso tabella e
+// generare "column reference is ambiguous" (42702) - gia' scoperto e
+// corretto in una sessione precedente, vedi note storiche del modulo
+// Pubblicazione. Funzione (non costante) per lo stesso motivo di
+// quantitaDisponibileSql/proprietaSql/numeroFotoSql sopra.
+export function impegnatoSql() {
+  return sql<number>`(
+    select count(*)::int
+    from ${batchLotti} bl
+    inner join ${batchPubblicazione} bp on bp.id = bl.batch_id
+    inner join ${canali} c on c.id = bp.canale_id
+    where bl.sku_id = "sku"."id"
+      and bp.stato = 'confermato'
+      and c.esclusivo = true
+      and (
+        (c.tipo = 'asta_fisica' and bl.stato_riga = 'accettato')
+        or (c.tipo != 'asta_fisica' and bl.stato_riga = 'attivo')
+      )
+  )`;
+}
+
+export async function getImpegnatoPerSku(skuId: number): Promise<number> {
+  const [riga] = await db
+    .select({ impegnato: impegnatoSql() })
+    .from(sku)
+    .where(eq(sku.id, skuId));
+  return riga?.impegnato ?? 0;
+}
 
 export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMagazzino[]> {
   const condizioniWhere = [];
@@ -130,6 +191,11 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
       notExists(db.select({ uno: sql`1` }).from(fotoSku).where(eq(fotoSku.skuId, sku.id)))
     );
   }
+  if (filtri.conFoto) {
+    condizioniWhere.push(
+      exists(db.select({ uno: sql`1` }).from(fotoSku).where(eq(fotoSku.skuId, sku.id)))
+    );
+  }
 
   const having =
     filtri.disponibilita === "disponibile"
@@ -153,6 +219,7 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
     condizione: RANGO_CONDIZIONE,
     proprieta: proprietaSql(),
     disponibile: quantitaDisponibileSql(),
+    impegnato: impegnatoSql(),
     numeroFoto: numeroFotoSql(),
     valoreCarico: sku.valoreCarico,
     prezzoEbay: sku.prezzoEbay,
@@ -194,8 +261,11 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
       // Subquery correlata (non un altro left join): un secondo left join a
       // foto_sku qui creerebbe un fan-out incrociato con i movimenti gia'
       // joinati, gonfiando quantitaDisponibile. Stesso pattern gia' in uso
-      // in cercaCandidatiDuplicati sotto.
+      // in cercaCandidatiDuplicati sotto. impegnato segue lo stesso motivo,
+      // in piu' vedi la nota sulla stringa letterale "sku"."id" su
+      // impegnatoSql sopra.
       numeroFoto: numeroFotoSql().mapWith(Number),
+      impegnato: impegnatoSql().mapWith(Number),
       createdAt: sku.createdAt,
       updatedAt: sku.updatedAt,
     })
@@ -212,6 +282,39 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   }));
+}
+
+// Filtri esposti al picker lotti di Pubblicazione: stessa forma di
+// FiltriMagazzino MA senza bloccato/disponibilita - quei due non sono una
+// scelta dell'utente li', sono sempre forzati (vedi
+// getSkuSelezionabiliPerBatch sotto), quindi non ha senso lasciarli
+// nell'interfaccia pubblica di questa funzione.
+export type FiltriPickerPubblicazione = Omit<FiltriMagazzino, "bloccato" | "disponibilita">;
+
+// Vista Pubblicazione (picker lotti da aggiungere a un batch, 2026-09-23
+// sera) - riusa getMagazzino con tre esclusioni SEMPRE attive, mai
+// togglabili da UI, confermate con l'utente:
+// - bloccatoVendita=true -> mai selezionabile per un batch (stessa regola
+//   gia' in vigore ovunque altro nel Magazzino).
+// - quantitaDisponibile <= 0 -> mai selezionabile (equivalente al
+//   doppio_cancello_base gia' fissato per i fogli portale Excel:
+//   QTY_TOTALE > 0). A differenza della vista Magazzino generale, qui non
+//   e' un filtro opzionale: non ha senso proporre in un batch uno sku senza
+//   scorta.
+// - skuCode = "IGNORA" -> mai selezionabile. A differenza di Excel (dove
+//   RANK_SKU/COUNTIF tollerava un duplicato "IGNORA" per foglio), qui
+//   skuCode e' UNIQUE quindi non puo' comunque esisterne piu' di uno, ma va
+//   comunque escluso se presente.
+// NOTA RANK_SKU (Master colonna B, COUNTIF progressivo su FP/CV): nessun
+// filtro equivalente qui - il problema che risolve in Excel (stesso sku
+// duplicato su due righe fisiche, foglio FP e foglio CV) non esiste in
+// questo schema, dove sku.skuCode e' UNIQUE e quantitaDisponibile e' gia'
+// una SUM aggregata su tutti i movimenti (FP e CV inclusi) dello stesso sku.
+export async function getSkuSelezionabiliPerBatch(
+  filtri: FiltriPickerPubblicazione = {}
+): Promise<RigaMagazzino[]> {
+  const righe = await getMagazzino({ ...filtri, bloccato: "no", disponibilita: "disponibile" });
+  return righe.filter((r) => r.skuCode !== "IGNORA");
 }
 
 export async function contaSku(): Promise<number> {
