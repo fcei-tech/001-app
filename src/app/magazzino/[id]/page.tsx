@@ -1,35 +1,19 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown } from "lucide-react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
 import { getSkuById, getTipiOggetto, getUbicazioniAttive, getMovimentiSku, getFotoSku } from "@/db/queries";
-import { modificaSku, eliminaFotoSku, spostaFotoSku } from "@/app/magazzino/actions";
+import { eliminaFotoSku, spostaFotoSku } from "@/app/magazzino/actions";
 import { MovimentoForm } from "./movimento-form";
 import { FotoForm } from "./foto-form";
-import { EliminaSkuButton } from "./elimina-sku-button";
-
-const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"];
+import { SchedaSkuForm } from "./scheda-form";
 
 function formatData(d: Date) {
   return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
 }
-
-const MESSAGGI: Record<string, string> = {
-  creato: "Sku creato.",
-  carico: "Carico registrato.",
-  salvato: "Modifiche salvate.",
-  movimento: "Movimento registrato.",
-  foto: "Foto caricata su Shopify CDN.",
-  fotoeliminata: "Foto rimossa dalla galleria.",
-};
 
 export const dynamic = "force-dynamic";
 
@@ -73,132 +57,7 @@ export default async function ModificaSkuPage({
     <div className="min-h-full flex flex-col">
       <Header />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
-        <Button asChild variant="ghost" size="sm" className="mb-4 -ml-2">
-          <Link href="/">
-            <ArrowLeft /> Torna al Magazzino
-          </Link>
-        </Button>
-
-        {esito && (
-          <div className="mb-4 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
-            {MESSAGGI[esito]}
-          </div>
-        )}
-
-        <div className="mb-6 flex items-baseline justify-between">
-          <div>
-            <h1 className="font-mono text-lg font-semibold tracking-tight">{item.skuCode}</h1>
-            <p className="text-sm text-muted-foreground">{item.artista} — {item.opera}</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <p className="text-sm text-muted-foreground">
-              Disponibile: <span className="font-medium text-foreground">{disponibile}</span>
-            </p>
-            <EliminaSkuButton skuId={item.id} skuCode={item.skuCode} />
-          </div>
-        </div>
-
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Dati sku</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form action={modificaSku} className="flex flex-col gap-6">
-              <input type="hidden" name="id" value={item.id} />
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="artista">Artista *</Label>
-                  <Input id="artista" name="artista" defaultValue={item.artista} required />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="opera">Opera *</Label>
-                  <Input id="opera" name="opera" defaultValue={item.opera} required />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="larghezza">Larghezza (cm)</Label>
-                  <Input id="larghezza" name="larghezza" inputMode="decimal" defaultValue={item.larghezza ?? ""} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="altezza">Altezza (cm)</Label>
-                  <Input id="altezza" name="altezza" inputMode="decimal" defaultValue={item.altezza ?? ""} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="supporto">Supporto</Label>
-                  <Input id="supporto" name="supporto" defaultValue={item.supporto ?? ""} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="anno">Anno / epoca</Label>
-                  <Input id="anno" name="anno" defaultValue={item.anno ?? ""} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="tipoId">Tipo</Label>
-                  <Select name="tipoId" defaultValue={String(item.tipoId)}>
-                    <SelectTrigger id="tipoId">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {tipi.map((t) => (
-                        <SelectItem key={t.id} value={String(t.id)}>{t.nome}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="condizione">Condizione</Label>
-                  <Select name="condizione" defaultValue={item.condizione}>
-                    <SelectTrigger id="condizione">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CONDIZIONI.map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-1.5 sm:col-span-2">
-                  <Label htmlFor="tag">Tag (testo libero)</Label>
-                  <Input id="tag" name="tag" defaultValue={item.tag ?? ""} />
-                </div>
-                <div className="flex flex-col gap-1.5 sm:col-span-2">
-                  <Label htmlFor="note">Note</Label>
-                  <Input id="note" name="note" defaultValue={item.note ?? ""} />
-                </div>
-              </div>
-
-              <div className="border-t pt-4">
-                <p className="mb-3 text-sm font-medium text-muted-foreground">Dati commerciali</p>
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="valoreCarico">Valore di carico</Label>
-                    <Input id="valoreCarico" name="valoreCarico" inputMode="decimal" defaultValue={item.valoreCarico ?? ""} placeholder="€ (obbligatorio se FP)" />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="prezzoEbay">Prezzo eBay</Label>
-                    <Input id="prezzoEbay" name="prezzoEbay" inputMode="decimal" defaultValue={item.prezzoEbay ?? ""} />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="prezzoCatawiki">Prezzo Catawiki</Label>
-                    <Input id="prezzoCatawiki" name="prezzoCatawiki" inputMode="decimal" defaultValue={item.prezzoCatawiki ?? ""} />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="riservaCatawiki">Riserva Catawiki</Label>
-                    <Input id="riservaCatawiki" name="riservaCatawiki" inputMode="decimal" defaultValue={item.riservaCatawiki ?? ""} />
-                  </div>
-                </div>
-              </div>
-
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox name="bloccatoVendita" defaultChecked={item.bloccatoVendita} />
-                Bloccato per la vendita (escluso da tutti i portali)
-              </label>
-
-              <div>
-                <Button type="submit">Salva modifiche</Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+        <SchedaSkuForm item={item} tipi={tipi} disponibile={disponibile} esito={esito} />
 
         <Card className="mb-6">
           <CardHeader>
