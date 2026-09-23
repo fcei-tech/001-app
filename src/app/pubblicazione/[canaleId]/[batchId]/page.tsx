@@ -4,13 +4,14 @@ import { ChevronLeft } from "lucide-react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
 import { getBatch } from "@/db/pubblicazione-queries";
-import { getMagazzino } from "@/db/queries";
-import { aggiungiLottiABatch, rimuoviLottoDaBatch, confermaBatchAction } from "../../actions";
+import { getSkuSelezionabiliPerBatch, getTipiOggetto, type ColonnaOrdinabile } from "@/db/queries";
+import { rimuoviLottoDaBatch, confermaBatchAction, accettaLottoAction } from "../../actions";
+import { SelettoreLottiBatch } from "@/components/pubblicazione/selettore-lotti";
+import { EliminaBatchButton } from "@/components/pubblicazione/elimina-batch-button";
 
 const ETICHETTE_STATO: Record<string, { label: string; variant: "secondary" | "success" | "outline" }> = {
   bozza: { label: "Bozza", variant: "secondary" },
@@ -18,18 +19,45 @@ const ETICHETTE_STATO: Record<string, { label: string; variant: "secondary" | "s
   generato: { label: "Generato", variant: "outline" },
 };
 
+const ETICHETTE_STATO_RIGA: Record<string, { label: string; variant: "secondary" | "success" | "outline" }> = {
+  attivo: { label: "Attivo", variant: "secondary" },
+  candidato: { label: "Candidato", variant: "outline" },
+  accettato: { label: "Accettato", variant: "success" },
+};
+
+// Stessa whitelist di validazione del parametro URL ?ordina= gia' in uso su
+// src/app/page.tsx (Magazzino), estesa a "impegnato" - deve restare
+// allineata a ColonnaOrdinabile in src/db/queries.ts.
+const COLONNE_ORDINABILI: ColonnaOrdinabile[] = [
+  "skuCode", "artista", "opera", "larghezza", "supporto", "anno", "tipo", "condizione",
+  "proprieta", "disponibile", "impegnato", "numeroFoto", "valoreCarico", "prezzoEbay",
+  "prezzoCatawiki", "riservaCatawiki", "tag", "note", "stato", "creato", "aggiornato",
+];
+
 function formatData(d: Date) {
   return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
 }
 
 export const dynamic = "force-dynamic";
 
+type SearchParams = {
+  q?: string;
+  tipo?: string;
+  condizione?: string;
+  proprieta?: string;
+  confoto?: string;
+  ordina?: string;
+  direzione?: string;
+  aggiunti?: string;
+  confermato?: string;
+};
+
 export default async function BatchPubblicazionePage({
   params,
   searchParams,
 }: {
   params: Promise<{ canaleId: string; batchId: string }>;
-  searchParams: Promise<{ q?: string; aggiunti?: string; confermato?: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   const { canaleId, batchId } = await params;
   const sp = await searchParams;
@@ -39,18 +67,32 @@ export default async function BatchPubblicazionePage({
 
   const stato = ETICHETTE_STATO[batch.stato] ?? { label: batch.stato, variant: "outline" as const };
   const inBozza = batch.stato === "bozza";
+  // Colonna Azioni per-riga: Rimuovi in bozza, Accetta sui canali asta
+  // fisica anche a batch confermato (la casa d'asta risponde solo dopo che
+  // il batch e' stato inviato - vedi accettaLottoAction in actions.ts).
+  const mostraColonnaAzioni = inBozza || batch.canale.tipo === "asta_fisica";
   const idGiaInBatch = new Set(batch.lotti.map((l) => l.skuId));
 
-  const ricerca = sp.q?.trim();
-  const risultatiRicerca =
-    inBozza && ricerca
-      ? (await getMagazzino({ ricerca, bloccato: "no" })).filter((r) => !idGiaInBatch.has(r.id))
-      : [];
+  const tipoId = sp.tipo && sp.tipo !== "tutti" ? Number(sp.tipo) : undefined;
+  const condizione = sp.condizione && sp.condizione !== "tutti" ? sp.condizione : undefined;
+  const proprieta = sp.proprieta === "FP" || sp.proprieta === "CV" ? sp.proprieta : undefined;
+  const conFoto = sp.confoto === "si";
+  const ordina = sp.ordina && (COLONNE_ORDINABILI as string[]).includes(sp.ordina) ? (sp.ordina as ColonnaOrdinabile) : undefined;
+  const direzione = sp.direzione === "desc" ? "desc" : sp.direzione === "asc" ? "asc" : undefined;
+  const filtriAttiviPicker = Boolean(sp.q || tipoId || condizione || proprieta || conFoto);
+
+  const [righeDisponibili, tipi] = inBozza
+    ? await Promise.all([
+        getSkuSelezionabiliPerBatch({ ricerca: sp.q, tipoId, condizione, proprieta, conFoto, ordina, direzione }),
+        getTipiOggetto(),
+      ])
+    : [[], []];
+  const righePicker = righeDisponibili.filter((r) => !idGiaInBatch.has(r.id));
 
   return (
     <div className="min-h-full flex flex-col">
       <Header />
-      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
         <Link
           href={`/pubblicazione/${canaleId}`}
           className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -68,7 +110,10 @@ export default async function BatchPubblicazionePage({
               {batch.confermatoAt && <> · confermato il {formatData(batch.confermatoAt)}</>}
             </p>
           </div>
-          <Badge variant={stato.variant}>{stato.label}</Badge>
+          <div className="flex items-center gap-2">
+            {inBozza && <EliminaBatchButton batchId={batch.id} canaleId={Number(canaleId)} />}
+            <Badge variant={stato.variant}>{stato.label}</Badge>
+          </div>
         </div>
 
         {sp.aggiunti && (
@@ -98,32 +143,46 @@ export default async function BatchPubblicazionePage({
                     <TableHead>Artista</TableHead>
                     <TableHead>Opera</TableHead>
                     <TableHead>Stato riga</TableHead>
-                    {inBozza && <TableHead className="text-right">Azioni</TableHead>}
+                    {mostraColonnaAzioni && <TableHead className="text-right">Azioni</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {batch.lotti.map((l) => (
-                    <TableRow key={l.id}>
-                      <TableCell className="font-mono text-xs">{l.sku.skuCode}</TableCell>
-                      <TableCell>{l.sku.artista}</TableCell>
-                      <TableCell>{l.sku.opera}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{l.statoRiga}</Badge>
-                      </TableCell>
-                      {inBozza && (
-                        <TableCell className="text-right">
-                          <form action={rimuoviLottoDaBatch}>
-                            <input type="hidden" name="batchLottoId" value={l.id} />
-                            <input type="hidden" name="batchId" value={batch.id} />
-                            <input type="hidden" name="canaleId" value={canaleId} />
-                            <Button type="submit" variant="ghost" size="sm">
-                              Rimuovi
-                            </Button>
-                          </form>
+                  {batch.lotti.map((l) => {
+                    const statoRiga = ETICHETTE_STATO_RIGA[l.statoRiga] ?? { label: l.statoRiga, variant: "outline" as const };
+                    return (
+                      <TableRow key={l.id}>
+                        <TableCell className="font-mono text-xs">{l.sku.skuCode}</TableCell>
+                        <TableCell>{l.sku.artista}</TableCell>
+                        <TableCell>{l.sku.opera}</TableCell>
+                        <TableCell>
+                          <Badge variant={statoRiga.variant}>{statoRiga.label}</Badge>
                         </TableCell>
-                      )}
-                    </TableRow>
-                  ))}
+                        {mostraColonnaAzioni && (
+                          <TableCell className="text-right">
+                            {inBozza ? (
+                              <form action={rimuoviLottoDaBatch}>
+                                <input type="hidden" name="batchLottoId" value={l.id} />
+                                <input type="hidden" name="batchId" value={batch.id} />
+                                <input type="hidden" name="canaleId" value={canaleId} />
+                                <Button type="submit" variant="ghost" size="sm">
+                                  Rimuovi
+                                </Button>
+                              </form>
+                            ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "candidato" ? (
+                              <form action={accettaLottoAction}>
+                                <input type="hidden" name="batchLottoId" value={l.id} />
+                                <input type="hidden" name="batchId" value={batch.id} />
+                                <input type="hidden" name="canaleId" value={canaleId} />
+                                <Button type="submit" variant="secondary" size="sm">
+                                  Accetta
+                                </Button>
+                              </form>
+                            ) : null}
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -135,61 +194,28 @@ export default async function BatchPubblicazionePage({
             <Card className="mb-6">
               <CardHeader>
                 <CardTitle>Aggiungi lotti</CardTitle>
-                <CardDescription>Cerca per artista, opera o sku tra gli sku non bloccati alla vendita.</CardDescription>
+                <CardDescription>
+                  Modulo Magazzino filtrato e interattivo: esclude sempre sku bloccati per la vendita, senza scorta o già nel batch.
+                </CardDescription>
               </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                {/* GET semplice, nessun JS necessario - stesso motivo per cui
-                    piu' sotto uso <input type="checkbox"> nativo invece del
-                    componente Radix Checkbox: vedi fix_filtri_lista_magazzino_
-                    2026_09_23 in knowledge, gli hidden bubble input di Radix
-                    per la serializzazione form si sono gia' rivelati fragili
-                    nella WKWebView reale dell'app - qui non serve rischiare,
-                    un input nativo name="skuId" e' semplice e affidabile. */}
-                <form method="get" className="flex gap-2">
-                  <Input type="text" name="q" defaultValue={sp.q ?? ""} placeholder="Artista, opera o sku..." />
-                  <Button type="submit" variant="secondary">
-                    Cerca
-                  </Button>
-                </form>
-
-                {ricerca &&
-                  (risultatiRicerca.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Nessun risultato (o gia&apos; presente nel batch).</p>
-                  ) : (
-                    <form action={aggiungiLottiABatch} className="flex flex-col gap-3">
-                      <input type="hidden" name="batchId" value={batch.id} />
-                      <input type="hidden" name="canaleId" value={canaleId} />
-                      <div className="rounded-lg border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="w-10" />
-                              <TableHead>Sku</TableHead>
-                              <TableHead>Artista</TableHead>
-                              <TableHead>Opera</TableHead>
-                              <TableHead className="text-right">Disponibile</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {risultatiRicerca.map((r) => (
-                              <TableRow key={r.id}>
-                                <TableCell>
-                                  <input type="checkbox" name="skuId" value={r.id} className="size-4" aria-label={`Seleziona ${r.skuCode}`} />
-                                </TableCell>
-                                <TableCell className="font-mono text-xs">{r.skuCode}</TableCell>
-                                <TableCell>{r.artista}</TableCell>
-                                <TableCell>{r.opera}</TableCell>
-                                <TableCell className="text-right tabular-nums">{r.quantitaDisponibile}</TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                      <Button type="submit" className="self-start">
-                        Aggiungi selezionati
-                      </Button>
-                    </form>
-                  ))}
+              <CardContent>
+                <SelettoreLottiBatch
+                  righe={righePicker}
+                  tipi={tipi}
+                  batchId={batch.id}
+                  canaleId={Number(canaleId)}
+                  basePath={`/pubblicazione/${canaleId}/${batchId}`}
+                  filtriAttivi={filtriAttiviPicker}
+                  filtriIniziali={{
+                    q: sp.q ?? "",
+                    tipo: tipoId ? String(tipoId) : "tutti",
+                    condizione: condizione ?? "tutti",
+                    proprieta: proprieta ?? "tutti",
+                    confoto: conFoto ? "si" : "no",
+                  }}
+                  ordinaAttuale={ordina}
+                  direzioneAttuale={direzione ?? "asc"}
+                />
               </CardContent>
             </Card>
 
