@@ -1,12 +1,15 @@
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "./index";
 import {
   canali,
   batchPubblicazione,
   batchLotti,
   sku,
-  type Canale,
 } from "./schema";
+
+// Canale non e' esportato come tipo da schema.ts (nessuna convenzione
+// $inferSelect in uso li') - derivato qui localmente.
+type Canale = typeof canali.$inferSelect;
 
 export async function getCanali(): Promise<Canale[]> {
   return db.query.canali.findMany({
@@ -87,7 +90,8 @@ export async function aggiungiLotti(batchId: number, skuIds: number[]) {
     throw new Error("Non si puo' modificare un batch gia' confermato");
   }
 
-  const statoIniziale = batch.canale.tipo === "asta_fisica" ? "candidato" : "attivo";
+  const statoIniziale: "attivo" | "candidato" | "accettato" =
+    batch.canale.tipo === "asta_fisica" ? "candidato" : "attivo";
 
   await db
     .insert(batchLotti)
