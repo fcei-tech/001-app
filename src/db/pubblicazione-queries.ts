@@ -1,10 +1,9 @@
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "./index";
 import {
   canali,
   batchPubblicazione,
   batchLotti,
-  sku,
 } from "./schema";
 
 // Canale non e' esportato come tipo da schema.ts (nessuna convenzione
@@ -105,6 +104,11 @@ export async function rimuoviLotto(batchLottoId: number) {
   await db.delete(batchLotti).where(eq(batchLotti.id, batchLottoId));
 }
 
+// Segna un lotto "candidato" (solo canali asta_fisica) come "accettato" -
+// cioe' la casa d'asta lo ha davvero preso in consegna, e da questo momento
+// consuma disponibilita' (vedi impegnatoSql in src/db/queries.ts). Nessun
+// controllo di stato batch qui (stesso principio di basso livello di
+// rimuoviLotto sopra) - il chiamante verifica canale.tipo/statoRiga prima.
 export async function accettaLotto(batchLottoId: number) {
   await db
     .update(batchLotti)
@@ -134,31 +138,26 @@ export async function segnaBatchGenerato(batchId: number) {
     .where(eq(batchPubblicazione.id, batchId));
 }
 
-// Equivalente dinamico di MASTER!QTY_DISPONIBILE_REALE: conta le righe
-// batch_lotti dove il batch e' confermato, il canale e' esclusivo, e
-// (asta_fisica: statoRiga=accettato) OR (asta_online/statico: statoRiga=attivo).
-// Funzione (non costante) perche' sql`` e' mutabile via .mapWith() - stesso
-// motivo di quantitaDisponibileSql/proprietaSql/numeroFotoSql in queries.ts.
-export function impegnatoSql() {
-  return sql<number>`(
-    select count(*)::int
-    from ${batchLotti} bl
-    inner join ${batchPubblicazione} bp on bp.id = bl.batch_id
-    inner join ${canali} c on c.id = bp.canale_id
-    where bl.sku_id = "sku"."id"
-      and bp.stato = 'confermato'
-      and c.esclusivo = true
-      and (
-        (c.tipo = 'asta_fisica' and bl.stato_riga = 'accettato')
-        or (c.tipo != 'asta_fisica' and bl.stato_riga = 'attivo')
-      )
-  )`;
-}
+// Elimina un batch SOLO in stato bozza (2026-09-23 sera, richiesta esplicita
+// utente dopo test installazione reale: "manca la gestione batch, non posso
+// mai cancellarli"). Un batch confermato/generato non si puo' mai eliminare
+// - ha gia' consumato disponibilita' su un canale esclusivo (impegnatoSql)
+// e/o prodotto un export reale, cancellarlo silenziosamente romperebbe
+// quella contabilita'. Nessuna eccezione, nessun bottone "forza" in UI.
+// batch_lotti non ha onDelete cascade sullo schema (vedi schema.ts) -
+// cancellazione manuale delle righe figlie prima del batch, dentro una
+// transazione (stesso pattern gia' in uso in src/app/magazzino/actions.ts).
+export async function eliminaBatch(batchId: number) {
+  const batch = await db.query.batchPubblicazione.findFirst({
+    where: (b, { eq }) => eq(b.id, batchId),
+  });
+  if (!batch) throw new Error("Batch non trovato");
+  if (batch.stato !== "bozza") {
+    throw new Error("Non si puo' eliminare un batch gia' confermato");
+  }
 
-export async function getImpegnatoPerSku(skuId: number): Promise<number> {
-  const [riga] = await db
-    .select({ impegnato: impegnatoSql() })
-    .from(sku)
-    .where(eq(sku.id, skuId));
-  return riga?.impegnato ?? 0;
+  await db.transaction(async (tx) => {
+    await tx.delete(batchLotti).where(eq(batchLotti.batchId, batchId));
+    await tx.delete(batchPubblicazione).where(eq(batchPubblicazione.id, batchId));
+  });
 }
