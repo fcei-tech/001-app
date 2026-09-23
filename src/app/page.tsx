@@ -5,7 +5,15 @@ import { getMagazzino, getTipiOggetto, type ColonnaOrdinabile } from "@/db/queri
 import { Plus, FileSpreadsheet, Images } from "lucide-react";
 import { VistaMagazzino } from "@/components/magazzino/vista-magazzino";
 
-const COLONNE_ORDINABILI: ColonnaOrdinabile[] = ["skuCode", "artista", "opera", "larghezza", "supporto", "anno", "tipo", "condizione"];
+// Whitelist di validazione del parametro URL ?ordina= (2026-09-23, estesa a
+// tutte le colonne per regola permanente - vedi ColonnaOrdinabile in
+// src/db/queries.ts e MAPPA_ORDINABILI in vista-magazzino.tsx, che devono
+// restare allineate a questa lista).
+const COLONNE_ORDINABILI: ColonnaOrdinabile[] = [
+  "skuCode", "artista", "opera", "larghezza", "supporto", "anno", "tipo", "condizione",
+  "proprieta", "disponibile", "numeroFoto", "valoreCarico", "prezzoEbay", "prezzoCatawiki",
+  "riservaCatawiki", "tag", "note", "stato", "creato", "aggiornato",
+];
 
 type SearchParams = {
   q?: string;
