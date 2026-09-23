@@ -113,11 +113,17 @@ function condizioneVariant(c: string) {
   return "warning" as const;
 }
 
-// Colonne su cui e' possibile ordinare la lista cliccando l'intestazione
-// (2026-09-23) -> chiave lato server in src/db/queries.ts/ColonnaOrdinabile.
+// REGOLA PERMANENTE (2026-09-23, richiesta esplicita cliente dopo v0.1.18
+// parziale): ogni colonna della tabella Magazzino deve essere ordinabile,
+// senza eccezioni - non solo un sottoinsieme. Per questo la mappa e' un
+// Record TOTALE (non Partial) su ColonnaId: se in futuro si aggiunge una
+// voce a ColonnaId senza aggiungerla qui, il progetto non compila piu' -
+// impossibile dimenticare una colonna non ordinabile per svista.
 // "misura" (colonna visiva L x H) ordina per larghezza, unica dimensione
 // numerica delle due - stessa semplificazione gia' notata nel delta.
-const MAPPA_ORDINABILI: Partial<Record<ColonnaId, ColonnaOrdinabile>> = {
+// Chiavi lato server in src/db/queries.ts/ColonnaOrdinabile (whitelist
+// anche in src/app/page.tsx/COLONNE_ORDINABILI per validare il parametro URL).
+const MAPPA_ORDINABILI: Record<ColonnaId, ColonnaOrdinabile> = {
   artista: "artista",
   opera: "opera",
   misura: "larghezza",
@@ -125,6 +131,18 @@ const MAPPA_ORDINABILI: Partial<Record<ColonnaId, ColonnaOrdinabile>> = {
   anno: "anno",
   tipo: "tipo",
   condizione: "condizione",
+  proprieta: "proprieta",
+  disponibile: "disponibile",
+  numeroFoto: "numeroFoto",
+  valoreCarico: "valoreCarico",
+  prezzoEbay: "prezzoEbay",
+  prezzoCatawiki: "prezzoCatawiki",
+  riservaCatawiki: "riservaCatawiki",
+  tag: "tag",
+  note: "note",
+  stato: "stato",
+  creato: "creato",
+  aggiornato: "aggiornato",
 };
 
 function IntestazioneOrdinabile({
@@ -356,6 +374,9 @@ export function VistaMagazzino({
   const router = useRouter();
   const [filtri, setFiltri] = useState(filtriIniziali);
   const ordinamentoCorrente: ColonnaOrdinabile = ordinaAttuale ?? "skuCode";
+  // true solo con un ordina= esplicito in URL (non il fallback a skuCode) -
+  // controlla la comparsa del pulsante "Azzera ordinamento".
+  const ordinamentoAttivo = Boolean(ordinaAttuale);
   const colonne = useSyncExternalStore(sottoscriviColonne, leggiColonneSalvate, () => COLONNE_DI_DEFAULT);
 
   // Copia locale delle righe per l'aggiornamento ottimistico dell'editing
@@ -444,9 +465,18 @@ export function VistaMagazzino({
   // ordinaOverride/direzioneOverride sono passati SOLO dal click su
   // un'intestazione ordinabile - in quel caso sostituiscono l'ordinamento
   // corrente mantenendo i filtri; un submit normale del form (bottone
-  // "Applica filtri" o azzeraFiltri sotto) mantiene invece l'ordinamento
-  // gia' attivo, per non perderlo ogni volta che si tocca un filtro.
-  function applicaFiltri(f: typeof filtri, ordinaOverride?: ColonnaOrdinabile, direzioneOverride?: "asc" | "desc") {
+  // "Applica filtri") mantiene invece l'ordinamento gia' attivo, per non
+  // perderlo ogni volta che si tocca un filtro.
+  // azzeraOrdinamento (2026-09-23, richiesta esplicita cliente) forza
+  // l'assenza di ordina/direzione nell'URL anche se ordinaAttuale e'
+  // valorizzato - e' l'unico modo per tornare davvero al default (SKU asc
+  // implicito) invece di doverlo ricostruire a mano cliccando piu' volte.
+  function applicaFiltri(
+    f: typeof filtri,
+    ordinaOverride?: ColonnaOrdinabile,
+    direzioneOverride?: "asc" | "desc",
+    azzeraOrdinamento?: boolean
+  ) {
     const params = new URLSearchParams();
     if (f.q) params.set("q", f.q);
     if (f.tipo !== "tutti") params.set("tipo", f.tipo);
@@ -455,22 +485,36 @@ export function VistaMagazzino({
     if (f.bloccato !== "tutti") params.set("bloccato", f.bloccato);
     if (f.disponibilita !== "tutti") params.set("disponibilita", f.disponibilita);
     if (f.senzafoto === "si") params.set("senzafoto", "si");
-    const ordinaFinale = ordinaOverride ?? ordinaAttuale;
-    const direzioneFinale = ordinaOverride ? (direzioneOverride ?? "asc") : direzioneAttuale;
-    if (ordinaFinale) params.set("ordina", ordinaFinale);
-    if (ordinaFinale && direzioneFinale === "desc") params.set("direzione", "desc");
+    if (!azzeraOrdinamento) {
+      const ordinaFinale = ordinaOverride ?? ordinaAttuale;
+      const direzioneFinale = ordinaOverride ? (direzioneOverride ?? "asc") : direzioneAttuale;
+      if (ordinaFinale) params.set("ordina", ordinaFinale);
+      if (ordinaFinale && direzioneFinale === "desc") params.set("direzione", "desc");
+    }
     const qs = params.toString();
     router.push(qs ? `/?${qs}` : "/");
   }
 
+  // Azzera sia i filtri sia l'ordinamento in un solo click - prima azzerava
+  // solo i filtri e non compariva nemmeno se era attivo solo un ordinamento,
+  // costringendo a ricliccare la colonna piu' volte per tornare al default.
   function azzeraFiltri() {
     const vuoti: typeof filtri = { q: "", tipo: "tutti", condizione: "tutti", proprieta: "tutti", bloccato: "tutti", disponibilita: "tutti", senzafoto: "no" };
     setFiltri(vuoti);
-    applicaFiltri(vuoti);
+    applicaFiltri(vuoti, undefined, undefined, true);
   }
 
+  // Ciclo a tre stati sulla stessa intestazione: asc -> desc -> azzerato
+  // (torna al default SKU asc, icona inattiva) invece del vecchio ciclo a
+  // due stati asc<->desc che non permetteva mai di tornare "non ordinato"
+  // senza un controllo separato.
   function gestisciOrdinamento(chiave: ColonnaOrdinabile) {
     const attiva = ordinamentoCorrente === chiave;
+    const ordinamentoEsplicito = ordinaAttuale === chiave;
+    if (attiva && ordinamentoEsplicito && direzioneAttuale === "desc") {
+      applicaFiltri(filtri, undefined, undefined, true);
+      return;
+    }
     const prossimaDirezione: "asc" | "desc" = attiva && direzioneAttuale === "asc" ? "desc" : "asc";
     applicaFiltri(filtri, chiave, prossimaDirezione);
   }
@@ -593,9 +637,9 @@ export function VistaMagazzino({
           </Select>
 
           <Button type="submit" variant="secondary">Applica filtri</Button>
-          {filtriAttivi && (
+          {(filtriAttivi || ordinamentoAttivo) && (
             <Button type="button" variant="ghost" size="sm" onClick={azzeraFiltri}>
-              <X /> Azzera filtri
+              <X /> {filtriAttivi && ordinamentoAttivo ? "Azzera filtri e ordinamento" : ordinamentoAttivo ? "Azzera ordinamento" : "Azzera filtri"}
             </Button>
           )}
 
@@ -704,12 +748,10 @@ export function VistaMagazzino({
                   onOrdina={gestisciOrdinamento}
                 />
                 {colonneVisibili.map((c) => {
+                  // MAPPA_ORDINABILI e' un Record totale su ColonnaId (vedi
+                  // sopra): ogni colonna visibile ha sempre una chiave di
+                  // ordinamento, nessun fallback a intestazione statica.
                   const chiaveOrdinamento = MAPPA_ORDINABILI[c.id];
-                  if (!chiaveOrdinamento) {
-                    return (
-                      <TableHead key={c.id} className={c.allineaDestra ? "text-right" : undefined}>{c.etichetta}</TableHead>
-                    );
-                  }
                   return (
                     <IntestazioneOrdinabile
                       key={c.id}
