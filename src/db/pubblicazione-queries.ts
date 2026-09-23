@@ -24,9 +24,7 @@ export async function getCanaleById(id: number): Promise<Canale | undefined> {
 // bozza (modificabili). N+1 query deliberata - i canali sono ~11, i batch
 // per canale pochi, non vale la pena di un'aggregazione SQL per questo
 // primo taglio.
-export async function getCanaliConConteggio(): Promise
-  (Canale & { batchTotali: number; batchInBozza: number })[]
-> {
+export async function getCanaliConConteggio(): Promise<(Canale & { batchTotali: number; batchInBozza: number })[]> {
   const elenco = await getCanali();
   return Promise.all(
     elenco.map(async (c) => {
