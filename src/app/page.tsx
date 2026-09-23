@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
-import { getMagazzino, getTipiOggetto } from "@/db/queries";
+import { getMagazzino, getTipiOggetto, type ColonnaOrdinabile } from "@/db/queries";
 import { Plus, FileSpreadsheet, Images } from "lucide-react";
 import { VistaMagazzino } from "@/components/magazzino/vista-magazzino";
+
+const COLONNE_ORDINABILI: ColonnaOrdinabile[] = ["skuCode", "artista", "opera", "larghezza", "supporto", "anno", "tipo", "condizione"];
 
 type SearchParams = {
   q?: string;
@@ -14,6 +16,8 @@ type SearchParams = {
   disponibilita?: string;
   senzafoto?: string;
   skueliminato?: string;
+  ordina?: string;
+  direzione?: string;
 };
 
 export const dynamic = "force-dynamic";
@@ -28,11 +32,13 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
   const bloccato = sp.bloccato === "si" || sp.bloccato === "no" ? sp.bloccato : undefined;
   const disponibilita = sp.disponibilita === "disponibile" || sp.disponibilita === "esaurito" ? sp.disponibilita : undefined;
   const senzaFoto = sp.senzafoto === "si";
+  const ordina = sp.ordina && (COLONNE_ORDINABILI as string[]).includes(sp.ordina) ? (sp.ordina as ColonnaOrdinabile) : undefined;
+  const direzione = sp.direzione === "desc" ? "desc" : sp.direzione === "asc" ? "asc" : undefined;
 
   const filtriAttivi = Boolean(q || tipoId || condizione || proprieta || bloccato || disponibilita || senzaFoto);
 
   const [righe, tipi] = await Promise.all([
-    getMagazzino({ ricerca: q, tipoId, condizione, proprieta, bloccato, disponibilita, senzaFoto }),
+    getMagazzino({ ricerca: q, tipoId, condizione, proprieta, bloccato, disponibilita, senzaFoto, ordina, direzione }),
     getTipiOggetto(),
   ]);
 
@@ -68,6 +74,8 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
             disponibilita: disponibilita ?? "tutti",
             senzafoto: senzaFoto ? "si" : "no",
           }}
+          ordinaAttuale={ordina}
+          direzioneAttuale={direzione ?? "asc"}
         />
       </main>
     </div>
