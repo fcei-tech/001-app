@@ -4,7 +4,6 @@ import { ChevronLeft } from "lucide-react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
@@ -16,10 +15,10 @@ import {
   accettaLottoAction,
   annullaAccettazioneAction,
   riportaInBozzaAction,
-  aggiornaOverrideLottoAction,
 } from "../../actions";
 import { SelettoreLottiBatch } from "@/components/pubblicazione/selettore-lotti";
 import { EliminaBatchButton } from "@/components/pubblicazione/elimina-batch-button";
+import { OverrideLottoForm } from "@/components/pubblicazione/override-lotto-form";
 
 const ETICHETTE_STATO: Record<string, { label: string; variant: "secondary" | "success" | "outline" }> = {
   bozza: { label: "Bozza", variant: "secondary" },
@@ -214,40 +213,13 @@ export default async function BatchPubblicazionePage({
                         {mostraOverride && (
                           <TableCell>
                             {overrideModificabile ? (
-                              <form action={aggiornaOverrideLottoAction} className="flex items-center gap-1">
-                                <input type="hidden" name="batchLottoId" value={l.id} />
-                                <input type="hidden" name="batchId" value={batch.id} />
-                                <input type="hidden" name="canaleId" value={canaleId} />
-                                {mostraRiservaProposta ? (
-                                  <Input
-                                    type="text"
-                                    name="riservaProposta"
-                                    defaultValue={(l.override as OverrideLotto | null)?.riservaProposta ?? ""}
-                                    placeholder="facoltativo"
-                                    className="h-8 w-28"
-                                  />
-                                ) : (
-                                  <>
-                                    <Input
-                                      type="text"
-                                      name="prezzo"
-                                      defaultValue={(l.override as OverrideLotto | null)?.prezzo ?? ""}
-                                      placeholder="prezzo"
-                                      className="h-8 w-20"
-                                    />
-                                    <Input
-                                      type="text"
-                                      name="riserva"
-                                      defaultValue={(l.override as OverrideLotto | null)?.riserva ?? ""}
-                                      placeholder="riserva"
-                                      className="h-8 w-20"
-                                    />
-                                  </>
-                                )}
-                                <Button type="submit" variant="ghost" size="sm">
-                                  Salva
-                                </Button>
-                              </form>
+                              <OverrideLottoForm
+                                batchLottoId={l.id}
+                                batchId={batch.id}
+                                canaleId={Number(canaleId)}
+                                mostraRiservaProposta={mostraRiservaProposta}
+                                valoreIniziale={l.override as OverrideLotto | null}
+                              />
                             ) : mostraRiservaProposta ? (
                               (l.override as OverrideLotto | null)?.riservaProposta ?? "—"
                             ) : (
