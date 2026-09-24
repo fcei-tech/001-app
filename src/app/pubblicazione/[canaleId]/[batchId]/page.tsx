@@ -4,12 +4,20 @@ import { ChevronLeft } from "lucide-react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { getBatch } from "@/db/pubblicazione-queries";
+import { getBatch, type OverrideLotto } from "@/db/pubblicazione-queries";
 import { getSkuSelezionabiliPerBatch, getTipiOggetto, type ColonnaOrdinabile } from "@/db/queries";
-import { rimuoviLottoDaBatch, confermaBatchAction, accettaLottoAction } from "../../actions";
+import {
+  rimuoviLottoDaBatch,
+  confermaBatchAction,
+  accettaLottoAction,
+  annullaAccettazioneAction,
+  riportaInBozzaAction,
+  aggiornaOverrideLottoAction,
+} from "../../actions";
 import { SelettoreLottiBatch } from "@/components/pubblicazione/selettore-lotti";
 import { EliminaBatchButton } from "@/components/pubblicazione/elimina-batch-button";
 
@@ -72,6 +80,28 @@ export default async function BatchPubblicazionePage({
   // il batch e' stato inviato - vedi accettaLottoAction in actions.ts).
   const mostraColonnaAzioni = inBozza || batch.canale.tipo === "asta_fisica";
   const idGiaInBatch = new Set(batch.lotti.map((l) => l.skuId));
+  // "Riporta in bozza" (2026-09-23 notte, richiesta esplicita utente: "8. ok
+  // riporta in bozza bottone") - scappatoia per non lasciare un batch
+  // confermato senza via d'uscita finche' non esiste la generazione output
+  // vera. Bloccato se anche un solo lotto e' gia' "accettato" (vedi
+  // riportaInBozza in pubblicazione-queries.ts, che applica lo stesso
+  // controllo lato server).
+  // haLottiAccettati governa anche "Elimina batch" qui sotto (2026-09-24,
+  // regola allentata - vedi eliminaBatch in pubblicazione-queries.ts):
+  // stesso identico guard, stesso motivo.
+  const haLottiAccettati = batch.lotti.some((l) => l.statoRiga === "accettato");
+  const mostraRiportaInBozza = batch.stato === "confermato" && !haLottiAccettati;
+  const mostraEliminaBatch = !haLottiAccettati;
+  // Override per lotto (2026-09-24, richiesta esplicita utente - vedi
+  // OverrideLotto in pubblicazione-queries.ts): "Riserva proposta" su
+  // asta_fisica, "Prezzo/Riserva evento" su asta_online (Catawiki incluso,
+  // nessun caso speciale per nome). Mai effetto sul Magazzino, mai
+  // modificabile dopo che il batch e' "generato" (output gia' prodotto con
+  // i valori di allora).
+  const mostraRiservaProposta = batch.canale.tipo === "asta_fisica";
+  const mostraOverrideOnline = batch.canale.tipo === "asta_online";
+  const mostraOverride = mostraRiservaProposta || mostraOverrideOnline;
+  const overrideModificabile = mostraOverride && batch.stato !== "generato";
 
   const tipoId = sp.tipo && sp.tipo !== "tutti" ? Number(sp.tipo) : undefined;
   const condizione = sp.condizione && sp.condizione !== "tutti" ? sp.condizione : undefined;
@@ -111,7 +141,28 @@ export default async function BatchPubblicazionePage({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {inBozza && <EliminaBatchButton batchId={batch.id} canaleId={Number(canaleId)} />}
+            {mostraEliminaBatch && <EliminaBatchButton batchId={batch.id} canaleId={Number(canaleId)} />}
+            {mostraRiportaInBozza && (
+              <form action={riportaInBozzaAction}>
+                <input type="hidden" name="batchId" value={batch.id} />
+                <input type="hidden" name="canaleId" value={canaleId} />
+                <Button type="submit" variant="outline" size="sm">
+                  Riporta in bozza
+                </Button>
+              </form>
+            )}
+            {inBozza && (
+              // Spostato dal fondo pagina qui in alto (2026-09-23 notte,
+              // feedback utente: "voglio i bottoni in alto"), stesso motivo
+              // del bottone "Aggiungi" in SelettoreLottiBatch.
+              <form action={confermaBatchAction}>
+                <input type="hidden" name="batchId" value={batch.id} />
+                <input type="hidden" name="canaleId" value={canaleId} />
+                <Button type="submit" disabled={batch.lotti.length === 0}>
+                  Conferma batch
+                </Button>
+              </form>
+            )}
             <Badge variant={stato.variant}>{stato.label}</Badge>
           </div>
         </div>
@@ -143,6 +194,9 @@ export default async function BatchPubblicazionePage({
                     <TableHead>Artista</TableHead>
                     <TableHead>Opera</TableHead>
                     <TableHead>Stato riga</TableHead>
+                    {mostraOverride && (
+                      <TableHead>{mostraRiservaProposta ? "Riserva proposta" : "Prezzo / Riserva evento"}</TableHead>
+                    )}
                     {mostraColonnaAzioni && <TableHead className="text-right">Azioni</TableHead>}
                   </TableRow>
                 </TableHeader>
@@ -157,6 +211,50 @@ export default async function BatchPubblicazionePage({
                         <TableCell>
                           <Badge variant={statoRiga.variant}>{statoRiga.label}</Badge>
                         </TableCell>
+                        {mostraOverride && (
+                          <TableCell>
+                            {overrideModificabile ? (
+                              <form action={aggiornaOverrideLottoAction} className="flex items-center gap-1">
+                                <input type="hidden" name="batchLottoId" value={l.id} />
+                                <input type="hidden" name="batchId" value={batch.id} />
+                                <input type="hidden" name="canaleId" value={canaleId} />
+                                {mostraRiservaProposta ? (
+                                  <Input
+                                    type="text"
+                                    name="riservaProposta"
+                                    defaultValue={(l.override as OverrideLotto | null)?.riservaProposta ?? ""}
+                                    placeholder="facoltativo"
+                                    className="h-8 w-28"
+                                  />
+                                ) : (
+                                  <>
+                                    <Input
+                                      type="text"
+                                      name="prezzo"
+                                      defaultValue={(l.override as OverrideLotto | null)?.prezzo ?? ""}
+                                      placeholder="prezzo"
+                                      className="h-8 w-20"
+                                    />
+                                    <Input
+                                      type="text"
+                                      name="riserva"
+                                      defaultValue={(l.override as OverrideLotto | null)?.riserva ?? ""}
+                                      placeholder="riserva"
+                                      className="h-8 w-20"
+                                    />
+                                  </>
+                                )}
+                                <Button type="submit" variant="ghost" size="sm">
+                                  Salva
+                                </Button>
+                              </form>
+                            ) : mostraRiservaProposta ? (
+                              (l.override as OverrideLotto | null)?.riservaProposta ?? "—"
+                            ) : (
+                              `${(l.override as OverrideLotto | null)?.prezzo ?? "—"} / ${(l.override as OverrideLotto | null)?.riserva ?? "—"}`
+                            )}
+                          </TableCell>
+                        )}
                         {mostraColonnaAzioni && (
                           <TableCell className="text-right">
                             {inBozza ? (
@@ -177,6 +275,23 @@ export default async function BatchPubblicazionePage({
                                   Accetta
                                 </Button>
                               </form>
+                            ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "accettato" ? (
+                              // "Annulla accettazione" (2026-09-24, richiesta
+                              // esplicita utente): finche' non c'e' un
+                              // collegamento reale con le vendite, deve
+                              // restare possibile liberare un lotto da
+                              // "accettato" - altrimenti un errore o un
+                              // accordo saltato con la casa d'asta blocca
+                              // per sempre Elimina/Riporta in bozza sul
+                              // batch intero, senza rimedio.
+                              <form action={annullaAccettazioneAction}>
+                                <input type="hidden" name="batchLottoId" value={l.id} />
+                                <input type="hidden" name="batchId" value={batch.id} />
+                                <input type="hidden" name="canaleId" value={canaleId} />
+                                <Button type="submit" variant="outline" size="sm">
+                                  Annulla accettazione
+                                </Button>
+                              </form>
                             ) : null}
                           </TableCell>
                         )}
@@ -190,43 +305,34 @@ export default async function BatchPubblicazionePage({
         </Card>
 
         {inBozza && (
-          <>
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle>Aggiungi lotti</CardTitle>
-                <CardDescription>
-                  Modulo Magazzino filtrato e interattivo: esclude sempre sku bloccati per la vendita, senza scorta o già nel batch.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <SelettoreLottiBatch
-                  righe={righePicker}
-                  tipi={tipi}
-                  batchId={batch.id}
-                  canaleId={Number(canaleId)}
-                  basePath={`/pubblicazione/${canaleId}/${batchId}`}
-                  filtriAttivi={filtriAttiviPicker}
-                  filtriIniziali={{
-                    q: sp.q ?? "",
-                    tipo: tipoId ? String(tipoId) : "tutti",
-                    condizione: condizione ?? "tutti",
-                    proprieta: proprieta ?? "tutti",
-                    confoto: conFoto ? "si" : "no",
-                  }}
-                  ordinaAttuale={ordina}
-                  direzioneAttuale={direzione ?? "asc"}
-                />
-              </CardContent>
-            </Card>
-
-            <form action={confermaBatchAction}>
-              <input type="hidden" name="batchId" value={batch.id} />
-              <input type="hidden" name="canaleId" value={canaleId} />
-              <Button type="submit" disabled={batch.lotti.length === 0}>
-                Conferma batch
-              </Button>
-            </form>
-          </>
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Aggiungi lotti</CardTitle>
+              <CardDescription>
+                Modulo Magazzino filtrato e interattivo: esclude sempre sku bloccati per la vendita, senza scorta o già nel batch.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SelettoreLottiBatch
+                righe={righePicker}
+                tipi={tipi}
+                batchId={batch.id}
+                canaleId={Number(canaleId)}
+                tipoCanale={batch.canale.tipo}
+                basePath={`/pubblicazione/${canaleId}/${batchId}`}
+                filtriAttivi={filtriAttiviPicker}
+                filtriIniziali={{
+                  q: sp.q ?? "",
+                  tipo: tipoId ? String(tipoId) : "tutti",
+                  condizione: condizione ?? "tutti",
+                  proprieta: proprieta ?? "tutti",
+                  confoto: conFoto ? "si" : "no",
+                }}
+                ordinaAttuale={ordina}
+                direzioneAttuale={direzione ?? "asc"}
+              />
+            </CardContent>
+          </Card>
         )}
       </main>
     </div>
