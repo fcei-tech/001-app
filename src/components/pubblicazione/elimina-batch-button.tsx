@@ -12,6 +12,10 @@ import { eliminaBatchAction } from "@/app/pubblicazione/actions";
 // batch, vedi eliminaBatch in pubblicazione-queries.ts) - stesso pattern di
 // conferma gia' in uso per la modifica in blocco di VistaMagazzino, non un
 // window.confirm nativo.
+// Regola allentata il 2026-09-24: non piu' solo in bozza, disponibile su
+// qualsiasi stato (bozza/confermato/generato) - il chiamante (pagina batch)
+// nasconde comunque il bottone se il batch contiene un lotto gia'
+// "accettato" da un'asta fisica, unico caso in cui restare bloccato.
 export function EliminaBatchButton({ batchId, canaleId }: { batchId: number; canaleId: number }) {
   const [aperto, setAperto] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -27,7 +31,7 @@ export function EliminaBatchButton({ batchId, canaleId }: { batchId: number; can
           <DialogHeader>
             <DialogTitle>Eliminare questo batch?</DialogTitle>
             <DialogDescription>
-              Il batch e tutti i suoi lotti selezionati verranno eliminati definitivamente. Possibile solo perché è ancora in bozza — un batch confermato non si può mai eliminare.
+              Il batch e tutti i suoi lotti verranno eliminati definitivamente. Se il batch era gia&apos; confermato, la disponibilita&apos; dei lotti torna libera per altri batch.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
