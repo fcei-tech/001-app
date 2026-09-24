@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { Fragment, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -178,6 +178,7 @@ export function SelettoreLottiBatch({
   tipi,
   batchId,
   canaleId,
+  tipoCanale,
   basePath,
   filtriIniziali,
   filtriAttivi,
@@ -188,6 +189,13 @@ export function SelettoreLottiBatch({
   tipi: { id: number; nome: string }[];
   batchId: number;
   canaleId: number;
+  // Determina se mostrare le colonne editabili Prezzo/Riserva evento
+  // (2026-09-24, richiesta esplicita utente): solo sui canali asta_online
+  // (Catawiki, Bidspirit, eBay Asta - tutti trattati uguale, nessun caso
+  // speciale per nome). Su asta_fisica la Riserva proposta si compila solo
+  // dopo, in "Lotti nel batch" (non ha senso prima di sapere cosa entra nel
+  // batch) - vedi pagina [batchId]/page.tsx.
+  tipoCanale: "statico" | "asta_online" | "asta_fisica";
   // Percorso base della pagina batch corrente (es. /pubblicazione/3/12) - i
   // filtri di questo picker vivono nella stessa URL del batch, non in una
   // route separata.
@@ -203,6 +211,20 @@ export function SelettoreLottiBatch({
   const ordinamentoAttivo = Boolean(ordinaAttuale);
   const colonne = useSyncExternalStore(sottoscriviColonne, leggiColonneSalvate, () => COLONNE_DI_DEFAULT);
   const [selezionati, setSelezionati] = useState<Set<number>>(new Set());
+  // Prezzo/riserva evento per sku, solo asta_online (2026-09-24): stato
+  // locale nel picker perche' il lotto non esiste ancora in batch_lotti a
+  // questo punto - i valori viaggiano come input nascosti prezzo_<id>/
+  // riserva_<id> nel submit e finiscono nell'override al momento
+  // dell'inserimento (vedi aggiungiLotti in pubblicazione-queries.ts).
+  const [overrideOnline, setOverrideOnline] = useState<Record<number, { prezzo: string; riserva: string }>>({});
+  const mostraOverrideOnline = tipoCanale === "asta_online";
+
+  function impostaOverrideOnline(id: number, campo: "prezzo" | "riserva", valore: string) {
+    setOverrideOnline((prev) => ({
+      ...prev,
+      [id]: { prezzo: prev[id]?.prezzo ?? "", riserva: prev[id]?.riserva ?? "", [campo]: valore },
+    }));
+  }
 
   const colonneVisibili = useMemo(() => COLONNE.filter((c) => colonne[c.id]), [colonne]);
 
@@ -229,7 +251,15 @@ export function SelettoreLottiBatch({
       if (ordinaFinale && direzioneFinale === "desc") params.set("direzione", "desc");
     }
     const qs = params.toString();
-    router.push(qs ? `${basePath}?${qs}` : basePath);
+    // scroll: false (2026-09-23 sera, feedback utente dopo test installazione
+    // reale: "clicco ordina/azzera filtri e la finestra scrolla verso
+    // l'alto"): router.push di Next.js riporta la pagina in cima ad ogni
+    // navigazione per default, comodo per un cambio pagina vero, fastidioso
+    // qui dove filtro/ordino la STESSA lista restando sul posto - lo stesso
+    // identico pattern (router.push senza scroll:false) e' presente anche in
+    // src/components/magazzino/vista-magazzino.tsx, non toccato qui - stesso
+    // fix applicabile li' se richiesto separatamente.
+    router.push(qs ? `${basePath}?${qs}` : basePath, { scroll: false });
   }
 
   function azzeraFiltri() {
@@ -347,16 +377,41 @@ export function SelettoreLottiBatch({
         </div>
       </form>
 
-      <p className="text-sm text-muted-foreground">
-        {righe.length} sku disponibili con questi filtri (già esclusi: bloccati per la vendita, quantità esaurita, già presenti nel batch).
-      </p>
-
       <form action={aggiungiLottiABatch} className="flex flex-col gap-3">
         <input type="hidden" name="batchId" value={batchId} />
         <input type="hidden" name="canaleId" value={canaleId} />
         {Array.from(selezionati).map((id) => (
-          <input key={id} type="hidden" name="skuId" value={id} />
+          <Fragment key={id}>
+            <input type="hidden" name="skuId" value={id} />
+            {mostraOverrideOnline && (
+              <>
+                <input type="hidden" name={`prezzo_${id}`} value={overrideOnline[id]?.prezzo ?? ""} />
+                <input type="hidden" name={`riserva_${id}`} value={overrideOnline[id]?.riserva ?? ""} />
+              </>
+            )}
+          </Fragment>
         ))}
+
+        {/* Bottone in cima, non in fondo (2026-09-23 notte, feedback utente
+            dopo test installazione reale: "il bottone aggiungi sku in basso
+            e' scomodo se le liste sono lunghe" -> "voglio i bottoni in
+            alto", rigettando esplicitamente la versione precedente con
+            barra sticky in fondo alla viewport). Sta comunque dentro questo
+            form: la posizione nel JSX non deve coincidere con l'ultimo
+            elemento del form perche' il submit funzioni. */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            {righe.length} sku disponibili con questi filtri (già esclusi: bloccati per la vendita, quantità esaurita, già presenti nel batch).
+          </p>
+          <div className="flex items-center gap-3">
+            {selezionati.size > 0 && (
+              <span className="text-sm text-muted-foreground">{selezionati.size} selezionati</span>
+            )}
+            <Button type="submit" disabled={selezionati.size === 0}>
+              Aggiungi {selezionati.size > 0 ? `${selezionati.size} sku` : "selezionati"}
+            </Button>
+          </div>
+        </div>
 
         <div className="rounded-xl border overflow-x-auto">
           {righe.length === 0 ? (
@@ -406,6 +461,7 @@ export function SelettoreLottiBatch({
                     allineaDestra
                     onOrdina={gestisciOrdinamento}
                   />
+                  {mostraOverrideOnline && <TableHead>Prezzo / Riserva evento</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -440,6 +496,26 @@ export function SelettoreLottiBatch({
                           <span className="text-muted-foreground">0</span>
                         )}
                       </TableCell>
+                      {mostraOverrideOnline && (
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="text"
+                              value={overrideOnline[r.id]?.prezzo ?? ""}
+                              onChange={(e) => impostaOverrideOnline(r.id, "prezzo", e.target.value)}
+                              placeholder="prezzo"
+                              className="h-8 w-20"
+                            />
+                            <Input
+                              type="text"
+                              value={overrideOnline[r.id]?.riserva ?? ""}
+                              onChange={(e) => impostaOverrideOnline(r.id, "riserva", e.target.value)}
+                              placeholder="riserva"
+                              className="h-8 w-20"
+                            />
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}
@@ -447,10 +523,6 @@ export function SelettoreLottiBatch({
             </Table>
           )}
         </div>
-
-        <Button type="submit" className="self-start" disabled={selezionati.size === 0}>
-          Aggiungi {selezionati.size > 0 ? `${selezionati.size} sku` : "selezionati"}
-        </Button>
       </form>
     </div>
   );
