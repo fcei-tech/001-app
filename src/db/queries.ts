@@ -123,8 +123,11 @@ const proprietaSql = () => sql`coalesce(string_agg(distinct ${movimentiMagazzino
 const numeroFotoSql = () => sql`(select count(*) from foto_sku fs where fs.sku_id = ${sku.id})`;
 
 // Equivalente dinamico di MASTER!QTY_DISPONIBILE_REALE: conta le righe
-// batch_lotti dove il batch e' confermato, il canale e' esclusivo, e
-// (asta_fisica: statoRiga=accettato) OR (asta_online/statico: statoRiga=attivo).
+// batch_lotti dove il batch e' confermato O pubblicato (fix 2026-09-25,
+// sessione 5: un batch "pubblicato" - ex "generato" - continua a tenere la
+// prenotazione, non la libera in silenzio solo perche' l'output e' stato
+// generato), il canale e' esclusivo, e (asta_fisica: statoRiga=accettato) OR
+// (asta_online/statico: statoRiga=attivo).
 // Spostata qui da pubblicazione-queries.ts (2026-09-23 sera, insieme al
 // campo impegnato su RigaMagazzino sopra). Stringa letterale "sku"."id" (non
 // ${sku.id} interpolato) DELIBERATA: interpolare un oggetto Column di
@@ -141,7 +144,7 @@ export function impegnatoSql() {
     inner join ${batchPubblicazione} bp on bp.id = bl.batch_id
     inner join ${canali} c on c.id = bp.canale_id
     where bl.sku_id = "sku"."id"
-      and bp.stato = 'confermato'
+      and bp.stato in ('confermato', 'pubblicato')
       and c.esclusivo = true
       and (
         (c.tipo = 'asta_fisica' and bl.stato_riga = 'accettato')
@@ -369,6 +372,27 @@ export async function getFotoSku(skuId: number) {
     .from(fotoSku)
     .where(eq(fotoSku.skuId, skuId))
     .orderBy(asc(fotoSku.ordine));
+}
+
+// Saldo per combinazione proprieta'+ubicazione di uno sku, solo saldi > 0 -
+// usato dal form Consegna (asta_fisica, 2026-09-25 sessione 5) per far
+// scegliere all'operatore l'ubicazione di ORIGINE reale invece di indovinarla
+// (vedi nota su consegnaLotto in pubblicazione-queries.ts: un sku puo' essere
+// splittato su piu' ubicazioni/proprieta', nessun automatismo qui).
+export async function getSaldiSkuPerUbicazione(skuId: number) {
+  return db
+    .select({
+      ubicazioneId: movimentiMagazzino.ubicazioneId,
+      ubicazioneNome: ubicazioni.nome,
+      proprieta: movimentiMagazzino.proprieta,
+      saldo: sql<number>`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`.mapWith(Number),
+    })
+    .from(movimentiMagazzino)
+    .innerJoin(ubicazioni, eq(movimentiMagazzino.ubicazioneId, ubicazioni.id))
+    .where(eq(movimentiMagazzino.skuId, skuId))
+    .groupBy(movimentiMagazzino.ubicazioneId, ubicazioni.nome, movimentiMagazzino.proprieta)
+    .having(sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0) > 0`)
+    .orderBy(asc(ubicazioni.nome));
 }
 
 export async function getMovimentiSku(skuId: number) {
