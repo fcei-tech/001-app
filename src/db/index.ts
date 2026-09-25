@@ -1,6 +1,7 @@
 import path from "node:path";
 import * as schema from "./schema";
 import { seedCanaliBase } from "./canali-base";
+import { seedUbicazioniBase } from "./ubicazioni-base";
 
 // Due modalita' di connessione al database, scelte automaticamente in base
 // alla presenza di DATABASE_URL nell'ambiente:
@@ -54,6 +55,15 @@ async function createRealDb(connectionString: string) {
   } catch (err) {
     console.error("Bootstrap canali non applicato:", err);
   }
+  // Stesso bootstrap dei canali, per le ubicazioni fisiche (2026-09-25,
+  // sessione 5 - vedi ubicazioni-base.ts): prima mancava, il flusso
+  // Consegna/Rientro aste fisiche non avrebbe avuto ubicazioni reali su cui
+  // lavorare in produzione.
+  try {
+    await seedUbicazioniBase(realDb);
+  } catch (err) {
+    console.error("Bootstrap ubicazioni non applicato:", err);
+  }
   return realDb;
 }
 
@@ -68,6 +78,11 @@ async function createDevDb() {
     await seedCanaliBase(devDb);
   } catch (err) {
     console.error("Bootstrap canali non applicato:", err);
+  }
+  try {
+    await seedUbicazioniBase(devDb);
+  } catch (err) {
+    console.error("Bootstrap ubicazioni non applicato:", err);
   }
   return devDb;
 }
