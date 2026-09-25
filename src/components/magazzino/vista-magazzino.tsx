@@ -12,6 +12,7 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuCheckboxItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -19,7 +20,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2 } from "lucide-react";
+import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 import { aggiornaCampiSkuInline } from "@/app/magazzino/actions";
 import { useSelezioneMultipla } from "@/lib/selezione-multipla";
@@ -465,6 +466,16 @@ export function VistaMagazzino({
     scriviColonneSalvate({ ...colonne, [id]: visibile });
   }
 
+  // "Ripristina colonne predefinite" (2026-09-25, richiesta esplicita
+  // cliente dopo aver toccato a mano ogni colonna nel menu "Colonne" e
+  // trovato scomodo tornare indietro voce per voce) - riscrive l'intera
+  // preferenza salvata sul default di fabbrica (le 8 colonne visibili di
+  // serie, vedi COLONNE_DI_DEFAULT sopra), un solo click invece di
+  // riattivare/disattivare ogni checkbox a mano.
+  function ripristinaColonne() {
+    scriviColonneSalvate(COLONNE_DI_DEFAULT);
+  }
+
   const colonneVisibili = useMemo(() => COLONNE.filter((c) => colonne[c.id]), [colonne]);
 
   function applicaFiltri(
@@ -651,6 +662,10 @@ export function VistaMagazzino({
                   {c.etichetta}
                 </DropdownMenuCheckboxItem>
               ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); ripristinaColonne(); }}>
+                <RotateCcw /> Ripristina colonne predefinite
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
