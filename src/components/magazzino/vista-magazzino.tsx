@@ -22,6 +22,7 @@ import { TableEmpty } from "@/components/ui/table-empty";
 import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2 } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 import { aggiornaCampiSkuInline } from "@/app/magazzino/actions";
+import { useSelezioneMultipla } from "@/lib/selezione-multipla";
 import {
   CAMPI_EDITABILI_INLINE,
   type CampoEditabileInline,
@@ -399,7 +400,11 @@ export function VistaMagazzino({
 
   const tipiMap = useMemo(() => new Map(tipi.map((t) => [t.id, t.nome])), [tipi]);
 
-  const [selezionati, setSelezionati] = useState<Set<number>>(new Set());
+  // Selezione multipla stile file-manager (shift+click estende a un
+  // intervallo) - 2026-09-25, punto 3 del backlog UX FINALIZZATO, vedi
+  // src/lib/selezione-multipla.ts.
+  const { selezionati, setSelezionati, gestisciSeleziona, segnalaShift, selezionaTutti } =
+    useSelezioneMultipla<number>(righeLocal.map((r) => r.id));
   const [errore, setErrore] = useState<string | null>(null);
   const [undoSlot, setUndoSlot] = useState<UndoSlot | null>(null);
 
@@ -462,15 +467,6 @@ export function VistaMagazzino({
 
   const colonneVisibili = useMemo(() => COLONNE.filter((c) => colonne[c.id]), [colonne]);
 
-  // ordinaOverride/direzioneOverride sono passati SOLO dal click su
-  // un'intestazione ordinabile - in quel caso sostituiscono l'ordinamento
-  // corrente mantenendo i filtri; un submit normale del form (bottone
-  // "Applica filtri") mantiene invece l'ordinamento gia' attivo, per non
-  // perderlo ogni volta che si tocca un filtro.
-  // azzeraOrdinamento (2026-09-23, richiesta esplicita cliente) forza
-  // l'assenza di ordina/direzione nell'URL anche se ordinaAttuale e'
-  // valorizzato - e' l'unico modo per tornare davvero al default (SKU asc
-  // implicito) invece di doverlo ricostruire a mano cliccando piu' volte.
   function applicaFiltri(
     f: typeof filtri,
     ordinaOverride?: ColonnaOrdinabile,
@@ -492,7 +488,12 @@ export function VistaMagazzino({
       if (ordinaFinale && direzioneFinale === "desc") params.set("direzione", "desc");
     }
     const qs = params.toString();
-    router.push(qs ? `/?${qs}` : "/");
+    // scroll: false (2026-09-23 sera, feedback utente dopo test
+    // installazione reale: "tocco i filtri e la finestra scrolla verso
+    // l'alto") - stesso identico fix gia' applicato in
+    // src/components/pubblicazione/selettore-lotti.tsx, vedi commento la'
+    // per la spiegazione completa.
+    router.push(qs ? `/?${qs}` : "/", { scroll: false });
   }
 
   // Azzera sia i filtri sia l'ordinamento in un solo click - prima azzerava
@@ -517,18 +518,6 @@ export function VistaMagazzino({
     }
     const prossimaDirezione: "asc" | "desc" = attiva && direzioneAttuale === "asc" ? "desc" : "asc";
     applicaFiltri(filtri, chiave, prossimaDirezione);
-  }
-
-  function toggleSelezionaTutti(v: boolean) {
-    setSelezionati(v ? new Set(righeLocal.map((r) => r.id)) : new Set());
-  }
-  function toggleSeleziona(id: number, v: boolean) {
-    setSelezionati((prev) => {
-      const next = new Set(prev);
-      if (v) next.add(id);
-      else next.delete(id);
-      return next;
-    });
   }
 
   const tuttiSelezionati = righeLocal.length > 0 && righeLocal.every((r) => selezionati.has(r.id));
@@ -736,7 +725,7 @@ export function VistaMagazzino({
                 <TableHead className="w-10">
                   <Checkbox
                     checked={tuttiSelezionati ? true : alcuniSelezionati ? "indeterminate" : false}
-                    onCheckedChange={(v) => toggleSelezionaTutti(v === true)}
+                    onCheckedChange={(v) => selezionaTutti(v === true)}
                     aria-label="Seleziona tutti"
                   />
                 </TableHead>
@@ -769,8 +758,8 @@ export function VistaMagazzino({
             <TableBody>
               {righeLocal.map((r) => (
                 <TableRow key={r.id}>
-                  <TableCell>
-                    <Checkbox checked={selezionati.has(r.id)} onCheckedChange={(v) => toggleSeleziona(r.id, v === true)} aria-label={`Seleziona ${r.skuCode}`} />
+                  <TableCell onClickCapture={segnalaShift}>
+                    <Checkbox checked={selezionati.has(r.id)} onCheckedChange={(v) => gestisciSeleziona(r.id, v === true)} aria-label={`Seleziona ${r.skuCode}`} />
                   </TableCell>
                   <TableCell className="p-0"><Link href={`/magazzino/${r.id}`} className="block font-mono text-xs p-3">{r.skuCode}</Link></TableCell>
                   {colonneVisibili.map((c) => (
