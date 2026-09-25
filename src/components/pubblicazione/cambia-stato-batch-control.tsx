@@ -18,14 +18,14 @@ import { cambiaStatoBatchAction } from "@/app/pubblicazione/actions";
 // lotti) resta com'era nella pagina dettaglio - questo Select e' un modo
 // SECONDARIO, sempre disponibile, di raggiungere qualsiasi stato senza
 // passare dal flusso guidato. La query lato server rifiuta comunque la
-// transizione verso confermato/generato se il batch non ha lotti (vedi
+// transizione verso confermato/pubblicato se il batch non ha lotti (vedi
 // cambiaStatoBatch in pubblicazione-queries.ts) - l'errore, se capita, arriva
 // come Error non catturato (stesso comportamento gia' in uso altrove nel
 // software per azioni singole, es. aggiungiLottiABatch).
 const ETICHETTE: Record<string, string> = {
   bozza: "Bozza",
   confermato: "Confermato",
-  generato: "Generato",
+  pubblicato: "Pubblicato",
 };
 
 export function CambiaStatoBatchControl({
@@ -36,7 +36,7 @@ export function CambiaStatoBatchControl({
 }: {
   batchId: number;
   canaleId: number;
-  statoAttuale: "bozza" | "confermato" | "generato";
+  statoAttuale: "bozza" | "confermato" | "pubblicato";
   className?: string;
 }) {
   const [pending, startTransition] = useTransition();
