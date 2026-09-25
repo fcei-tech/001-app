@@ -14,17 +14,13 @@ import {
   confermaBatchAction,
   accettaLottoAction,
   annullaAccettazioneAction,
-  riportaInBozzaAction,
 } from "../../actions";
 import { SelettoreLottiBatch } from "@/components/pubblicazione/selettore-lotti";
 import { EliminaBatchButton } from "@/components/pubblicazione/elimina-batch-button";
 import { OverrideLottoForm } from "@/components/pubblicazione/override-lotto-form";
-
-const ETICHETTE_STATO: Record<string, { label: string; variant: "secondary" | "success" | "outline" }> = {
-  bozza: { label: "Bozza", variant: "secondary" },
-  confermato: { label: "Confermato", variant: "success" },
-  generato: { label: "Generato", variant: "outline" },
-};
+import { CambiaStatoBatchControl } from "@/components/pubblicazione/cambia-stato-batch-control";
+import { coloreCanale } from "@/lib/colori-canali";
+import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
 
 const ETICHETTE_STATO_RIGA: Record<string, { label: string; variant: "secondary" | "success" | "outline" }> = {
   attivo: { label: "Attivo", variant: "secondary" },
@@ -72,25 +68,22 @@ export default async function BatchPubblicazionePage({
 
   if (!batch || batch.canaleId !== Number(canaleId)) notFound();
 
-  const stato = ETICHETTE_STATO[batch.stato] ?? { label: batch.stato, variant: "outline" as const };
   const inBozza = batch.stato === "bozza";
   // Colonna Azioni per-riga: Rimuovi in bozza, Accetta sui canali asta
   // fisica anche a batch confermato (la casa d'asta risponde solo dopo che
   // il batch e' stato inviato - vedi accettaLottoAction in actions.ts).
   const mostraColonnaAzioni = inBozza || batch.canale.tipo === "asta_fisica";
   const idGiaInBatch = new Set(batch.lotti.map((l) => l.skuId));
-  // "Riporta in bozza" (2026-09-23 notte, richiesta esplicita utente: "8. ok
-  // riporta in bozza bottone") - scappatoia per non lasciare un batch
-  // confermato senza via d'uscita finche' non esiste la generazione output
-  // vera. Bloccato se anche un solo lotto e' gia' "accettato" (vedi
-  // riportaInBozza in pubblicazione-queries.ts, che applica lo stesso
-  // controllo lato server).
-  // haLottiAccettati governa anche "Elimina batch" qui sotto (2026-09-24,
-  // regola allentata - vedi eliminaBatch in pubblicazione-queries.ts):
-  // stesso identico guard, stesso motivo.
-  const haLottiAccettati = batch.lotti.some((l) => l.statoRiga === "accettato");
-  const mostraRiportaInBozza = batch.stato === "confermato" && !haLottiAccettati;
-  const mostraEliminaBatch = !haLottiAccettati;
+  // Transizioni di stato ed eliminazione LIBERE in qualsiasi direzione/stato,
+  // senza eccezioni per lotti "accettato" (CAMBIO DI ROTTA 2026-09-25 - vedi
+  // backlog_ux_FINALIZZATO_2026_09_25_sessione_3 in
+  // claude/09c_python_pubblicazione.yaml, punto 2, e i commenti su
+  // eliminaBatch/riportaInBozza/cambiaStatoBatch in pubblicazione-queries.ts
+  // per il testo completo della decisione). numeroLottiConPrenotazione
+  // alimenta l'AVVISO non bloccante nel dialog di EliminaBatchButton (cosa
+  // si libera), mai un blocco.
+  const numeroLottiConPrenotazione = contaLottiConPrenotazione(batch, batch.canale);
+  const colore = coloreCanale(batch.canale.nome);
   // Override per lotto (2026-09-24, richiesta esplicita utente - vedi
   // OverrideLotto in pubblicazione-queries.ts): "Riserva proposta" su
   // asta_fisica, "Prezzo/Riserva evento" su asta_online (Catawiki incluso,
@@ -129,7 +122,10 @@ export default async function BatchPubblicazionePage({
           <ChevronLeft className="size-4" /> {batch.canale.nome}
         </Link>
 
-        <div className="mb-6 flex items-center justify-between gap-4">
+        <div
+          className="mb-6 flex items-center justify-between gap-4 border-l-4 pl-4"
+          style={colore ? { borderLeftColor: colore } : undefined}
+        >
           <div className="flex flex-col gap-1">
             <h1 className="text-xl font-semibold tracking-tight">
               Batch #{batch.id} — {batch.canale.nome}
@@ -137,23 +133,23 @@ export default async function BatchPubblicazionePage({
             <p className="text-sm text-muted-foreground">
               Creato il {formatData(batch.createdAt)}
               {batch.confermatoAt && <> · confermato il {formatData(batch.confermatoAt)}</>}
+              {numeroLottiConPrenotazione > 0 && (
+                <> · {numeroLottiConPrenotazione} lott{numeroLottiConPrenotazione === 1 ? "o" : "i"} con prenotazione reale</>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {mostraEliminaBatch && <EliminaBatchButton batchId={batch.id} canaleId={Number(canaleId)} />}
-            {mostraRiportaInBozza && (
-              <form action={riportaInBozzaAction}>
-                <input type="hidden" name="batchId" value={batch.id} />
-                <input type="hidden" name="canaleId" value={canaleId} />
-                <Button type="submit" variant="outline" size="sm">
-                  Riporta in bozza
-                </Button>
-              </form>
-            )}
+            <EliminaBatchButton
+              batchId={batch.id}
+              canaleId={Number(canaleId)}
+              numeroLottiConPrenotazione={numeroLottiConPrenotazione}
+            />
             {inBozza && (
               // Spostato dal fondo pagina qui in alto (2026-09-23 notte,
               // feedback utente: "voglio i bottoni in alto"), stesso motivo
-              // del bottone "Aggiungi" in SelettoreLottiBatch.
+              // del bottone "Aggiungi" in SelettoreLottiBatch. Resta il
+              // percorso primario per bozza->confermato; il controllo Cambia
+              // stato qui sotto copre le altre direzioni.
               <form action={confermaBatchAction}>
                 <input type="hidden" name="batchId" value={batch.id} />
                 <input type="hidden" name="canaleId" value={canaleId} />
@@ -162,7 +158,10 @@ export default async function BatchPubblicazionePage({
                 </Button>
               </form>
             )}
-            <Badge variant={stato.variant}>{stato.label}</Badge>
+            {/* Controllo esterno "Cambia stato" (2026-09-25) - transizioni
+                libere in qualsiasi direzione, sostituisce il vecchio bottone
+                "Riporta in bozza" col Select generico a 3 vie. */}
+            <CambiaStatoBatchControl batchId={batch.id} canaleId={Number(canaleId)} statoAttuale={batch.stato} />
           </div>
         </div>
 
