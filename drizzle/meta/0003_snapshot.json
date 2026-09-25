@@ -1,0 +1,245 @@
+{
+  "id": "b8d5d84a-41de-435d-ba7b-9d6c2cf3d2b4",
+  "prevId": "ac77d1c3-5789-4a00-9a23-a400d74ee47f",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.batch_lotti": {
+      "name": "batch_lotti",
+      "schema": "",
+      "columns": {
+        "id": { "name": "id", "type": "serial", "primaryKey": true, "notNull": true },
+        "batch_id": { "name": "batch_id", "type": "integer", "primaryKey": false, "notNull": true },
+        "sku_id": { "name": "sku_id", "type": "integer", "primaryKey": false, "notNull": true },
+        "stato_riga": { "name": "stato_riga", "type": "lotto_stato", "typeSchema": "public", "primaryKey": false, "notNull": true, "default": "'attivo'" },
+        "override": { "name": "override", "type": "jsonb", "primaryKey": false, "notNull": false },
+        "consegnato_at": { "name": "consegnato_at", "type": "timestamp", "primaryKey": false, "notNull": false },
+        "consegna_dettagli": { "name": "consegna_dettagli", "type": "jsonb", "primaryKey": false, "notNull": false },
+        "created_at": { "name": "created_at", "type": "timestamp", "primaryKey": false, "notNull": true, "default": "now()" }
+      },
+      "indexes": {
+        "batch_lotti_batch_idx": {
+          "name": "batch_lotti_batch_idx",
+          "columns": [
+            { "expression": "batch_id", "isExpression": false, "asc": true, "nulls": "last" },
+            { "expression": "sku_id", "isExpression": false, "asc": true, "nulls": "last" }
+          ],
+          "isUnique": false, "concurrently": false, "method": "btree", "with": {}
+        }
+      },
+      "foreignKeys": {
+        "batch_lotti_batch_id_batch_pubblicazione_id_fk": {
+          "name": "batch_lotti_batch_id_batch_pubblicazione_id_fk",
+          "tableFrom": "batch_lotti", "tableTo": "batch_pubblicazione",
+          "columnsFrom": ["batch_id"], "columnsTo": ["id"],
+          "onDelete": "no action", "onUpdate": "no action"
+        },
+        "batch_lotti_sku_id_sku_id_fk": {
+          "name": "batch_lotti_sku_id_sku_id_fk",
+          "tableFrom": "batch_lotti", "tableTo": "sku",
+          "columnsFrom": ["sku_id"], "columnsTo": ["id"],
+          "onDelete": "no action", "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {}, "uniqueConstraints": {}, "policies": {}, "checkConstraints": {}, "isRLSEnabled": false
+    },
+    "public.batch_pubblicazione": {
+      "name": "batch_pubblicazione",
+      "schema": "",
+      "columns": {
+        "id": { "name": "id", "type": "serial", "primaryKey": true, "notNull": true },
+        "canale_id": { "name": "canale_id", "type": "integer", "primaryKey": false, "notNull": true },
+        "stato": { "name": "stato", "type": "batch_stato", "typeSchema": "public", "primaryKey": false, "notNull": true, "default": "'bozza'" },
+        "impostazioni_batch": { "name": "impostazioni_batch", "type": "jsonb", "primaryKey": false, "notNull": true, "default": "'{}'::jsonb" },
+        "snapshot": { "name": "snapshot", "type": "jsonb", "primaryKey": false, "notNull": false },
+        "created_at": { "name": "created_at", "type": "timestamp", "primaryKey": false, "notNull": true, "default": "now()" },
+        "confermato_at": { "name": "confermato_at", "type": "timestamp", "primaryKey": false, "notNull": false },
+        "updated_at": { "name": "updated_at", "type": "timestamp", "primaryKey": false, "notNull": true, "default": "now()" }
+      },
+      "indexes": {
+        "batch_pub_canale_idx": {
+          "name": "batch_pub_canale_idx",
+          "columns": [
+            { "expression": "canale_id", "isExpression": false, "asc": true, "nulls": "last" },
+            { "expression": "stato", "isExpression": false, "asc": true, "nulls": "last" }
+          ],
+          "isUnique": false, "concurrently": false, "method": "btree", "with": {}
+        }
+      },
+      "foreignKeys": {
+        "batch_pubblicazione_canale_id_canali_id_fk": {
+          "name": "batch_pubblicazione_canale_id_canali_id_fk",
+          "tableFrom": "batch_pubblicazione", "tableTo": "canali",
+          "columnsFrom": ["canale_id"], "columnsTo": ["id"],
+          "onDelete": "no action", "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {}, "uniqueConstraints": {}, "policies": {}, "checkConstraints": {}, "isRLSEnabled": false
+    },
+    "public.canali": {
+      "name": "canali",
+      "schema": "",
+      "columns": {
+        "id": { "name": "id", "type": "serial", "primaryKey": true, "notNull": true },
+        "nome": { "name": "nome", "type": "text", "primaryKey": false, "notNull": true },
+        "tipo": { "name": "tipo", "type": "canale_tipo", "typeSchema": "public", "primaryKey": false, "notNull": true },
+        "esclusivo": { "name": "esclusivo", "type": "boolean", "primaryKey": false, "notNull": true, "default": false },
+        "attivo": { "name": "attivo", "type": "boolean", "primaryKey": false, "notNull": true, "default": true },
+        "impostazioni": { "name": "impostazioni", "type": "jsonb", "primaryKey": false, "notNull": true, "default": "'{}'::jsonb" },
+        "created_at": { "name": "created_at", "type": "timestamp", "primaryKey": false, "notNull": true, "default": "now()" },
+        "updated_at": { "name": "updated_at", "type": "timestamp", "primaryKey": false, "notNull": true, "default": "now()" }
+      },
+      "indexes": {}, "foreignKeys": {}, "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "canali_nome_unique": { "name": "canali_nome_unique", "nullsNotDistinct": false, "columns": ["nome"] }
+      },
+      "policies": {}, "checkConstraints": {}, "isRLSEnabled": false
+    },
+    "public.foto_sku": {
+      "name": "foto_sku",
+      "schema": "",
+      "columns": {
+        "id": { "name": "id", "type": "serial", "primaryKey": true, "notNull": true },
+        "sku_id": { "name": "sku_id", "type": "integer", "primaryKey": false, "notNull": true },
+        "url": { "name": "url", "type": "text", "primaryKey": false, "notNull": true },
+        "ordine": { "name": "ordine", "type": "integer", "primaryKey": false, "notNull": true, "default": 0 },
+        "created_at": { "name": "created_at", "type": "timestamp", "primaryKey": false, "notNull": true, "default": "now()" }
+      },
+      "indexes": {
+        "foto_sku_sku_idx": {
+          "name": "foto_sku_sku_idx",
+          "columns": [
+            { "expression": "sku_id", "isExpression": false, "asc": true, "nulls": "last" },
+            { "expression": "ordine", "isExpression": false, "asc": true, "nulls": "last" }
+          ],
+          "isUnique": false, "concurrently": false, "method": "btree", "with": {}
+        }
+      },
+      "foreignKeys": {
+        "foto_sku_sku_id_sku_id_fk": {
+          "name": "foto_sku_sku_id_sku_id_fk",
+          "tableFrom": "foto_sku", "tableTo": "sku",
+          "columnsFrom": ["sku_id"], "columnsTo": ["id"],
+          "onDelete": "no action", "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {}, "uniqueConstraints": {}, "policies": {}, "checkConstraints": {}, "isRLSEnabled": false
+    },
+    "public.movimenti_magazzino": {
+      "name": "movimenti_magazzino",
+      "schema": "",
+      "columns": {
+        "id": { "name": "id", "type": "serial", "primaryKey": true, "notNull": true },
+        "sku_id": { "name": "sku_id", "type": "integer", "primaryKey": false, "notNull": true },
+        "proprieta": { "name": "proprieta", "type": "proprieta", "typeSchema": "public", "primaryKey": false, "notNull": true },
+        "ubicazione_id": { "name": "ubicazione_id", "type": "integer", "primaryKey": false, "notNull": true },
+        "causale": { "name": "causale", "type": "text", "primaryKey": false, "notNull": true },
+        "quantita_delta": { "name": "quantita_delta", "type": "integer", "primaryKey": false, "notNull": true },
+        "note": { "name": "note", "type": "text", "primaryKey": false, "notNull": false },
+        "created_at": { "name": "created_at", "type": "timestamp", "primaryKey": false, "notNull": true, "default": "now()" }
+      },
+      "indexes": {
+        "mov_sku_idx": {
+          "name": "mov_sku_idx",
+          "columns": [
+            { "expression": "sku_id", "isExpression": false, "asc": true, "nulls": "last" },
+            { "expression": "created_at", "isExpression": false, "asc": true, "nulls": "last" }
+          ],
+          "isUnique": false, "concurrently": false, "method": "btree", "with": {}
+        }
+      },
+      "foreignKeys": {
+        "movimenti_magazzino_sku_id_sku_id_fk": {
+          "name": "movimenti_magazzino_sku_id_sku_id_fk",
+          "tableFrom": "movimenti_magazzino", "tableTo": "sku",
+          "columnsFrom": ["sku_id"], "columnsTo": ["id"],
+          "onDelete": "no action", "onUpdate": "no action"
+        },
+        "movimenti_magazzino_ubicazione_id_ubicazioni_id_fk": {
+          "name": "movimenti_magazzino_ubicazione_id_ubicazioni_id_fk",
+          "tableFrom": "movimenti_magazzino", "tableTo": "ubicazioni",
+          "columnsFrom": ["ubicazione_id"], "columnsTo": ["id"],
+          "onDelete": "no action", "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {}, "uniqueConstraints": {}, "policies": {}, "checkConstraints": {}, "isRLSEnabled": false
+    },
+    "public.sku": {
+      "name": "sku",
+      "schema": "",
+      "columns": {
+        "id": { "name": "id", "type": "serial", "primaryKey": true, "notNull": true },
+        "sku_code": { "name": "sku_code", "type": "text", "primaryKey": false, "notNull": true },
+        "artista": { "name": "artista", "type": "text", "primaryKey": false, "notNull": true },
+        "opera": { "name": "opera", "type": "text", "primaryKey": false, "notNull": true },
+        "larghezza": { "name": "larghezza", "type": "numeric(6, 1)", "primaryKey": false, "notNull": false },
+        "altezza": { "name": "altezza", "type": "numeric(6, 1)", "primaryKey": false, "notNull": false },
+        "supporto": { "name": "supporto", "type": "text", "primaryKey": false, "notNull": false },
+        "anno": { "name": "anno", "type": "text", "primaryKey": false, "notNull": false },
+        "condizione": { "name": "condizione", "type": "condizione", "typeSchema": "public", "primaryKey": false, "notNull": true, "default": "'A-'" },
+        "tipo_id": { "name": "tipo_id", "type": "integer", "primaryKey": false, "notNull": true },
+        "tag": { "name": "tag", "type": "text", "primaryKey": false, "notNull": false },
+        "note": { "name": "note", "type": "text", "primaryKey": false, "notNull": false },
+        "bloccato_vendita": { "name": "bloccato_vendita", "type": "boolean", "primaryKey": false, "notNull": true, "default": false },
+        "valore_carico": { "name": "valore_carico", "type": "numeric(10, 2)", "primaryKey": false, "notNull": false },
+        "prezzo_ebay": { "name": "prezzo_ebay", "type": "numeric(10, 2)", "primaryKey": false, "notNull": false },
+        "prezzo_catawiki": { "name": "prezzo_catawiki", "type": "numeric(10, 2)", "primaryKey": false, "notNull": false },
+        "riserva_catawiki": { "name": "riserva_catawiki", "type": "numeric(10, 2)", "primaryKey": false, "notNull": false },
+        "created_at": { "name": "created_at", "type": "timestamp", "primaryKey": false, "notNull": true, "default": "now()" },
+        "updated_at": { "name": "updated_at", "type": "timestamp", "primaryKey": false, "notNull": true, "default": "now()" }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sku_tipo_id_tipi_oggetto_id_fk": {
+          "name": "sku_tipo_id_tipi_oggetto_id_fk",
+          "tableFrom": "sku", "tableTo": "tipi_oggetto",
+          "columnsFrom": ["tipo_id"], "columnsTo": ["id"],
+          "onDelete": "no action", "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "sku_sku_code_unique": { "name": "sku_sku_code_unique", "nullsNotDistinct": false, "columns": ["sku_code"] }
+      },
+      "policies": {}, "checkConstraints": {}, "isRLSEnabled": false
+    },
+    "public.tipi_oggetto": {
+      "name": "tipi_oggetto",
+      "schema": "",
+      "columns": {
+        "id": { "name": "id", "type": "serial", "primaryKey": true, "notNull": true },
+        "nome": { "name": "nome", "type": "text", "primaryKey": false, "notNull": true },
+        "attivo": { "name": "attivo", "type": "boolean", "primaryKey": false, "notNull": true, "default": true }
+      },
+      "indexes": {}, "foreignKeys": {}, "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "tipi_oggetto_nome_unique": { "name": "tipi_oggetto_nome_unique", "nullsNotDistinct": false, "columns": ["nome"] }
+      },
+      "policies": {}, "checkConstraints": {}, "isRLSEnabled": false
+    },
+    "public.ubicazioni": {
+      "name": "ubicazioni",
+      "schema": "",
+      "columns": {
+        "id": { "name": "id", "type": "serial", "primaryKey": true, "notNull": true },
+        "nome": { "name": "nome", "type": "text", "primaryKey": false, "notNull": true },
+        "tipo": { "name": "tipo", "type": "text", "primaryKey": false, "notNull": true, "default": "'deposito'" },
+        "attivo": { "name": "attivo", "type": "boolean", "primaryKey": false, "notNull": true, "default": true }
+      },
+      "indexes": {}, "foreignKeys": {}, "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "ubicazioni_nome_unique": { "name": "ubicazioni_nome_unique", "nullsNotDistinct": false, "columns": ["nome"] }
+      },
+      "policies": {}, "checkConstraints": {}, "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.batch_stato": { "name": "batch_stato", "schema": "public", "values": ["bozza", "confermato", "pubblicato"] },
+    "public.canale_tipo": { "name": "canale_tipo", "schema": "public", "values": ["statico", "asta_online", "asta_fisica"] },
+    "public.condizione": { "name": "condizione", "schema": "public", "values": ["A", "A-", "B+", "B", "B-", "C"] },
+    "public.lotto_stato": { "name": "lotto_stato", "schema": "public", "values": ["attivo", "candidato", "accettato"] },
+    "public.proprieta": { "name": "proprieta", "schema": "public", "values": ["FP", "CV", "TERZI"] }
+  },
+  "schemas": {}, "sequences": {}, "roles": {}, "policies": {}, "views": {},
+  "_meta": { "columns": {}, "schemas": {}, "tables": {} }
+}
