@@ -314,10 +314,30 @@ export type FiltriPickerPubblicazione = Omit<FiltriMagazzino, "bloccato" | "disp
 // questo schema, dove sku.skuCode e' UNIQUE e quantitaDisponibile e' gia'
 // una SUM aggregata su tutti i movimenti (FP e CV inclusi) dello stesso sku.
 export async function getSkuSelezionabiliPerBatch(
-  filtri: FiltriPickerPubblicazione = {}
+  filtri: FiltriPickerPubblicazione = {},
+  // 2026-09-25, sessione 6 - bug segnalato dal cliente: uno sku gia'
+  // interamente impegnato su un canale esclusivo (anche gia' "Consegnato" a
+  // una casa d'asta fisica - statoRiga resta "accettato" anche dopo la
+  // consegna, vedi consegnatoAt su batch_lotti in schema.ts, quindi e' gia'
+  // conteggiato in impegnatoSql) restava comunque selezionabile in un ALTRO
+  // picker esclusivo, con solo un avviso non bloccante. Cambio di rotta
+  // rispetto al principio generale "avviso non blocco" del modulo
+  // Pubblicazione: qui il cliente ha scelto esplicitamente l'esclusione dura
+  // (opzione 2, non opzione 1 "solo avviso piu' evidente") - vedi
+  // 08d_punti_aperti_e_decisioni.yaml. Quando true, filtra in memoria le
+  // righe gia' calcolate da getMagazzino (quantitaDisponibile e impegnato
+  // sono gia' selezionati su ogni riga, nessuna query aggiuntiva) tenendo
+  // solo quelle con quantita' reale residua > 0. Passato dal chiamante SOLO
+  // quando il canale del batch corrente e' esclusivo (vedi call site in
+  // src/app/pubblicazione/[canaleId]/[batchId]/page.tsx) - un canale non
+  // esclusivo non genera mai impegnato su altri canali, quindi non ha senso
+  // applicare il filtro li'.
+  soloDisponibileReale = false
 ): Promise<RigaMagazzino[]> {
   const righe = await getMagazzino({ ...filtri, bloccato: "no", disponibilita: "disponibile" });
-  return righe.filter((r) => r.skuCode !== "IGNORA");
+  const senzaIgnora = righe.filter((r) => r.skuCode !== "IGNORA");
+  if (!soloDisponibileReale) return senzaIgnora;
+  return senzaIgnora.filter((r) => r.quantitaDisponibile - r.impegnato > 0);
 }
 
 export async function contaSku(): Promise<number> {
