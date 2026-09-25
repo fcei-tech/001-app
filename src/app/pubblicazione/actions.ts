@@ -12,8 +12,11 @@ import {
   eliminaBatch as eliminaBatchQuery,
   aggiornaOverrideLotto as aggiornaOverrideLottoQuery,
   riportaInBozza as riportaInBozzaQuery,
+  cambiaStatoBatch as cambiaStatoBatchQuery,
   getBatch,
 } from "@/db/pubblicazione-queries";
+
+type StatoBatch = "bozza" | "confermato" | "generato";
 
 export async function creaBatch(formData: FormData) {
   const canaleId = Number(formData.get("canaleId"));
@@ -150,12 +153,16 @@ export async function confermaBatchAction(formData: FormData) {
   redirect(`/pubblicazione/${canaleId}/${batchId}?confermato=1`);
 }
 
-// Riporta in bozza un batch confermato (2026-09-23 notte, richiesta esplicita
-// utente dopo test installazione reale: "mi sembra strano non poter gestire
-// i batch confermati"). La query rifiuta gia' da sola uno stato non
-// confermato o la presenza di lotti gia' accettati (vedi riportaInBozza in
-// pubblicazione-queries.ts) - qui solo l'orchestrazione revalidate, stesso
-// schema delle altre action di questo file.
+// Riporta in bozza un batch confermato/generato (2026-09-23 notte, richiesta
+// esplicita utente dopo test installazione reale: "mi sembra strano non
+// poter gestire i batch confermati"). Transizioni ora libere in qualsiasi
+// direzione (2026-09-25, cambio di rotta - vedi riportaInBozza in
+// pubblicazione-queries.ts per il testo completo della decisione) - qui solo
+// l'orchestrazione revalidate, stesso schema delle altre action di questo
+// file. Vedi anche cambiaStatoBatchAction sotto per il controllo generico a
+// 3 vie (usato dai nuovi controlli esterni), che copre lo stesso caso d'uso
+// in modo piu' diretto - questa action resta per compatibilita' col bottone
+// "Riporta in bozza" gia' esistente nella pagina dettaglio batch.
 export async function riportaInBozzaAction(formData: FormData) {
   const batchId = Number(formData.get("batchId"));
   const canaleId = Number(formData.get("canaleId"));
@@ -163,6 +170,57 @@ export async function riportaInBozzaAction(formData: FormData) {
 
   await riportaInBozzaQuery(batchId);
   revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
+}
+
+// Cambia lo stato di un singolo batch a una qualsiasi delle 3 destinazioni,
+// in qualsiasi direzione - controllo esterno generico (2026-09-25, punto 2
+// del backlog UX FINALIZZATO, vedi cambiaStatoBatch in
+// pubblicazione-queries.ts per il dettaglio). Usato sia dal controllo
+// "Cambia stato" nella pagina dettaglio batch sia dalla riga della lista
+// batch di un canale (CambiaStatoBatchControl) - niente redirect qui,
+// chiamato via startTransition dal client, non da un <form> nativo (serve
+// un feedback immediato senza navigazione, coerente con OverrideLottoForm).
+export async function cambiaStatoBatchAction(formData: FormData) {
+  const batchId = Number(formData.get("batchId"));
+  const canaleId = Number(formData.get("canaleId"));
+  const nuovoStato = formData.get("nuovoStato") as StatoBatch | null;
+  if (!batchId || !nuovoStato) throw new Error("Riferimento non valido");
+
+  await cambiaStatoBatchQuery(batchId, nuovoStato);
+  revalidatePath(`/pubblicazione/${canaleId}`);
+  revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
+}
+
+// Versione multi-selezione di cambiaStatoBatchAction - usata dalla barra
+// azioni della lista batch di un canale quando piu' righe sono selezionate
+// (shift+click, vedi src/lib/selezione-multipla.ts). Applica la stessa
+// transizione a ciascun batch selezionato UNO ALLA VOLTA, senza bloccare
+// l'intera operazione se uno dei batch selezionati fallisce (es. un batch
+// ancora in bozza senza lotti non puo' passare a confermato/generato) -
+// principio gia' in uso altrove nel progetto per la validazione riga-per-
+// riga ("mai un errore muto, mai un blocco totale per un problema isolato").
+// Ritorna quanti sono riusciti e il dettaglio di eventuali errori, cosi' il
+// client puo' mostrarli invece di far sparire in silenzio un batch dalla
+// selezione.
+export async function cambiaStatoBatchMultiploAction(formData: FormData) {
+  const canaleId = Number(formData.get("canaleId"));
+  const nuovoStato = formData.get("nuovoStato") as StatoBatch | null;
+  const batchIds = formData.getAll("batchId").map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  if (!nuovoStato || batchIds.length === 0) throw new Error("Selezione non valida");
+
+  const errori: { batchId: number; messaggio: string }[] = [];
+  let ok = 0;
+  for (const batchId of batchIds) {
+    try {
+      await cambiaStatoBatchQuery(batchId, nuovoStato);
+      ok++;
+    } catch (e) {
+      errori.push({ batchId, messaggio: e instanceof Error ? e.message : "Errore sconosciuto" });
+    }
+  }
+
+  revalidatePath(`/pubblicazione/${canaleId}`);
+  return { ok, errori };
 }
 
 // Scrive l'override di un singolo lotto (2026-09-24, richiesta esplicita
@@ -202,11 +260,13 @@ export async function aggiornaOverrideLottoAction(formData: FormData) {
   revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
 }
 
-// Elimina un batch in QUALSIASI stato (2026-09-23 sera, regola allentata il
-// 2026-09-24). La query rifiuta gia' da sola un batch con lotti gia'
-// accettati da un'asta fisica (vedi eliminaBatch in pubblicazione-queries.ts)
-// - qui solo l'orchestrazione redirect/revalidate, stesso schema delle altre
-// action di questo file.
+// Elimina un batch in QUALSIASI stato, SENZA ECCEZIONI (2026-09-23 sera,
+// regola allentata il 2026-09-24, poi cambio di rotta 2026-09-25 - vedi
+// eliminaBatch in pubblicazione-queries.ts per il testo completo della
+// decisione). L'AVVISO non bloccante su cosa si libera (se il batch teneva
+// una prenotazione reale) e' responsabilita' del chiamante lato client
+// (EliminaBatchButton, dialog di conferma) PRIMA di invocare questa action -
+// qui solo l'orchestrazione redirect/revalidate, nessun controllo.
 export async function eliminaBatchAction(formData: FormData) {
   const batchId = Number(formData.get("batchId"));
   const canaleId = Number(formData.get("canaleId"));
@@ -215,4 +275,27 @@ export async function eliminaBatchAction(formData: FormData) {
   await eliminaBatchQuery(batchId);
   revalidatePath(`/pubblicazione/${canaleId}`);
   redirect(`/pubblicazione/${canaleId}?eliminato=1`);
+}
+
+// Versione multi-selezione di eliminaBatchAction - usata dalla barra azioni
+// della lista batch di un canale (2026-09-25, punto 2 del backlog UX
+// FINALIZZATO: "cancellazione multipla [...] stessa logica applicata per
+// ogni batch selezionato, un unico avviso consolidato"). L'avviso
+// consolidato (cosa si libera, quanti lotti coinvolti) e' costruito lato
+// client PRIMA di chiamare questa action (vedi contaLottiConPrenotazione in
+// src/lib/prenotazione-batch.ts) - qui elimina ogni batch selezionato senza
+// eccezioni (eliminaBatch non blocca mai, vedi sopra), nessun caso di
+// "alcuni bloccati" da gestire: l'idea di saltare/bloccare solo i batch con
+// lotti accettati e' stata abbandonata insieme al blocco duro.
+export async function eliminaBatchMultiploAction(formData: FormData) {
+  const canaleId = Number(formData.get("canaleId"));
+  const batchIds = formData.getAll("batchId").map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  if (batchIds.length === 0) throw new Error("Nessun batch selezionato");
+
+  for (const batchId of batchIds) {
+    await eliminaBatchQuery(batchId);
+  }
+
+  revalidatePath(`/pubblicazione/${canaleId}`);
+  redirect(`/pubblicazione/${canaleId}?eliminati=${batchIds.length}`);
 }
