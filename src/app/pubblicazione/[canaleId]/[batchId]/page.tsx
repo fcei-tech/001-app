@@ -121,7 +121,16 @@ export default async function BatchPubblicazionePage({
 
   const [righeDisponibili, tipi] = inBozza
     ? await Promise.all([
-        getSkuSelezionabiliPerBatch({ ricerca: sp.q, tipoId, condizione, proprieta, conFoto, ordina, direzione }),
+        // soloDisponibileReale = canale.esclusivo (2026-09-25, sessione 6):
+        // esclude gli sku gia' interamente impegnati su un ALTRO canale
+        // esclusivo (non solo avviso, vedi commento su
+        // getSkuSelezionabiliPerBatch in src/db/queries.ts). Un canale non
+        // esclusivo non genera mai questo conflitto, quindi resta al
+        // comportamento precedente.
+        getSkuSelezionabiliPerBatch(
+          { ricerca: sp.q, tipoId, condizione, proprieta, conFoto, ordina, direzione },
+          batch.canale.esclusivo
+        ),
         getTipiOggetto(),
       ])
     : [[], []];
