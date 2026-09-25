@@ -11,13 +11,14 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuCheckboxItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, TriangleAlert } from "lucide-react";
+import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, TriangleAlert, RotateCcw } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 import { aggiungiLottiABatch } from "@/app/pubblicazione/actions";
 import { useSelezioneMultipla } from "@/lib/selezione-multipla";
@@ -238,6 +239,16 @@ export function SelettoreLottiBatch({
     scriviColonneSalvate({ ...colonne, [id]: visibile });
   }
 
+  // "Ripristina colonne predefinite" (2026-09-25, stessa richiesta e stesso
+  // meccanismo del Magazzino - vedi vista-magazzino.tsx). Chiave localStorage
+  // distinta da quella del Magazzino MA condivisa fra TUTTI i picker di
+  // Pubblicazione, qualsiasi canale (per design, vedi commento su
+  // CHIAVE_COLONNE sopra) - il ripristino qui riporta al default anche i
+  // picker degli altri canali, non solo quello aperto in questo momento.
+  function ripristinaColonne() {
+    scriviColonneSalvate(COLONNE_DI_DEFAULT);
+  }
+
   function applicaFiltri(
     f: typeof filtri,
     ordinaOverride?: ColonnaOrdinabile,
@@ -367,6 +378,10 @@ export function SelettoreLottiBatch({
                   {c.etichetta}
                 </DropdownMenuCheckboxItem>
               ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); ripristinaColonne(); }}>
+                <RotateCcw /> Ripristina colonne predefinite
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
