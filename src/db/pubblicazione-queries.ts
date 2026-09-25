@@ -4,6 +4,7 @@ import {
   canali,
   batchPubblicazione,
   batchLotti,
+  movimentiMagazzino,
 } from "./schema";
 
 // Canale non e' esportato come tipo da schema.ts (nessuna convenzione
@@ -191,14 +192,14 @@ export async function aggiornaOverrideLotto(batchLottoId: number, valori: Overri
     .where(eq(batchLotti.id, batchLottoId));
 }
 
-// Riporta un batch (confermato O generato) in bozza. Origine: 2026-09-23
+// Riporta un batch (confermato O pubblicato) in bozza. Origine: 2026-09-23
 // notte, richiesta esplicita utente ("mi sembra strano non poter gestire i
 // batch confermati" - scappatoia semplice finche' non esiste la generazione
 // output vera, vedi commento in confermaBatchAction).
 // CAMBIO DI ROTTA 2026-09-25 (vedi backlog_ux_FINALIZZATO_2026_09_25_sessione_3
 // in claude/09c_python_pubblicazione.yaml, punto 2): rimosso il blocco per
 // lotti gia' "accettato" - le transizioni di stato batch (bozza/confermato/
-// generato) sono ora LIBERE in qualsiasi direzione. Il cliente ha confermato
+// pubblicato) sono ora LIBERE in qualsiasi direzione. Il cliente ha confermato
 // esplicitamente che candidato/accettato resta un asse indipendente, gia'
 // gestito e gia' reversibile da Accetta/Annulla accettazione - non serve piu'
 // un guard incrociato qui: un lotto puo' restare "accettato" dentro un batch
@@ -208,7 +209,7 @@ export async function aggiornaOverrideLotto(batchLottoId: number, valori: Overri
 // modulo vendite agganciato [...] il torna indietro & simili" deve restare
 // sempre possibile. Azzera anche lo snapshot: verra' rigenerato alla
 // prossima conferma (a meno che non fosse gia' presente, vedi
-// cambiaStatoBatch sotto per il caso generato->confermato che lo riusa).
+// cambiaStatoBatch sotto per il caso pubblicato->confermato che lo riusa).
 export async function riportaInBozza(batchId: number) {
   const batch = await db.query.batchPubblicazione.findFirst({
     where: (b, { eq }) => eq(b.id, batchId),
@@ -225,7 +226,7 @@ export async function riportaInBozza(batchId: number) {
 }
 
 // Cambia lo stato di un batch a UNA qualsiasi delle 3 destinazioni
-// (bozza/confermato/generato), in qualsiasi direzione - controllo esterno
+// (bozza/confermato/pubblicato), in qualsiasi direzione - controllo esterno
 // generico (2026-09-25, punto 2 del backlog UX FINALIZZATO, vedi nota
 // CAMBIO_DI_ROTTA sopra su riportaInBozza per il testo completo della
 // decisione). Usato sia dal controllo "Cambia stato" per singolo batch
@@ -234,10 +235,10 @@ export async function riportaInBozza(batchId: number) {
 //
 // - verso "bozza": equivalente a riportaInBozza sopra (azzera confermatoAt +
 //   snapshot).
-// - verso "confermato" o "generato": richiede almeno un lotto nel batch
+// - verso "confermato" o "pubblicato": richiede almeno un lotto nel batch
 //   (stesso guard gia' in uso in confermaBatchAction, esteso qui a tutte le
 //   direzioni che escono da bozza) e uno snapshot valorizzato - se il batch
-//   ha gia' uno snapshot (es. sta tornando da generato a confermato, o gia'
+//   ha gia' uno snapshot (es. sta tornando da pubblicato a confermato, o gia'
 //   passato per confermato in precedenza) lo RIUSA cosi' com'e' (mai
 //   ricalcolato da dati live, vedi sequenza_operativa_e_batch_2026_09_14),
 //   altrimenti costruisce lo stesso snapshot minimo placeholder gia' in uso
@@ -245,7 +246,7 @@ export async function riportaInBozza(batchId: number) {
 //   dei 3 livelli arriva con la generazione output, ancora da costruire).
 export async function cambiaStatoBatch(
   batchId: number,
-  nuovoStato: "bozza" | "confermato" | "generato"
+  nuovoStato: "bozza" | "confermato" | "pubblicato"
 ) {
   const batch = await db.query.batchPubblicazione.findFirst({
     where: (b, { eq }) => eq(b.id, batchId),
@@ -287,7 +288,7 @@ export async function confermaBatch(batchId: number, snapshot: unknown) {
   });
   if (!batch) throw new Error("Batch non trovato");
   if (batch.stato !== "bozza") {
-    throw new Error("Batch gia' confermato o generato");
+    throw new Error("Batch gia' confermato o pubblicato");
   }
 
   await db
@@ -296,14 +297,150 @@ export async function confermaBatch(batchId: number, snapshot: unknown) {
     .where(eq(batchPubblicazione.id, batchId));
 }
 
-export async function segnaBatchGenerato(batchId: number) {
+export async function segnaBatchPubblicato(batchId: number) {
   await db
     .update(batchPubblicazione)
-    .set({ stato: "generato" })
+    .set({ stato: "pubblicato" })
     .where(eq(batchPubblicazione.id, batchId));
 }
 
-// Elimina un batch in QUALSIASI stato (bozza/confermato/generato), SENZA
+// --- Consegna/Annulla consegna/Rientro (solo asta_fisica, 2026-09-25,
+// sessione 5) -------------------------------------------------------------
+// Flusso reale case d'asta fisiche (Cambi/Bolaffi/Wannenes/Libero):
+// candidato -> Accetta -> accettato -> Consegna -> accettato + consegnatoAt
+// (badge "Consegnato" in piu', nessun nuovo stato riga) -> o Annulla consegna
+// (torna accettato senza consegnatoAt) o Rientro (rimuove il lotto dal
+// batch, il pezzo e' tornato indietro invenduto/ritirato).
+export type ConsegnaDettagli = {
+  proprieta: "FP" | "CV" | "TERZI";
+  ubicazioneOrigineId: number;
+  ubicazioneDestinazioneId: number;
+  quantita: number;
+};
+
+// Sposta fisicamente `quantita` unita' (proprieta' scelta) dall'ubicazione di
+// origine a quella di destinazione (di norma la casa d'asta stessa) e segna
+// il lotto come consegnato. SCELTA GUIDATA MANUALE (confermato dal cliente
+// 2026-09-25 dopo il rischio segnalato): nessun automatismo indovina "dove
+// si trova adesso" un sku - puo' essere splittato su piu' ubicazioni/
+// proprieta' nel Registro Movimenti, che non ha un concetto di "ubicazione
+// attuale unica". L'operatore sceglie origine/destinazione, il form li
+// precompila da saldi reali (vedi getSaldiSkuPerUbicazione in
+// src/db/queries.ts). Registra DUE righe movimenti (uscita+entrata, MAI un
+// campo quantita' sovrascritto, stesso principio del Registro Movimenti) piu'
+// consegnaDettagli su batch_lotti - serve SOLO per poter invertire
+// esattamente lo stesso movimento da Annulla consegna/Rientro, mai
+// ricalcolato/indovinato di nuovo. Nessun controllo di stato qui (batch/
+// canale/statoRiga "accettato") - il chiamante (server action) verifica
+// prima, stesso principio di basso livello delle altre funzioni di questo
+// file.
+export async function consegnaLotto(
+  batchLottoId: number,
+  skuId: number,
+  dettagli: ConsegnaDettagli
+) {
+  await db.transaction(async (tx) => {
+    await tx.insert(movimentiMagazzino).values([
+      {
+        skuId,
+        proprieta: dettagli.proprieta,
+        ubicazioneId: dettagli.ubicazioneOrigineId,
+        causale: "consegna_asta_fisica",
+        quantitaDelta: -dettagli.quantita,
+        note: `Consegna lotto batch #${batchLottoId}`,
+      },
+      {
+        skuId,
+        proprieta: dettagli.proprieta,
+        ubicazioneId: dettagli.ubicazioneDestinazioneId,
+        causale: "consegna_asta_fisica",
+        quantitaDelta: dettagli.quantita,
+        note: `Consegna lotto batch #${batchLottoId}`,
+      },
+    ]);
+    await tx
+      .update(batchLotti)
+      .set({ consegnatoAt: new Date(), consegnaDettagli: dettagli })
+      .where(eq(batchLotti.id, batchLottoId));
+  });
+}
+
+// "Ho cliccato Consegna per errore" (2026-09-25, richiesta esplicita
+// utente). Inverte ESATTAMENTE il movimento fatto da consegnaLotto (stessi
+// proprieta'/ubicazioni/quantita' presi da consegnaDettagli, mai
+// ricalcolati), azzera consegnatoAt/consegnaDettagli. statoRiga NON cambia
+// (resta "accettato" - quell'asse e' gestito da accettaLotto/
+// annullaAccettazione sopra, indipendente da questo).
+export async function annullaConsegna(
+  batchLottoId: number,
+  skuId: number,
+  dettagli: ConsegnaDettagli
+) {
+  await db.transaction(async (tx) => {
+    await tx.insert(movimentiMagazzino).values([
+      {
+        skuId,
+        proprieta: dettagli.proprieta,
+        ubicazioneId: dettagli.ubicazioneDestinazioneId,
+        causale: "annulla_consegna_asta_fisica",
+        quantitaDelta: -dettagli.quantita,
+        note: `Annulla consegna lotto batch #${batchLottoId}`,
+      },
+      {
+        skuId,
+        proprieta: dettagli.proprieta,
+        ubicazioneId: dettagli.ubicazioneOrigineId,
+        causale: "annulla_consegna_asta_fisica",
+        quantitaDelta: dettagli.quantita,
+        note: `Annulla consegna lotto batch #${batchLottoId}`,
+      },
+    ]);
+    await tx
+      .update(batchLotti)
+      .set({ consegnatoAt: null, consegnaDettagli: null })
+      .where(eq(batchLotti.id, batchLottoId));
+  });
+}
+
+// Rientro: la casa d'asta restituisce il pezzo (invenduto/ritirato) - "il
+// rientro cancella il lotto" (2026-09-25, richiesta esplicita utente),
+// stesso principio gia' in uso per Rimuovi/Elimina batch: nessun vincolo
+// strutturale che lascia lotti "appesi". Se il lotto era stato consegnato
+// (dettagli valorizzato, passato dal chiamante) inverte anche il movimento
+// fisico PRIMA di cancellare la riga - altrimenti (mai consegnato
+// fisicamente, solo accettato) cancella e basta. Nessun controllo di stato
+// qui - il chiamante verifica statoRiga "accettato" prima.
+export async function rientroLotto(
+  batchLottoId: number,
+  skuId: number,
+  dettagli: ConsegnaDettagli | null
+) {
+  await db.transaction(async (tx) => {
+    if (dettagli) {
+      await tx.insert(movimentiMagazzino).values([
+        {
+          skuId,
+          proprieta: dettagli.proprieta,
+          ubicazioneId: dettagli.ubicazioneDestinazioneId,
+          causale: "rientro_asta_fisica",
+          quantitaDelta: -dettagli.quantita,
+          note: `Rientro lotto batch #${batchLottoId}`,
+        },
+        {
+          skuId,
+          proprieta: dettagli.proprieta,
+          ubicazioneId: dettagli.ubicazioneOrigineId,
+          causale: "rientro_asta_fisica",
+          quantitaDelta: dettagli.quantita,
+          note: `Rientro lotto batch #${batchLottoId}`,
+        },
+      ]);
+    }
+    await tx.delete(batchLotti).where(eq(batchLotti.id, batchLottoId));
+  });
+}
+
+// Elimina un batch in QUALSIASI stato (bozza/confermato/pubblicato), SENZA
 // ECCEZIONI - regola allentata una prima volta il 2026-09-24 (permesso fuori
 // da bozza, ma ancora bloccato se un lotto era "accettato" da un'asta
 // fisica), poi CAMBIO DI ROTTA ESPLICITO il 2026-09-25 (vedi
