@@ -27,13 +27,13 @@ import { eliminaBatchMultiploAction, cambiaStatoBatchMultiploAction } from "@/ap
 const ETICHETTE_STATO: Record<string, { label: string; variant: "secondary" | "success" | "outline" }> = {
   bozza: { label: "Bozza", variant: "secondary" },
   confermato: { label: "Confermato", variant: "success" },
-  generato: { label: "Generato", variant: "outline" },
+  pubblicato: { label: "Pubblicato", variant: "outline" },
 };
 
 export type RigaBatch = {
   id: number;
   creatoIlFormattato: string;
-  stato: "bozza" | "confermato" | "generato";
+  stato: "bozza" | "confermato" | "pubblicato";
   numeroLotti: number;
   numeroLottiConPrenotazione: number;
 };
@@ -50,7 +50,7 @@ export function ListaBatchCanale({
     useSelezioneMultipla<number>(ids);
   const [pending, startTransition] = useTransition();
   const [dialogEliminaAperto, setDialogEliminaAperto] = useState(false);
-  const [statoBulk, setStatoBulk] = useState<"bozza" | "confermato" | "generato" | "">("");
+  const [statoBulk, setStatoBulk] = useState<"bozza" | "confermato" | "pubblicato" | "">("");
   const [dialogCambiaStatoAperto, setDialogCambiaStatoAperto] = useState(false);
   const [esitoBulk, setEsitoBulk] = useState<string | null>(null);
 
@@ -110,7 +110,7 @@ export function ListaBatchCanale({
             <SelectContent>
               <SelectItem value="bozza">Bozza</SelectItem>
               <SelectItem value="confermato">Confermato</SelectItem>
-              <SelectItem value="generato">Generato</SelectItem>
+              <SelectItem value="pubblicato">Pubblicato</SelectItem>
             </SelectContent>
           </Select>
           <Button
@@ -243,7 +243,7 @@ export function ListaBatchCanale({
             </DialogTitle>
             <DialogDescription>
               {statoBulk === "bozza"
-                ? "I batch selezionati torneranno in bozza: la disponibilita' dei lotti gia' confermati/generati (canali esclusivi) tornera' libera."
+                ? "I batch selezionati torneranno in bozza: la disponibilita' dei lotti gia' confermati/pubblicati (canali esclusivi) tornera' libera."
                 : "I batch selezionati che erano in bozza consumeranno disponibilita' se il canale e' esclusivo. Un batch senza lotti non puo' uscire da bozza - verra' segnalato tra gli errori."}
             </DialogDescription>
           </DialogHeader>
