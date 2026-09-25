@@ -54,14 +54,22 @@ export const canaleTipoEnum = pgEnum("canale_tipo", [
 
 // Stato batch: bozza (selezione/anteprima ancora modificabile, nessun
 // effetto su impegnato) -> confermato (snapshot congelato, consuma
-// disponibilita' secondo le regole del canale) -> generato (output
+// disponibilita' secondo le regole del canale) -> pubblicato (output
 // prodotto almeno una volta, ripetibile - vedi sequenza_operativa_e_
-// batch_2026_09_14, "generazione" e' un evento ripetibile sullo stesso
+// batch_2026_09_14, "pubblicazione" e' un evento ripetibile sullo stesso
 // batch confermato, non un nuovo stato terminale).
+// RINOMINATO da "generato" a "pubblicato" (2026-09-25, sessione 5, richiesta
+// esplicita cliente: "al posto di generato puo' chiamarsi pubblicato" -
+// generato non comunicava nulla, pubblicato = l'evento reale, generare
+// l'output per il portale/inviarlo). impegnatoSql() e
+// contaLottiConPrenotazione() contano 'confermato' E 'pubblicato' come
+// prenotazione attiva (fix 2026-09-25: prima smettevano di contare appena il
+// batch passava a 'generato', anche senza toccare i lotti - vedi
+// claude/09c_python_pubblicazione.yaml).
 export const batchStatoEnum = pgEnum("batch_stato", [
   "bozza",
   "confermato",
-  "generato",
+  "pubblicato",
 ]);
 
 // Stato riga (per singolo lotto dentro un batch): 'attivo' e' l'unico
@@ -238,6 +246,17 @@ export const batchPubblicazione = pgTable(
 // per_lotto_2026_09_14): vince su qualsiasi livello del canale/batch per
 // quel campo, non scrive MAI nel Magazzino, non ha storicizzazione oltre
 // la vita del batch stesso.
+// "consegnatoAt"/"consegnaDettagli" (2026-09-25, sessione 5, flusso Consegna/
+// Annulla consegna/Rientro per asta_fisica - vedi
+// modulo_pubblicazione_aste_fisiche_flusso_consegna_FINALIZZATO_2026_09_25_
+// sessione_5 in knowledge): NON un nuovo valore di lottoStatoEnum apposta
+// (decisione 2026-09-14 di non aggiungere un terzo stato lotto) - solo un
+// timestamp che, se valorizzato su un lotto "accettato", fa apparire il
+// badge "Consegnato" in piu' in UI. consegnaDettagli (jsonb, stesso
+// principio usa-e-getta di override) porta {proprieta, ubicazioneOrigineId,
+// ubicazioneDestinazioneId, quantita} - SOLO per poter invertire esattamente
+// lo stesso movimento da Annulla consegna/Rientro (vedi consegnaLotto in
+// pubblicazione-queries.ts), mai ricalcolato/indovinato di nuovo.
 export const batchLotti = pgTable(
   "batch_lotti",
   {
@@ -250,6 +269,8 @@ export const batchLotti = pgTable(
       .references(() => sku.id),
     statoRiga: lottoStatoEnum("stato_riga").notNull().default("attivo"),
     override: jsonb("override"),
+    consegnatoAt: timestamp("consegnato_at"),
+    consegnaDettagli: jsonb("consegna_dettagli"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [index("batch_lotti_batch_idx").on(table.batchId, table.skuId)]
