@@ -3,6 +3,7 @@ import { Header } from "@/components/header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { getCanaliConConteggio } from "@/db/pubblicazione-queries";
+import { coloreCanale } from "@/lib/colori-canali";
 
 const ETICHETTE_TIPO: Record<string, string> = {
   statico: "Statico",
@@ -30,13 +31,26 @@ export default async function PubblicazionePage() {
           <p className="text-sm text-muted-foreground">Nessun canale trovato.</p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {canali.map((c) => (
+            {canali.map((c) => {
+              const colore = coloreCanale(c.nome);
+              return (
               <Link key={c.id} href={`/pubblicazione/${c.id}`}>
-                <Card className="h-full transition-colors hover:border-primary/40">
+                {/* Accento colore brand/canale (2026-09-25, richiesta esplicita
+                    utente 2026-09-24 - vedi COLORE_CANALE in
+                    src/lib/colori-canali.ts): bordo colorato, non riempimento
+                    pieno, per non compromettere leggibilita' su colori chiari
+                    (es. giallo eBay statico, verde Shopify). */}
+                <Card
+                  className="h-full border-l-4 transition-colors hover:border-primary/40"
+                  style={colore ? { borderLeftColor: colore } : undefined}
+                >
                   <CardHeader className="flex-row items-start justify-between gap-2 space-y-0">
-                    <div>
-                      <CardTitle>{c.nome}</CardTitle>
-                      <CardDescription>{ETICHETTE_TIPO[c.tipo] ?? c.tipo}</CardDescription>
+                    <div className="flex items-center gap-2">
+                      {colore && <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: colore }} />}
+                      <div>
+                        <CardTitle>{c.nome}</CardTitle>
+                        <CardDescription>{ETICHETTE_TIPO[c.tipo] ?? c.tipo}</CardDescription>
+                      </div>
                     </div>
                     {c.esclusivo && <Badge variant="warning">Esclusivo</Badge>}
                   </CardHeader>
@@ -57,7 +71,8 @@ export default async function PubblicazionePage() {
                   </CardContent>
                 </Card>
               </Link>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
