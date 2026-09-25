@@ -3,17 +3,12 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
 import { getCanaleById, getBatchPerCanale } from "@/db/pubblicazione-queries";
 import { creaBatch } from "../actions";
-
-const ETICHETTE_STATO: Record<string, { label: string; variant: "secondary" | "success" | "outline" }> = {
-  bozza: { label: "Bozza", variant: "secondary" },
-  confermato: { label: "Confermato", variant: "success" },
-  generato: { label: "Generato", variant: "outline" },
-};
+import { coloreCanale } from "@/lib/colori-canali";
+import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
+import { ListaBatchCanale, type RigaBatch } from "@/components/pubblicazione/lista-batch-canale";
 
 function formatData(d: Date) {
   return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
@@ -26,7 +21,7 @@ export default async function CanalePubblicazionePage({
   searchParams,
 }: {
   params: Promise<{ canaleId: string }>;
-  searchParams: Promise<{ eliminato?: string }>;
+  searchParams: Promise<{ eliminato?: string; eliminati?: string }>;
 }) {
   const { canaleId } = await params;
   const sp = await searchParams;
@@ -34,6 +29,15 @@ export default async function CanalePubblicazionePage({
   const [canale, batch] = await Promise.all([getCanaleById(id), getBatchPerCanale(id)]);
 
   if (!canale) notFound();
+
+  const colore = coloreCanale(canale.nome);
+  const righe: RigaBatch[] = batch.map((b) => ({
+    id: b.id,
+    creatoIlFormattato: formatData(b.createdAt),
+    stato: b.stato,
+    numeroLotti: b.lotti.length,
+    numeroLottiConPrenotazione: contaLottiConPrenotazione(b, canale),
+  }));
 
   return (
     <div className="min-h-full flex flex-col">
@@ -51,8 +55,16 @@ export default async function CanalePubblicazionePage({
             Batch eliminato.
           </div>
         )}
+        {sp.eliminati && (
+          <div className="mb-4 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+            {sp.eliminati} batch eliminati.
+          </div>
+        )}
 
-        <div className="mb-6 flex items-center justify-between gap-4">
+        <div
+          className="mb-6 flex items-center justify-between gap-4 border-l-4 pl-4"
+          style={colore ? { borderLeftColor: colore } : undefined}
+        >
           <div className="flex flex-col gap-1">
             <h1 className="text-xl font-semibold tracking-tight">{canale.nome}</h1>
             <p className="text-sm text-muted-foreground">
@@ -67,45 +79,13 @@ export default async function CanalePubblicazionePage({
           </form>
         </div>
 
-        <div className="rounded-lg border">
-          {batch.length === 0 ? (
+        {righe.length === 0 ? (
+          <div className="rounded-lg border">
             <TableEmpty>Nessun batch per questo canale. Creane uno per iniziare.</TableEmpty>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Creato il</TableHead>
-                  <TableHead>Stato</TableHead>
-                  <TableHead className="text-right">Lotti</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {batch.map((b) => {
-                  const stato = ETICHETTE_STATO[b.stato] ?? { label: b.stato, variant: "outline" as const };
-                  return (
-                    <TableRow key={b.id}>
-                      <TableCell className="p-0">
-                        <Link href={`/pubblicazione/${canale.id}/${b.id}`} className="block px-4 py-2">
-                          {formatData(b.createdAt)}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="p-0">
-                        <Link href={`/pubblicazione/${canale.id}/${b.id}`} className="block px-4 py-2">
-                          <Badge variant={stato.variant}>{stato.label}</Badge>
-                        </Link>
-                      </TableCell>
-                      <TableCell className="p-0 text-right">
-                        <Link href={`/pubblicazione/${canale.id}/${b.id}`} className="block px-4 py-2">
-                          {b.lotti.length}
-                        </Link>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </div>
+          </div>
+        ) : (
+          <ListaBatchCanale canaleId={canale.id} righe={righe} />
+        )}
       </main>
     </div>
   );
