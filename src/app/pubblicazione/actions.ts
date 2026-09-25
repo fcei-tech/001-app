@@ -13,10 +13,14 @@ import {
   aggiornaOverrideLotto as aggiornaOverrideLottoQuery,
   riportaInBozza as riportaInBozzaQuery,
   cambiaStatoBatch as cambiaStatoBatchQuery,
+  consegnaLotto as consegnaLottoQuery,
+  annullaConsegna as annullaConsegnaQuery,
+  rientroLotto as rientroLottoQuery,
+  type ConsegnaDettagli,
   getBatch,
 } from "@/db/pubblicazione-queries";
 
-type StatoBatch = "bozza" | "confermato" | "generato";
+type StatoBatch = "bozza" | "confermato" | "pubblicato";
 
 export async function creaBatch(formData: FormData) {
   const canaleId = Number(formData.get("canaleId"));
@@ -101,7 +105,7 @@ export async function accettaLottoAction(formData: FormData) {
 // utente: "finche' non colleghiamo le vendite, deve essermi permesso
 // liberare il lotto da questo stato"). Simmetrica ad accettaLottoAction:
 // verifica canale asta_fisica + statoRiga "accettato" qui nell'azione, non
-// solo lato UI. Disponibile anche a batch confermato/generato - e' proprio
+// solo lato UI. Disponibile anche a batch confermato/pubblicato - e' proprio
 // li' che serve (un lotto accettato per errore o un accordo saltato con la
 // casa d'asta si sblocca cosi', senza dover toccare il resto del batch).
 export async function annullaAccettazioneAction(formData: FormData) {
@@ -153,7 +157,7 @@ export async function confermaBatchAction(formData: FormData) {
   redirect(`/pubblicazione/${canaleId}/${batchId}?confermato=1`);
 }
 
-// Riporta in bozza un batch confermato/generato (2026-09-23 notte, richiesta
+// Riporta in bozza un batch confermato/pubblicato (2026-09-23 notte, richiesta
 // esplicita utente dopo test installazione reale: "mi sembra strano non
 // poter gestire i batch confermati"). Transizioni ora libere in qualsiasi
 // direzione (2026-09-25, cambio di rotta - vedi riportaInBozza in
@@ -196,7 +200,7 @@ export async function cambiaStatoBatchAction(formData: FormData) {
 // (shift+click, vedi src/lib/selezione-multipla.ts). Applica la stessa
 // transizione a ciascun batch selezionato UNO ALLA VOLTA, senza bloccare
 // l'intera operazione se uno dei batch selezionati fallisce (es. un batch
-// ancora in bozza senza lotti non puo' passare a confermato/generato) -
+// ancora in bozza senza lotti non puo' passare a confermato/pubblicato) -
 // principio gia' in uso altrove nel progetto per la validazione riga-per-
 // riga ("mai un errore muto, mai un blocco totale per un problema isolato").
 // Ritorna quanti sono riusciti e il dettaglio di eventuali errori, cosi' il
@@ -232,8 +236,9 @@ export async function cambiaStatoBatchMultiploAction(formData: FormData) {
 // - asta_online -> "prezzo" e "riserva" insieme (un solo Salva per riga,
 //   stesso form sia nel picker sia in "Lotti nel batch" - vedi
 //   SelettoreLottiBatch e la pagina batch).
-// Bloccato se il batch e' gia' "generato" (l'output e' gia' stato prodotto
-// con i valori di allora).
+// Bloccato SOLO su asta_online se il batch e' gia' "pubblicato" (l'output e'
+// gia' stato prodotto con i valori di allora) - su asta_fisica la Riserva
+// proposta resta sempre modificabile, vedi commento piu' sotto.
 export async function aggiornaOverrideLottoAction(formData: FormData) {
   const batchLottoId = Number(formData.get("batchLottoId"));
   const batchId = Number(formData.get("batchId"));
@@ -242,14 +247,19 @@ export async function aggiornaOverrideLottoAction(formData: FormData) {
 
   const batch = await getBatch(batchId);
   if (!batch) throw new Error("Batch non trovato");
-  if (batch.stato === "generato") {
-    throw new Error("Non si puo' modificare un lotto di un batch gia' generato");
-  }
 
   if (batch.canale.tipo === "asta_fisica") {
+    // Riserva proposta: SEMPRE modificabile, qualsiasi stato del batch
+    // (2026-09-25, sessione 5, richiesta esplicita utente: "la riserva:
+    // sempre modificabile" - a differenza di asta_online, sulle aste
+    // fisiche la trattativa con la casa d'asta continua anche dopo che il
+    // batch e' stato inviato/pubblicato, non si "congela" a quel punto).
     const riservaProposta = (formData.get("riservaProposta") ?? "").toString();
     await aggiornaOverrideLottoQuery(batchLottoId, { riservaProposta });
   } else if (batch.canale.tipo === "asta_online") {
+    if (batch.stato === "pubblicato") {
+      throw new Error("Non si puo' modificare un lotto di un batch gia' pubblicato");
+    }
     const prezzo = (formData.get("prezzo") ?? "").toString();
     const riserva = (formData.get("riserva") ?? "").toString();
     await aggiornaOverrideLottoQuery(batchLottoId, { prezzo, riserva });
@@ -298,4 +308,111 @@ export async function eliminaBatchMultiploAction(formData: FormData) {
 
   revalidatePath(`/pubblicazione/${canaleId}`);
   redirect(`/pubblicazione/${canaleId}?eliminati=${batchIds.length}`);
+}
+
+// --- Consegna/Annulla consegna/Rientro (solo asta_fisica, 2026-09-25,
+// sessione 5 - vedi consegnaLotto/annullaConsegna/rientroLotto in
+// pubblicazione-queries.ts per il dettaglio del meccanismo). Verifica
+// esplicita canale asta_fisica + statoRiga qui nell'azione, non solo lato UI
+// (stesso principio gia' in uso per accettaLottoAction/
+// annullaAccettazioneAction).
+
+const PROPRIETA_VALIDE = ["FP", "CV", "TERZI"] as const;
+
+// Consegna: l'operatore ha scelto origine/destinazione/quantita' dal form
+// guidato (SelettoreOrigineDestinazione, precompilato da saldi reali - vedi
+// getSaldiSkuPerUbicazione in src/db/queries.ts). Disponibile solo su un
+// lotto "accettato" non ancora consegnato.
+export async function consegnaLottoAction(formData: FormData) {
+  const batchLottoId = Number(formData.get("batchLottoId"));
+  const batchId = Number(formData.get("batchId"));
+  const canaleId = Number(formData.get("canaleId"));
+  const proprieta = formData.get("proprieta")?.toString();
+  const ubicazioneOrigineId = Number(formData.get("ubicazioneOrigineId"));
+  const ubicazioneDestinazioneId = Number(formData.get("ubicazioneDestinazioneId"));
+  const quantita = Number(formData.get("quantita"));
+  if (!batchLottoId || !batchId) throw new Error("Riferimento non valido");
+  if (!proprieta || !PROPRIETA_VALIDE.includes(proprieta as (typeof PROPRIETA_VALIDE)[number])) {
+    throw new Error("Proprieta' non valida");
+  }
+  if (!ubicazioneOrigineId || !ubicazioneDestinazioneId) {
+    throw new Error("Scegli ubicazione di origine e destinazione");
+  }
+  if (ubicazioneOrigineId === ubicazioneDestinazioneId) {
+    throw new Error("Origine e destinazione non possono coincidere");
+  }
+  if (!Number.isFinite(quantita) || quantita <= 0) {
+    throw new Error("Quantita' non valida");
+  }
+
+  const batch = await getBatch(batchId);
+  if (!batch) throw new Error("Batch non trovato");
+  if (batch.canale.tipo !== "asta_fisica") {
+    throw new Error("Consegna si applica solo alle aste fisiche");
+  }
+  const lotto = batch.lotti.find((l) => l.id === batchLottoId);
+  if (!lotto) throw new Error("Lotto non trovato in questo batch");
+  if (lotto.statoRiga !== "accettato") {
+    throw new Error("Solo un lotto accettato puo' essere consegnato");
+  }
+  if (lotto.consegnatoAt) {
+    throw new Error("Questo lotto e' gia' stato consegnato");
+  }
+
+  await consegnaLottoQuery(batchLottoId, lotto.skuId, {
+    proprieta: proprieta as ConsegnaDettagli["proprieta"],
+    ubicazioneOrigineId,
+    ubicazioneDestinazioneId,
+    quantita,
+  });
+  revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
+}
+
+// "Ho cliccato Consegna per errore" - inverte lo stesso movimento usando i
+// dettagli gia' salvati (consegnaDettagli), nessun input dall'operatore.
+export async function annullaConsegnaAction(formData: FormData) {
+  const batchLottoId = Number(formData.get("batchLottoId"));
+  const batchId = Number(formData.get("batchId"));
+  const canaleId = Number(formData.get("canaleId"));
+  if (!batchLottoId || !batchId) throw new Error("Riferimento non valido");
+
+  const batch = await getBatch(batchId);
+  if (!batch) throw new Error("Batch non trovato");
+  if (batch.canale.tipo !== "asta_fisica") {
+    throw new Error("Annulla consegna si applica solo alle aste fisiche");
+  }
+  const lotto = batch.lotti.find((l) => l.id === batchLottoId);
+  if (!lotto) throw new Error("Lotto non trovato in questo batch");
+  if (!lotto.consegnatoAt || !lotto.consegnaDettagli) {
+    throw new Error("Questo lotto non risulta consegnato");
+  }
+
+  await annullaConsegnaQuery(batchLottoId, lotto.skuId, lotto.consegnaDettagli as ConsegnaDettagli);
+  revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
+}
+
+// Rientro: il pezzo torna indietro (invenduto/ritirato) - rimuove il lotto
+// dal batch, invertendo anche il movimento fisico della consegna. Disponibile
+// solo su un lotto gia' consegnato (per un lotto accettato ma mai consegnato
+// c'e' gia' "Annulla accettazione" - non serve un secondo percorso allo
+// stesso risultato).
+export async function rientroLottoAction(formData: FormData) {
+  const batchLottoId = Number(formData.get("batchLottoId"));
+  const batchId = Number(formData.get("batchId"));
+  const canaleId = Number(formData.get("canaleId"));
+  if (!batchLottoId || !batchId) throw new Error("Riferimento non valido");
+
+  const batch = await getBatch(batchId);
+  if (!batch) throw new Error("Batch non trovato");
+  if (batch.canale.tipo !== "asta_fisica") {
+    throw new Error("Rientro si applica solo alle aste fisiche");
+  }
+  const lotto = batch.lotti.find((l) => l.id === batchLottoId);
+  if (!lotto) throw new Error("Lotto non trovato in questo batch");
+  if (!lotto.consegnatoAt) {
+    throw new Error("Questo lotto non risulta consegnato - usa Annulla accettazione");
+  }
+
+  await rientroLottoQuery(batchLottoId, lotto.skuId, (lotto.consegnaDettagli as ConsegnaDettagli | null) ?? null);
+  revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
 }
