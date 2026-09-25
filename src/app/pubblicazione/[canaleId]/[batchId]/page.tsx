@@ -8,17 +8,26 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
 import { getBatch, type OverrideLotto } from "@/db/pubblicazione-queries";
-import { getSkuSelezionabiliPerBatch, getTipiOggetto, type ColonnaOrdinabile } from "@/db/queries";
+import {
+  getSkuSelezionabiliPerBatch,
+  getTipiOggetto,
+  getUbicazioniAttive,
+  getSaldiSkuPerUbicazione,
+  type ColonnaOrdinabile,
+} from "@/db/queries";
 import {
   rimuoviLottoDaBatch,
   confermaBatchAction,
   accettaLottoAction,
   annullaAccettazioneAction,
+  annullaConsegnaAction,
 } from "../../actions";
 import { SelettoreLottiBatch } from "@/components/pubblicazione/selettore-lotti";
 import { EliminaBatchButton } from "@/components/pubblicazione/elimina-batch-button";
 import { OverrideLottoForm } from "@/components/pubblicazione/override-lotto-form";
 import { CambiaStatoBatchControl } from "@/components/pubblicazione/cambia-stato-batch-control";
+import { ConsegnaLottoForm } from "@/components/pubblicazione/consegna-lotto-form";
+import { RientroLottoButton } from "@/components/pubblicazione/rientro-lotto-button";
 import { coloreCanale } from "@/lib/colori-canali";
 import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
 
@@ -87,13 +96,20 @@ export default async function BatchPubblicazionePage({
   // Override per lotto (2026-09-24, richiesta esplicita utente - vedi
   // OverrideLotto in pubblicazione-queries.ts): "Riserva proposta" su
   // asta_fisica, "Prezzo/Riserva evento" su asta_online (Catawiki incluso,
-  // nessun caso speciale per nome). Mai effetto sul Magazzino, mai
-  // modificabile dopo che il batch e' "generato" (output gia' prodotto con
-  // i valori di allora).
+  // nessun caso speciale per nome). Mai effetto sul Magazzino. Editabilita'
+  // per tipo canale: vedi overrideModificabile sotto (2026-09-25, sessione 5
+  // - non piu' un blocco unico per i due tipi).
   const mostraRiservaProposta = batch.canale.tipo === "asta_fisica";
   const mostraOverrideOnline = batch.canale.tipo === "asta_online";
   const mostraOverride = mostraRiservaProposta || mostraOverrideOnline;
-  const overrideModificabile = mostraOverride && batch.stato !== "generato";
+  // Riserva proposta (asta_fisica): SEMPRE modificabile, qualsiasi stato del
+  // batch (2026-09-25, sessione 5, richiesta esplicita utente: "la riserva:
+  // sempre modificabile" - la trattativa con la casa d'asta continua anche
+  // dopo l'invio). Prezzo/riserva evento (asta_online): bloccato solo dopo
+  // "pubblicato" (l'output e' gia' stato prodotto con quei valori) - stesso
+  // fix applicato lato server in aggiornaOverrideLottoAction.
+  const overrideModificabile =
+    mostraRiservaProposta || (mostraOverrideOnline && batch.stato !== "pubblicato");
 
   const tipoId = sp.tipo && sp.tipo !== "tutti" ? Number(sp.tipo) : undefined;
   const condizione = sp.condizione && sp.condizione !== "tutti" ? sp.condizione : undefined;
@@ -110,6 +126,24 @@ export default async function BatchPubblicazionePage({
       ])
     : [[], []];
   const righePicker = righeDisponibili.filter((r) => !idGiaInBatch.has(r.id));
+
+  // Dati per il form "Consegna" (asta_fisica, 2026-09-25 sessione 5) - solo
+  // per i lotti che ne hanno davvero bisogno (accettato, non ancora
+  // consegnato, batch non in bozza - vedi commento su mostraColonnaAzioni:
+  // in bozza l'unica azione riga e' sempre "Rimuovi"). Saldi calcolati per
+  // sku uno alla volta (Promise.all, batch piccoli - stesso principio N+1
+  // deliberato gia' in uso in getCanaliConConteggio) invece che con una
+  // query aggregata su piu' sku, per riusare getSaldiSkuPerUbicazione cosi'
+  // com'e'.
+  const lottiDaConsegnare =
+    !inBozza && batch.canale.tipo === "asta_fisica"
+      ? batch.lotti.filter((l) => l.statoRiga === "accettato" && !l.consegnatoAt)
+      : [];
+  const [ubicazioniAttive, saldiPerLotto] = await Promise.all([
+    lottiDaConsegnare.length > 0 ? getUbicazioniAttive() : Promise.resolve([]),
+    Promise.all(lottiDaConsegnare.map((l) => getSaldiSkuPerUbicazione(l.skuId).then((saldi) => [l.id, saldi] as const))),
+  ]);
+  const saldiPerLottoId = new Map(saldiPerLotto);
 
   return (
     <div className="min-h-full flex flex-col">
@@ -207,7 +241,13 @@ export default async function BatchPubblicazionePage({
                         <TableCell>{l.sku.artista}</TableCell>
                         <TableCell>{l.sku.opera}</TableCell>
                         <TableCell>
-                          <Badge variant={statoRiga.variant}>{statoRiga.label}</Badge>
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant={statoRiga.variant}>{statoRiga.label}</Badge>
+                            {/* Badge visivo in piu' (2026-09-25, sessione 5) - NON un
+                                nuovo lottoStatoEnum (decisione 2026-09-14), solo
+                                consegnatoAt valorizzato su un lotto "accettato". */}
+                            {l.consegnatoAt && <Badge variant="warning">Consegnato</Badge>}
+                          </div>
                         </TableCell>
                         {mostraOverride && (
                           <TableCell>
@@ -246,23 +286,55 @@ export default async function BatchPubblicazionePage({
                                   Accetta
                                 </Button>
                               </form>
-                            ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "accettato" ? (
-                              // "Annulla accettazione" (2026-09-24, richiesta
-                              // esplicita utente): finche' non c'e' un
-                              // collegamento reale con le vendite, deve
-                              // restare possibile liberare un lotto da
-                              // "accettato" - altrimenti un errore o un
-                              // accordo saltato con la casa d'asta blocca
-                              // per sempre Elimina/Riporta in bozza sul
-                              // batch intero, senza rimedio.
-                              <form action={annullaAccettazioneAction}>
-                                <input type="hidden" name="batchLottoId" value={l.id} />
-                                <input type="hidden" name="batchId" value={batch.id} />
-                                <input type="hidden" name="canaleId" value={canaleId} />
-                                <Button type="submit" variant="outline" size="sm">
-                                  Annulla accettazione
-                                </Button>
-                              </form>
+                            ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "accettato" && !l.consegnatoAt ? (
+                              // Accettato, non ancora consegnato: "Annulla
+                              // accettazione" (2026-09-24, vedi commento
+                              // storico sotto) + "Consegna" (2026-09-25,
+                              // sessione 5) - sempre distanziati nel flusso
+                              // reale del cliente ("accetta e consega, sono
+                              // sempre distanziati").
+                              <div className="flex flex-wrap justify-end gap-1.5">
+                                <form action={annullaAccettazioneAction}>
+                                  <input type="hidden" name="batchLottoId" value={l.id} />
+                                  <input type="hidden" name="batchId" value={batch.id} />
+                                  <input type="hidden" name="canaleId" value={canaleId} />
+                                  {/* "Annulla accettazione" (2026-09-24, richiesta
+                                      esplicita utente): finche' non c'e' un
+                                      collegamento reale con le vendite, deve
+                                      restare possibile liberare un lotto da
+                                      "accettato" - altrimenti un errore o un
+                                      accordo saltato con la casa d'asta blocca
+                                      per sempre Elimina/Riporta in bozza sul
+                                      batch intero, senza rimedio. */}
+                                  <Button type="submit" variant="outline" size="sm">
+                                    Annulla accettazione
+                                  </Button>
+                                </form>
+                                <ConsegnaLottoForm
+                                  batchLottoId={l.id}
+                                  batchId={batch.id}
+                                  canaleId={Number(canaleId)}
+                                  canaleNome={batch.canale.nome}
+                                  saldi={saldiPerLottoId.get(l.id) ?? []}
+                                  ubicazioniAttive={ubicazioniAttive}
+                                />
+                              </div>
+                            ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "accettato" && l.consegnatoAt ? (
+                              // Consegnato: "Annulla consegna" (deterministico,
+                              // inverte esattamente lo stesso movimento - vedi
+                              // annullaConsegnaAction) + "Rientro" (rimuove il
+                              // lotto, con dialog di conferma).
+                              <div className="flex flex-wrap justify-end gap-1.5">
+                                <form action={annullaConsegnaAction}>
+                                  <input type="hidden" name="batchLottoId" value={l.id} />
+                                  <input type="hidden" name="batchId" value={batch.id} />
+                                  <input type="hidden" name="canaleId" value={canaleId} />
+                                  <Button type="submit" variant="outline" size="sm">
+                                    Annulla consegna
+                                  </Button>
+                                </form>
+                                <RientroLottoButton batchLottoId={l.id} batchId={batch.id} canaleId={Number(canaleId)} />
+                              </div>
                             ) : null}
                           </TableCell>
                         )}
