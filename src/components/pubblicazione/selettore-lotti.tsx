@@ -20,6 +20,7 @@ import { TableEmpty } from "@/components/ui/table-empty";
 import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, TriangleAlert } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 import { aggiungiLottiABatch } from "@/app/pubblicazione/actions";
+import { useSelezioneMultipla } from "@/lib/selezione-multipla";
 
 const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"];
 
@@ -210,7 +211,12 @@ export function SelettoreLottiBatch({
   const ordinamentoCorrente: ColonnaOrdinabile = ordinaAttuale ?? "skuCode";
   const ordinamentoAttivo = Boolean(ordinaAttuale);
   const colonne = useSyncExternalStore(sottoscriviColonne, leggiColonneSalvate, () => COLONNE_DI_DEFAULT);
-  const [selezionati, setSelezionati] = useState<Set<number>>(new Set());
+  // Selezione multipla stile file-manager (shift+click estende a un
+  // intervallo) - 2026-09-25, punto 3 del backlog UX FINALIZZATO, vedi
+  // src/lib/selezione-multipla.ts.
+  const { selezionati, gestisciSeleziona, segnalaShift, selezionaTutti } = useSelezioneMultipla<number>(
+    righe.map((r) => r.id)
+  );
   // Prezzo/riserva evento per sku, solo asta_online (2026-09-24): stato
   // locale nel picker perche' il lotto non esiste ancora in batch_lotti a
   // questo punto - i valori viaggiano come input nascosti prezzo_<id>/
@@ -279,17 +285,6 @@ export function SelettoreLottiBatch({
     applicaFiltri(filtri, chiave, prossimaDirezione);
   }
 
-  function toggleSelezionaTutti(v: boolean) {
-    setSelezionati(v ? new Set(righe.map((r) => r.id)) : new Set());
-  }
-  function toggleSeleziona(id: number, v: boolean) {
-    setSelezionati((prev) => {
-      const next = new Set(prev);
-      if (v) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  }
   const tuttiSelezionati = righe.length > 0 && righe.every((r) => selezionati.has(r.id));
   const alcuniSelezionati = !tuttiSelezionati && righe.some((r) => selezionati.has(r.id));
 
@@ -423,7 +418,7 @@ export function SelettoreLottiBatch({
                   <TableHead className="w-10">
                     <Checkbox
                       checked={tuttiSelezionati ? true : alcuniSelezionati ? "indeterminate" : false}
-                      onCheckedChange={(v) => toggleSelezionaTutti(v === true)}
+                      onCheckedChange={(v) => selezionaTutti(v === true)}
                       aria-label="Seleziona tutti"
                     />
                   </TableHead>
@@ -469,8 +464,8 @@ export function SelettoreLottiBatch({
                   const disponibileReale = r.quantitaDisponibile - r.impegnato;
                   return (
                     <TableRow key={r.id}>
-                      <TableCell>
-                        <Checkbox checked={selezionati.has(r.id)} onCheckedChange={(v) => toggleSeleziona(r.id, v === true)} aria-label={`Seleziona ${r.skuCode}`} />
+                      <TableCell onClickCapture={segnalaShift}>
+                        <Checkbox checked={selezionati.has(r.id)} onCheckedChange={(v) => gestisciSeleziona(r.id, v === true)} aria-label={`Seleziona ${r.skuCode}`} />
                       </TableCell>
                       <TableCell className="font-mono text-xs">{r.skuCode}</TableCell>
                       {colonneVisibili.map((c) => (
