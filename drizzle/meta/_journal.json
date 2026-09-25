@@ -22,6 +22,13 @@
       "when": 1790170065940,
       "tag": "0002_chemical_white_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790342381919,
+      "tag": "0003_nice_stark_industries",
+      "breakpoints": true
     }
   ]
 }
