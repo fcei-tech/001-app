@@ -167,12 +167,56 @@ function IntestazioneOrdinabile({
   );
 }
 
+// Coppia min/max riusabile per i filtri di profondita' (2026-09-29) - 4
+// istanze identiche sotto (prezzo eBay, prezzo Catawiki, riserva Catawiki,
+// quantita' disponibile), estratte qui per non ripetere 4 volte lo stesso
+// JSX. Stringhe libere (non controllate oltre type="number" nativo): "" =
+// nessun limite, min e max sono indipendenti fra loro.
+function FiltroRange({
+  etichetta,
+  min,
+  max,
+  onMinChange,
+  onMaxChange,
+}: {
+  etichetta: string;
+  min: string;
+  max: string;
+  onMinChange: (v: string) => void;
+  onMaxChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs text-muted-foreground">{etichetta}</label>
+      <div className="flex items-center gap-1">
+        <Input type="number" step="0.01" min="0" value={min} onChange={(e) => onMinChange(e.target.value)} placeholder="Min" className="h-8 w-20" />
+        <span className="text-muted-foreground">–</span>
+        <Input type="number" step="0.01" min="0" value={max} onChange={(e) => onMaxChange(e.target.value)} placeholder="Max" className="h-8 w-20" />
+      </div>
+    </div>
+  );
+}
+
 export type FiltriPickerIniziali = {
   q: string;
   tipo: string;
   condizione: string;
   proprieta: string;
   confoto: string;
+  // Filtri di profondita' min/max (2026-09-29, richiesta esplicita cliente
+  // dopo il test batch #58: "i valori di prezzo, riserva, disponibilita'/
+  // quantita' mi servono filtrabili piu' profondamente"). Stringhe (non
+  // number) come tutti gli altri campi filtro di questo modulo - "" =
+  // nessun limite impostato, non "0". Convertiti in numero solo al momento
+  // di costruire l'URLSearchParams in applicaFiltri sotto.
+  prezzoEbayMin: string;
+  prezzoEbayMax: string;
+  prezzoCatawikiMin: string;
+  prezzoCatawikiMax: string;
+  riservaCatawikiMin: string;
+  riservaCatawikiMax: string;
+  quantitaMin: string;
+  quantitaMax: string;
 };
 
 export function SelettoreLottiBatch({
@@ -238,6 +282,14 @@ export function SelettoreLottiBatch({
     if (f.condizione !== "tutti") params.set("condizione", f.condizione);
     if (f.proprieta !== "tutti") params.set("proprieta", f.proprieta);
     if (f.confoto === "si") params.set("confoto", "si");
+    if (f.prezzoEbayMin) params.set("prezzoEbayMin", f.prezzoEbayMin);
+    if (f.prezzoEbayMax) params.set("prezzoEbayMax", f.prezzoEbayMax);
+    if (f.prezzoCatawikiMin) params.set("prezzoCatawikiMin", f.prezzoCatawikiMin);
+    if (f.prezzoCatawikiMax) params.set("prezzoCatawikiMax", f.prezzoCatawikiMax);
+    if (f.riservaCatawikiMin) params.set("riservaCatawikiMin", f.riservaCatawikiMin);
+    if (f.riservaCatawikiMax) params.set("riservaCatawikiMax", f.riservaCatawikiMax);
+    if (f.quantitaMin) params.set("quantitaMin", f.quantitaMin);
+    if (f.quantitaMax) params.set("quantitaMax", f.quantitaMax);
     if (!azzeraOrdinamento) {
       const ordinaFinale = ordinaOverride ?? ordinaAttuale;
       const direzioneFinale = ordinaOverride ? (direzioneOverride ?? "asc") : direzioneAttuale;
@@ -257,7 +309,11 @@ export function SelettoreLottiBatch({
   }
 
   function azzeraFiltri() {
-    const vuoti: typeof filtri = { q: "", tipo: "tutti", condizione: "tutti", proprieta: "tutti", confoto: "no" };
+    const vuoti: typeof filtri = {
+      q: "", tipo: "tutti", condizione: "tutti", proprieta: "tutti", confoto: "no",
+      prezzoEbayMin: "", prezzoEbayMax: "", prezzoCatawikiMin: "", prezzoCatawikiMax: "",
+      riservaCatawikiMin: "", riservaCatawikiMax: "", quantitaMin: "", quantitaMax: "",
+    };
     setFiltri(vuoti);
     applicaFiltri(vuoti, undefined, undefined, true);
   }
@@ -362,133 +418,43 @@ export function SelettoreLottiBatch({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+
+        {/* Filtri di profondita' min/max (2026-09-29, richiesta esplicita
+            cliente dopo il test batch #58 - vedi FiltriPickerIniziali sopra):
+            riga separata sotto i filtri categorici, stesso "Applica filtri"
+            del form principale, niente bottone dedicato. */}
+        <div className="flex flex-wrap items-end gap-4">
+          <FiltroRange
+            etichetta="Prezzo eBay (€)"
+            min={filtri.prezzoEbayMin}
+            max={filtri.prezzoEbayMax}
+            onMinChange={(v) => setFiltri((f) => ({ ...f, prezzoEbayMin: v }))}
+            onMaxChange={(v) => setFiltri((f) => ({ ...f, prezzoEbayMax: v }))}
+          />
+          <FiltroRange
+            etichetta="Prezzo Catawiki (€)"
+            min={filtri.prezzoCatawikiMin}
+            max={filtri.prezzoCatawikiMax}
+            onMinChange={(v) => setFiltri((f) => ({ ...f, prezzoCatawikiMin: v }))}
+            onMaxChange={(v) => setFiltri((f) => ({ ...f, prezzoCatawikiMax: v }))}
+          />
+          <FiltroRange
+            etichetta="Riserva Catawiki (€)"
+            min={filtri.riservaCatawikiMin}
+            max={filtri.riservaCatawikiMax}
+            onMinChange={(v) => setFiltri((f) => ({ ...f, riservaCatawikiMin: v }))}
+            onMaxChange={(v) => setFiltri((f) => ({ ...f, riservaCatawikiMax: v }))}
+          />
+          <FiltroRange
+            etichetta="Quantità disponibile"
+            min={filtri.quantitaMin}
+            max={filtri.quantitaMax}
+            onMinChange={(v) => setFiltri((f) => ({ ...f, quantitaMin: v }))}
+            onMaxChange={(v) => setFiltri((f) => ({ ...f, quantitaMax: v }))}
+          />
+        </div>
       </form>
 
       <form action={aggiungiLottiABatch} className="flex flex-col gap-3">
         <input type="hidden" name="batchId" value={batchId} />
         <input type="hidden" name="canaleId" value={canaleId} />
-        {/* Prezzo/riserva NON si scrivono piu' qui (2026-09-29, richiesta
-            esplicita del cliente, generalizzata a tutti i canali asta_online:
-            aggiungi il lotto "nudo", il prezzo/riserva si scrive sempre e
-            solo dopo in "Lotti nel batch" - un solo punto d'ingresso, meno
-            ambiguita' su "dove l'ho gia' scritto"). aggiungiLotti accetta
-            ancora prezzo/riserva nella sua firma per compatibilita', ma
-            questo form ora invia sempre solo lo skuId. */}
-        {Array.from(selezionati).map((id) => (
-          <input key={id} type="hidden" name="skuId" value={id} />
-        ))}
-
-        {/* Bottone in cima, non in fondo (2026-09-23 notte, feedback utente
-            dopo test installazione reale: "il bottone aggiungi sku in basso
-            e' scomodo se le liste sono lunghe" -> "voglio i bottoni in
-            alto", rigettando esplicitamente la versione precedente con
-            barra sticky in fondo alla viewport). Sta comunque dentro questo
-            form: la posizione nel JSX non deve coincidere con l'ultimo
-            elemento del form perche' il submit funzioni. */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
-            {righe.length} sku disponibili con questi filtri (già esclusi: bloccati per la vendita, quantità esaurita, già presenti nel batch).
-          </p>
-          <div className="flex items-center gap-3">
-            {selezionati.size > 0 && (
-              <span className="text-sm text-muted-foreground">{selezionati.size} selezionati</span>
-            )}
-            <Button type="submit" disabled={selezionati.size === 0}>
-              Aggiungi {selezionati.size > 0 ? `${selezionati.size} sku` : "selezionati"}
-            </Button>
-          </div>
-        </div>
-
-        <div className="rounded-xl border overflow-x-auto">
-          {righe.length === 0 ? (
-            <TableEmpty><p className="font-medium text-foreground">Nessuno sku trovato</p><p>Prova a modificare la ricerca o i filtri.</p></TableEmpty>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">
-                    <Checkbox
-                      checked={tuttiSelezionati ? true : alcuniSelezionati ? "indeterminate" : false}
-                      onCheckedChange={(v) => selezionaTutti(v === true)}
-                      aria-label="Seleziona tutti"
-                    />
-                  </TableHead>
-                  <IntestazioneOrdinabile
-                    etichetta="SKU"
-                    chiave="skuCode"
-                    attiva={ordinamentoCorrente === "skuCode"}
-                    direzione={direzioneAttuale}
-                    onOrdina={gestisciOrdinamento}
-                  />
-                  {colonneVisibili.map((c) => (
-                    <IntestazioneOrdinabile
-                      key={c.id}
-                      etichetta={c.etichetta}
-                      chiave={c.chiaveOrdinamento}
-                      attiva={ordinamentoCorrente === c.chiaveOrdinamento}
-                      direzione={direzioneAttuale}
-                      allineaDestra={c.allineaDestra}
-                      onOrdina={gestisciOrdinamento}
-                    />
-                  ))}
-                  <IntestazioneOrdinabile
-                    etichetta="Disponibile"
-                    chiave="disponibile"
-                    attiva={ordinamentoCorrente === "disponibile"}
-                    direzione={direzioneAttuale}
-                    allineaDestra
-                    onOrdina={gestisciOrdinamento}
-                  />
-                  <IntestazioneOrdinabile
-                    etichetta="Impegnato"
-                    chiave="impegnato"
-                    attiva={ordinamentoCorrente === "impegnato"}
-                    direzione={direzioneAttuale}
-                    allineaDestra
-                    onOrdina={gestisciOrdinamento}
-                  />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {righe.map((r) => {
-                  const disponibileReale = r.quantitaDisponibile - r.impegnato;
-                  return (
-                    <TableRow key={r.id}>
-                      <TableCell onClickCapture={segnalaShift}>
-                        <Checkbox checked={selezionati.has(r.id)} onCheckedChange={(v) => gestisciSeleziona(r.id, v === true)} aria-label={`Seleziona ${r.skuCode}`} />
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{r.skuCode}</TableCell>
-                      {colonneVisibili.map((c) => (
-                        <TableCell key={c.id} className={c.allineaDestra ? "text-right tabular-nums" : undefined}>
-                          {c.render(r)}
-                        </TableCell>
-                      ))}
-                      <TableCell className="text-right tabular-nums">{r.quantitaDisponibile}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {r.impegnato > 0 ? (
-                          <span
-                            className={`inline-flex items-center gap-1 ${disponibileReale <= 0 ? "font-medium text-warning" : "text-muted-foreground"}`}
-                            title={
-                              disponibileReale <= 0
-                                ? "Già impegnato per intero su un altro batch confermato (canale esclusivo) - selezionabile comunque, verifica prima di confermare."
-                                : "Parzialmente impegnato su un altro batch confermato (canale esclusivo)."
-                            }
-                          >
-                            {disponibileReale <= 0 && <TriangleAlert className="size-3.5" />}
-                            {r.impegnato}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">0</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </div>
-      </form>
-    </div>
-  );
-}
