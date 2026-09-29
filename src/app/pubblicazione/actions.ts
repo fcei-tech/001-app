@@ -465,8 +465,18 @@ export async function generaFileCatawikiAction(batchId: number): Promise<{
 
   await segnaBatchPubblicatoQuery(batchId);
 
-  const now = new Date();
-  const bollino = now.toISOString().replace(/[-:]/g, "").replace("T", "_").slice(0, 13);
+  // Data e ora di Roma (non UTC): stesso criterio del PDF delle aste fisiche.
+  const partiRomaCsv = new Intl.DateTimeFormat("it-IT", {
+    timeZone: "Europe/Rome",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const parteCsv = (tipo: string) => partiRomaCsv.find((p) => p.type === tipo)?.value ?? "";
+  const bollino = `${parteCsv("year")}${parteCsv("month")}${parteCsv("day")}_${parteCsv("hour")}${parteCsv("minute")}`;
   const filename = `batch_catawiki_${batchId}_${bollino}.csv`;
 
   revalidatePath(`/pubblicazione/${batch.canaleId}/${batchId}`);
