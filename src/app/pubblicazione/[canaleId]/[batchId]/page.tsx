@@ -13,8 +13,10 @@ import {
   getTipiOggetto,
   getUbicazioniAttive,
   getSaldiSkuPerUbicazione,
+  getFotoPerSkuIds,
   type ColonnaOrdinabile,
 } from "@/db/queries";
+import { getSilenziamentiComeMappa } from "@/db/silenziamenti-queries";
 import {
   rimuoviLottoDaBatch,
   confermaBatchAction,
@@ -28,8 +30,24 @@ import { OverrideLottoForm } from "@/components/pubblicazione/override-lotto-for
 import { CambiaStatoBatchControl } from "@/components/pubblicazione/cambia-stato-batch-control";
 import { ConsegnaLottoForm } from "@/components/pubblicazione/consegna-lotto-form";
 import { RientroLottoButton } from "@/components/pubblicazione/rientro-lotto-button";
+import {
+  CellaPrezzoCatawiki,
+  CellaRiservaCatawiki,
+  CellaCondizioneCatawiki,
+  SilenziaErroreButton,
+} from "@/components/pubblicazione/celle-override-catawiki";
+import { ImpostazioniBatchCatawikiForm } from "@/components/pubblicazione/impostazioni-batch-catawiki-form";
+import { GeneraFileCatawikiButton } from "@/components/pubblicazione/genera-file-catawiki-button";
 import { coloreCanale } from "@/lib/colori-canali";
 import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
+import {
+  risolviBatchCatawiki,
+  IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
+  ETICHETTA_ERRORE_VALIDAZIONE,
+  type ImpostazioniBatchCatawiki,
+  type LottoPerRisoluzioneCatawiki,
+  type OverrideLottoCatawiki,
+} from "@/lib/catawiki-resolver";
 
 const ETICHETTE_STATO_RIGA: Record<string, { label: string; variant: "secondary" | "success" | "outline" }> = {
   attivo: { label: "Attivo", variant: "secondary" },
@@ -95,21 +113,64 @@ export default async function BatchPubblicazionePage({
   const colore = coloreCanale(batch.canale.nome);
   // Override per lotto (2026-09-24, richiesta esplicita utente - vedi
   // OverrideLotto in pubblicazione-queries.ts): "Riserva proposta" su
-  // asta_fisica, "Prezzo/Riserva evento" su asta_online (Catawiki incluso,
-  // nessun caso speciale per nome). Mai effetto sul Magazzino. Editabilita'
-  // per tipo canale: vedi overrideModificabile sotto (2026-09-25, sessione 5
-  // - non piu' un blocco unico per i due tipi).
+  // asta_fisica, "Prezzo/Riserva evento" sugli altri canali asta_online
+  // (Bidspirit/eBay Asta). Catawiki (2026-09-28, generazione output) ha
+  // invece 4 colonne dedicate (Prezzo/Riserva/Condizione/Stato export, vedi
+  // isCatawiki sotto) - non usa piu' questa colonna combinata unica. Mai
+  // effetto sul Magazzino in nessun caso.
+  const isCatawiki = batch.canale.nome === "Catawiki";
   const mostraRiservaProposta = batch.canale.tipo === "asta_fisica";
-  const mostraOverrideOnline = batch.canale.tipo === "asta_online";
+  const mostraOverrideOnline = batch.canale.tipo === "asta_online" && !isCatawiki;
   const mostraOverride = mostraRiservaProposta || mostraOverrideOnline;
   // Riserva proposta (asta_fisica): SEMPRE modificabile, qualsiasi stato del
   // batch (2026-09-25, sessione 5, richiesta esplicita utente: "la riserva:
   // sempre modificabile" - la trattativa con la casa d'asta continua anche
-  // dopo l'invio). Prezzo/riserva evento (asta_online): bloccato solo dopo
-  // "pubblicato" (l'output e' gia' stato prodotto con quei valori) - stesso
-  // fix applicato lato server in aggiornaOverrideLottoAction.
+  // dopo l'invio). Prezzo/riserva evento (asta_online non-Catawiki): bloccato
+  // solo dopo "pubblicato" (l'output e' gia' stato prodotto con quei valori)
+  // - stesso fix applicato lato server in aggiornaOverrideLottoAction.
   const overrideModificabile =
     mostraRiservaProposta || (mostraOverrideOnline && batch.stato !== "pubblicato");
+  // Catawiki: stessa regola "bloccato solo dopo pubblicato" per le 3 celle
+  // per-lotto, stesso principio di sopra ma per canale singolo.
+  const catawikiModificabile = isCatawiki && batch.stato !== "pubblicato";
+
+  // Risoluzione a 3 livelli (canale/batch/override) per la colonna "Stato
+  // export" - stessa fonte di verita' usata da generaFileCatawikiAction, mai
+  // ricalcolata con logica diversa (vedi commento in catawiki-resolver.ts).
+  const impostazioniCatawiki: ImpostazioniBatchCatawiki = {
+    ...IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
+    ...((batch.impostazioniBatch ?? {}) as Partial<ImpostazioniBatchCatawiki>),
+  };
+  const [fotoMappaCatawiki, silenziamentiMappa] = isCatawiki
+    ? await Promise.all([
+        getFotoPerSkuIds(batch.lotti.map((l) => l.skuId)),
+        getSilenziamentiComeMappa(batch.canaleId),
+      ])
+    : [new Map<number, { id: number; url: string; ordine: number }[]>(), new Map<number, Set<string>>()];
+  const righeRisolteCatawiki = isCatawiki
+    ? risolviBatchCatawiki(
+        batch.lotti.map(
+          (l): LottoPerRisoluzioneCatawiki => ({
+            batchLottoId: l.id,
+            skuId: l.skuId,
+            skuCode: l.sku.skuCode,
+            skuCondizione: l.sku.condizione,
+            skuAnno: l.sku.anno,
+            skuPrezzoCatawiki: l.sku.prezzoCatawiki,
+            override: (l.override as OverrideLottoCatawiki | null) ?? null,
+            numeroFoto: fotoMappaCatawiki.get(l.skuId)?.length ?? 0,
+          })
+        ),
+        impostazioniCatawiki
+      )
+    : [];
+  const risoltaPerLottoId = new Map(righeRisolteCatawiki.map((r) => [r.batchLottoId, r]));
+  const motivoGeneraDisabilitato =
+    batch.stato === "pubblicato"
+      ? "Batch gia' pubblicato - genera un nuovo batch per una nuova esportazione."
+      : batch.stato === "bozza"
+        ? "Conferma il batch prima di generare il file."
+        : undefined;
 
   const tipoId = sp.tipo && sp.tipo !== "tutti" ? Number(sp.tipo) : undefined;
   const condizione = sp.condizione && sp.condizione !== "tutti" ? sp.condizione : undefined;
@@ -205,6 +266,17 @@ export default async function BatchPubblicazionePage({
                 libere in qualsiasi direzione, sostituisce il vecchio bottone
                 "Riporta in bozza" col Select generico a 3 vie. */}
             <CambiaStatoBatchControl batchId={batch.id} canaleId={Number(canaleId)} statoAttuale={batch.stato} />
+            {isCatawiki && (
+              // Genera E pubblica in un solo click (2026-09-28) - abilitato
+              // SOLO a batch confermato (vedi generaFileCatawikiAction in
+              // actions.ts, che rifiuta comunque lato server qualsiasi altro
+              // stato, questo e' solo il vincolo lato UI).
+              <GeneraFileCatawikiButton
+                batchId={batch.id}
+                disabled={batch.stato !== "confermato"}
+                motivoDisabilitato={motivoGeneraDisabilitato}
+              />
+            )}
           </div>
         </div>
 
@@ -237,6 +309,14 @@ export default async function BatchPubblicazionePage({
                     <TableHead>Stato riga</TableHead>
                     {mostraOverride && (
                       <TableHead>{mostraRiservaProposta ? "Riserva proposta" : "Prezzo / Riserva evento"}</TableHead>
+                    )}
+                    {isCatawiki && (
+                      <>
+                        <TableHead className="text-right">Prezzo</TableHead>
+                        <TableHead className="text-right">Riserva</TableHead>
+                        <TableHead>Condizione</TableHead>
+                        <TableHead>Stato export</TableHead>
+                      </>
                     )}
                     {mostraColonnaAzioni && <TableHead className="text-right">Azioni</TableHead>}
                   </TableRow>
@@ -275,6 +355,82 @@ export default async function BatchPubblicazionePage({
                             )}
                           </TableCell>
                         )}
+                        {isCatawiki &&
+                          (() => {
+                            const risolta = risoltaPerLottoId.get(l.id);
+                            const override = (l.override as OverrideLottoCatawiki | null) ?? null;
+                            return (
+                              <>
+                                <TableCell className="text-right">
+                                  {catawikiModificabile ? (
+                                    <CellaPrezzoCatawiki
+                                      batchLottoId={l.id}
+                                      batchId={batch.id}
+                                      canaleId={Number(canaleId)}
+                                      valore={override?.prezzo ?? null}
+                                    />
+                                  ) : (
+                                    (override?.prezzo ?? l.sku.prezzoCatawiki ?? "—")
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {catawikiModificabile ? (
+                                    <CellaRiservaCatawiki
+                                      batchLottoId={l.id}
+                                      batchId={batch.id}
+                                      canaleId={Number(canaleId)}
+                                      valore={override?.riserva ?? null}
+                                    />
+                                  ) : (
+                                    (override?.riserva ?? "—")
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {catawikiModificabile ? (
+                                    <CellaCondizioneCatawiki
+                                      batchLottoId={l.id}
+                                      batchId={batch.id}
+                                      canaleId={Number(canaleId)}
+                                      valoreAttuale={override?.condizione ?? null}
+                                      fallbackSku={l.sku.condizione}
+                                    />
+                                  ) : (
+                                    <Badge variant="outline">{override?.condizione ?? l.sku.condizione}</Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {!risolta ? (
+                                    "—"
+                                  ) : risolta.valido ? (
+                                    <div className="whitespace-nowrap text-xs text-muted-foreground">
+                                      Stima: {risolta.stimaLotto !== null ? `€ ${risolta.stimaLotto.toFixed(2)}` : "—"}
+                                      {" · "}
+                                      Riserva: {risolta.riservaFinale !== null ? `€ ${risolta.riservaFinale.toFixed(2)}` : "—"}
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-wrap gap-1">
+                                      {risolta.errori.map((err) => {
+                                        const silenziato = silenziamentiMappa.get(risolta.skuId)?.has(err) ?? false;
+                                        return (
+                                          <Badge key={err} variant={silenziato ? "outline" : "destructive"}>
+                                            {ETICHETTA_ERRORE_VALIDAZIONE[err]}
+                                            {!silenziato && (
+                                              <SilenziaErroreButton
+                                                skuId={risolta.skuId}
+                                                canaleId={batch.canaleId}
+                                                batchId={batch.id}
+                                                tipoErrore={err}
+                                              />
+                                            )}
+                                          </Badge>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </TableCell>
+                              </>
+                            );
+                          })()}
                         {mostraColonnaAzioni && (
                           <TableCell className="text-right">
                             {inBozza ? (
@@ -355,6 +511,26 @@ export default async function BatchPubblicazionePage({
             )}
           </CardContent>
         </Card>
+
+        {isCatawiki && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Impostazioni batch (Catawiki)</CardTitle>
+              <CardDescription>
+                Si applicano a tutti i lotti di questo batch - profilo di spedizione, riserva attiva, modificatori
+                prezzo/riserva, messaggio a Expert.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ImpostazioniBatchCatawikiForm
+                batchId={batch.id}
+                canaleId={Number(canaleId)}
+                valoreIniziale={impostazioniCatawiki}
+                disabilitato={batch.stato === "pubblicato"}
+              />
+            </CardContent>
+          </Card>
+        )}
 
         {inBozza && (
           <Card className="mb-6">
