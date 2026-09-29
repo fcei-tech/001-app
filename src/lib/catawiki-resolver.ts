@@ -112,27 +112,37 @@ export function risolviLottoCatawiki(
   const errori: TipoErroreValidazione[] = [];
 
   // Prezzo base: override vince sempre sul dato Magazzino (livello 3 su
-  // livello 1) - soglia minima verificata QUI, sul prezzo PRIMA del
-  // modificatore percentuale di batch (vedi 06_spec_catawiki.yaml/
-  // modificatori_batch_2026_08_12/soglie_NON_considerate_nel_calcolo:
-  // "il cancello soglia_minima_stima_import resta un controllo separato a
-  // monte", i modificatori si applicano solo dopo che la riga e' gia'
-  // passata quel cancello).
+  // livello 1).
+  //
+  // CAMBIO DI ROTTA 2026-09-29 (richiesta esplicita del cliente dopo il primo
+  // test reale sulla release): la soglia minima ora e' verificata sulla
+  // STIMA FINALE (dopo il modificatore percentuale di batch), non piu' sul
+  // prezzo grezzo prima del modificatore. Questo ribalta la regola
+  // precedente (vedi 06_spec_catawiki.yaml/modificatori_batch_2026_08_12/
+  // soglie_NON_considerate_nel_calcolo_modificatori), che era stata testata
+  // e confermata due volte dal vivo su Catawiki il 12 agosto - lasciata qui
+  // come riferimento storico, non piu' il comportamento attuale. Motivo del
+  // cambio: un lotto a 180€ con modificatore +100% arriva a 360€ finali, ma
+  // con la vecchia regola veniva scartato comunque perche' 180 < 200 -
+  // risultato controintuitivo per chi usa lo strumento dal vivo. Se serve
+  // tornare alla regola vecchia, ripristinare il controllo su prezzoBase
+  // PRIMA di calcolare stimaLotto.
   const prezzoOverride = parseNumero(lotto.override?.prezzo);
   const prezzoMagazzino = parseNumero(lotto.skuPrezzoCatawiki);
   const prezzoBase = prezzoOverride ?? prezzoMagazzino;
 
-  const sogliaNonRaggiunta = prezzoBase === null || prezzoBase < CATAWIKI_SOGLIA_MINIMA_STIMA_IMPORT;
-  if (sogliaNonRaggiunta) errori.push("prezzo_mancante_o_sotto_soglia");
+  if (prezzoBase === null) errori.push("prezzo_mancante_o_sotto_soglia");
 
   if (!lotto.skuAnno || !lotto.skuAnno.trim()) errori.push("anno_mancante");
 
   if (lotto.numeroFoto <= 0) errori.push("zero_foto");
 
   const stimaLotto =
-    sogliaNonRaggiunta || prezzoBase === null
-      ? null
-      : round2(prezzoBase * (1 + impostazioni.modificatorePrezzoPercentuale / 100));
+    prezzoBase === null ? null : round2(prezzoBase * (1 + impostazioni.modificatorePrezzoPercentuale / 100));
+
+  if (stimaLotto !== null && stimaLotto < CATAWIKI_SOGLIA_MINIMA_STIMA_IMPORT) {
+    errori.push("prezzo_mancante_o_sotto_soglia");
+  }
 
   let riservaFinale: number | null = null;
   if (impostazioni.riservaAttiva && stimaLotto !== null) {
