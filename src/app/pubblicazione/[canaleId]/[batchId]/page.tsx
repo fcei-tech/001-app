@@ -39,6 +39,7 @@ import {
 } from "@/components/pubblicazione/celle-override-catawiki";
 import { ImpostazioniBatchCatawikiForm } from "@/components/pubblicazione/impostazioni-batch-catawiki-form";
 import { GeneraFileCatawikiButton } from "@/components/pubblicazione/genera-file-catawiki-button";
+import { GeneraFileAstaFisicaButton } from "@/components/pubblicazione/genera-file-asta-fisica-button";
 import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
 import { BarraCanale } from "@/components/pubblicazione/barra-canale";
 import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
@@ -322,6 +323,19 @@ export default async function BatchPubblicazionePage({
                 batchId={batch.id}
                 disabled={batch.stato !== "confermato"}
                 motivoDisabilitato={motivoGeneraDisabilitato}
+              />
+            )}
+            {batch.canale.tipo === "asta_fisica" && (
+              // PDF lista lotti per le aste fisiche (2026-09-29): abilitato a
+              // batch confermato (genera e pubblica) e a batch pubblicato
+              // (rigenera senza cambiare stato, la Riserva proposta resta
+              // modificabile dopo l'invio) - vedi generaFilePdfAstaFisicaAction.
+              <GeneraFileAstaFisicaButton
+                batchId={batch.id}
+                disabled={batch.stato === "bozza" || batch.lotti.length === 0}
+                motivoDisabilitato={
+                  batch.stato === "bozza" ? "Conferma il batch prima di generare il PDF." : "Il batch non ha lotti."
+                }
               />
             )}
           </div>
