@@ -32,13 +32,26 @@ type Props = {
   canaleId: number;
 };
 
-export function CellaPrezzoCatawiki({ batchLottoId, batchId, canaleId, valore }: Props & { valore: string | null }) {
+// Placeholder = il numero reale che verrebbe usato se la cella resta vuota
+// (fallback livello 1 per il prezzo, valore gia' risolto per la riserva),
+// non piu' una scritta generica "sku"/"auto" (2026-09-29, richiesta esplicita
+// del cliente dopo il primo test reale: "preferisco vedere direttamente il
+// numero"). Quando la cella e' vuota mostra questo numero in grigio
+// (esattamente lo stile placeholder di CellTesto - vedi editable-cell.tsx),
+// quando c'e' un override mostra quello, in nero, con onSalva invariato.
+export function CellaPrezzoCatawiki({
+  batchLottoId,
+  batchId,
+  canaleId,
+  valore,
+  fallback,
+}: Props & { valore: string | null; fallback: string | null }) {
   return (
     <CellTesto
       valore={valore}
       numerico
       allineaDestra
-      placeholder="sku"
+      placeholder={fallback ? formatEuro(fallback) : "—"}
       visualizza={formatEuro}
       onSalva={(v) =>
         aggiornaCampoOverrideLottoAction({ batchLottoId, batchId, canaleId, campo: "prezzo", valore: v })
@@ -47,13 +60,19 @@ export function CellaPrezzoCatawiki({ batchLottoId, batchId, canaleId, valore }:
   );
 }
 
-export function CellaRiservaCatawiki({ batchLottoId, batchId, canaleId, valore }: Props & { valore: string | null }) {
+export function CellaRiservaCatawiki({
+  batchLottoId,
+  batchId,
+  canaleId,
+  valore,
+  fallback,
+}: Props & { valore: string | null; fallback: string | null }) {
   return (
     <CellTesto
       valore={valore}
       numerico
       allineaDestra
-      placeholder="auto"
+      placeholder={fallback ? formatEuro(fallback) : "—"}
       visualizza={formatEuro}
       onSalva={(v) =>
         aggiornaCampoOverrideLottoAction({ batchLottoId, batchId, canaleId, campo: "riserva", valore: v })
