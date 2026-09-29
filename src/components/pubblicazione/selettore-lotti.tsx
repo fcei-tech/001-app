@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -180,7 +180,6 @@ export function SelettoreLottiBatch({
   tipi,
   batchId,
   canaleId,
-  tipoCanale,
   basePath,
   filtriIniziali,
   filtriAttivi,
@@ -191,13 +190,6 @@ export function SelettoreLottiBatch({
   tipi: { id: number; nome: string }[];
   batchId: number;
   canaleId: number;
-  // Determina se mostrare le colonne editabili Prezzo/Riserva evento
-  // (2026-09-24, richiesta esplicita utente): solo sui canali asta_online
-  // (Catawiki, Bidspirit, eBay Asta - tutti trattati uguale, nessun caso
-  // speciale per nome). Su asta_fisica la Riserva proposta si compila solo
-  // dopo, in "Lotti nel batch" (non ha senso prima di sapere cosa entra nel
-  // batch) - vedi pagina [batchId]/page.tsx.
-  tipoCanale: "statico" | "asta_online" | "asta_fisica";
   // Percorso base della pagina batch corrente (es. /pubblicazione/3/12) - i
   // filtri di questo picker vivono nella stessa URL del batch, non in una
   // route separata.
@@ -218,21 +210,6 @@ export function SelettoreLottiBatch({
   const { selezionati, gestisciSeleziona, segnalaShift, selezionaTutti } = useSelezioneMultipla<number>(
     righe.map((r) => r.id)
   );
-  // Prezzo/riserva evento per sku, solo asta_online (2026-09-24): stato
-  // locale nel picker perche' il lotto non esiste ancora in batch_lotti a
-  // questo punto - i valori viaggiano come input nascosti prezzo_<id>/
-  // riserva_<id> nel submit e finiscono nell'override al momento
-  // dell'inserimento (vedi aggiungiLotti in pubblicazione-queries.ts).
-  const [overrideOnline, setOverrideOnline] = useState<Record<number, { prezzo: string; riserva: string }>>({});
-  const mostraOverrideOnline = tipoCanale === "asta_online";
-
-  function impostaOverrideOnline(id: number, campo: "prezzo" | "riserva", valore: string) {
-    setOverrideOnline((prev) => ({
-      ...prev,
-      [id]: { prezzo: prev[id]?.prezzo ?? "", riserva: prev[id]?.riserva ?? "", [campo]: valore },
-    }));
-  }
-
   const colonneVisibili = useMemo(() => COLONNE.filter((c) => colonne[c.id]), [colonne]);
 
   function impostaColonna(id: ColonnaId, visibile: boolean) {
@@ -390,16 +367,15 @@ export function SelettoreLottiBatch({
       <form action={aggiungiLottiABatch} className="flex flex-col gap-3">
         <input type="hidden" name="batchId" value={batchId} />
         <input type="hidden" name="canaleId" value={canaleId} />
+        {/* Prezzo/riserva NON si scrivono piu' qui (2026-09-29, richiesta
+            esplicita del cliente, generalizzata a tutti i canali asta_online:
+            aggiungi il lotto "nudo", il prezzo/riserva si scrive sempre e
+            solo dopo in "Lotti nel batch" - un solo punto d'ingresso, meno
+            ambiguita' su "dove l'ho gia' scritto"). aggiungiLotti accetta
+            ancora prezzo/riserva nella sua firma per compatibilita', ma
+            questo form ora invia sempre solo lo skuId. */}
         {Array.from(selezionati).map((id) => (
-          <Fragment key={id}>
-            <input type="hidden" name="skuId" value={id} />
-            {mostraOverrideOnline && (
-              <>
-                <input type="hidden" name={`prezzo_${id}`} value={overrideOnline[id]?.prezzo ?? ""} />
-                <input type="hidden" name={`riserva_${id}`} value={overrideOnline[id]?.riserva ?? ""} />
-              </>
-            )}
-          </Fragment>
+          <input key={id} type="hidden" name="skuId" value={id} />
         ))}
 
         {/* Bottone in cima, non in fondo (2026-09-23 notte, feedback utente
@@ -471,7 +447,6 @@ export function SelettoreLottiBatch({
                     allineaDestra
                     onOrdina={gestisciOrdinamento}
                   />
-                  {mostraOverrideOnline && <TableHead>Prezzo / Riserva evento</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -506,26 +481,6 @@ export function SelettoreLottiBatch({
                           <span className="text-muted-foreground">0</span>
                         )}
                       </TableCell>
-                      {mostraOverrideOnline && (
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Input
-                              type="text"
-                              value={overrideOnline[r.id]?.prezzo ?? ""}
-                              onChange={(e) => impostaOverrideOnline(r.id, "prezzo", e.target.value)}
-                              placeholder="prezzo"
-                              className="h-8 w-20"
-                            />
-                            <Input
-                              type="text"
-                              value={overrideOnline[r.id]?.riserva ?? ""}
-                              onChange={(e) => impostaOverrideOnline(r.id, "riserva", e.target.value)}
-                              placeholder="riserva"
-                              className="h-8 w-20"
-                            />
-                          </div>
-                        </TableCell>
-                      )}
                     </TableRow>
                   );
                 })}
