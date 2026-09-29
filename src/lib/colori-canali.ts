@@ -49,3 +49,42 @@ export function sfondoTenueCanale(nomeCanale: string): string | undefined {
   if (!hex) return undefined;
   return `${hex}26`; // 26 hex = ~15% alpha
 }
+
+// Spessore bordo/fascia colore canale (2026-09-29, richiesta esplicita
+// cliente: "almeno 3 volte piu' spesso" del precedente border-l-4/4px, senza
+// compromettere le info mostrate - opzione C proposta in chat via mockup,
+// confermata "ok va bene": 20px, 5x il precedente). Tailwind richiede nomi
+// di classe statici (non puo' leggere una costante JS a runtime): questo
+// valore e' duplicato come classi Tailwind nei 3 punti d'uso
+// (border-l-[20px] / pl-5 / pl-9 in src/app/pubblicazione/page.tsx,
+// src/app/pubblicazione/[canaleId]/page.tsx,
+// src/app/pubblicazione/[canaleId]/[batchId]/page.tsx, e w-5 in
+// barra-canale.tsx) - se questo numero cambia, aggiornare anche quelle
+// classi a mano.
+export const SPESSORE_BORDO_CANALE_PX = 20;
+
+// Fasce orizzontali eBay (2026-09-29, richiesta esplicita cliente: "ebay 4
+// fasce horiz, ordine colori come vuoi, resto dei canali uguale"): eBay
+// statico ed eBay Asta condividono la stessa famiglia di colori brand (il
+// giallo #F5AF02/rosso #E53238 finora usati come colore canale unico sono
+// solo 2 dei 4 colori del logo eBay) - invece di un bordo a colore singolo,
+// 4 fasce orizzontali con tutti e 4 i colori, in ordine invertito fra i due
+// canali per distinguerli a colpo d'occhio nella lista. Rosso #E53238 e
+// giallo #F5AF02: verificati nella knowledge di progetto (12/08). Blu
+// #0064D2 e verde #86B817: colori standard del logo eBay, non verificati in
+// precedenza nella knowledge - accettati dal cliente in questa sessione
+// (mockup "opzione C", "ok va bene").
+const FASCE_EBAY_STATICO = ["#E53238", "#0064D2", "#F5AF02", "#86B817"];
+export const FASCE_CANALE: Record<string, string[]> = {
+  eBay: FASCE_EBAY_STATICO,
+  "eBay Asta": [...FASCE_EBAY_STATICO].reverse(),
+};
+
+// Canali con fascia multicolore invece di un bordo a colore singolo - vedi
+// BarraCanale in src/components/pubblicazione/barra-canale.tsx. Ritorna
+// undefined per tutti gli altri canali (coloreCanale() resta la fonte per
+// quelli, es. il pallino colore nella lista canali) - stesso pattern di
+// coloreCanale sopra.
+export function fasceCanale(nomeCanale: string): string[] | undefined {
+  return FASCE_CANALE[nomeCanale];
+}
