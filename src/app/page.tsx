@@ -12,7 +12,7 @@ import { VistaMagazzino } from "@/components/magazzino/vista-magazzino";
 const COLONNE_ORDINABILI: ColonnaOrdinabile[] = [
   "skuCode", "artista", "opera", "larghezza", "supporto", "anno", "tipo", "condizione",
   "proprieta", "disponibile", "numeroFoto", "valoreCarico", "prezzoEbay", "prezzoCatawiki",
-  "riservaCatawiki", "tag", "note", "stato", "creato", "aggiornato",
+  "riservaCatawiki", "tag", "note", "stato", "creato", "aggiornato", "datiMancanti",
 ];
 
 type SearchParams = {
@@ -26,6 +26,10 @@ type SearchParams = {
   skueliminato?: string;
   ordina?: string;
   direzione?: string;
+  // "Solo con dati mancanti" (2026-09-29, indicatore Magazzino generale) -
+  // vedi src/lib/campi-mancanti-pubblicazione.ts e campiMancantiCountSql in
+  // src/db/queries.ts.
+  mancanti?: string;
 };
 
 export const dynamic = "force-dynamic";
@@ -40,13 +44,14 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
   const bloccato = sp.bloccato === "si" || sp.bloccato === "no" ? sp.bloccato : undefined;
   const disponibilita = sp.disponibilita === "disponibile" || sp.disponibilita === "esaurito" ? sp.disponibilita : undefined;
   const senzaFoto = sp.senzafoto === "si";
+  const soloDatiMancanti = sp.mancanti === "si";
   const ordina = sp.ordina && (COLONNE_ORDINABILI as string[]).includes(sp.ordina) ? (sp.ordina as ColonnaOrdinabile) : undefined;
   const direzione = sp.direzione === "desc" ? "desc" : sp.direzione === "asc" ? "asc" : undefined;
 
-  const filtriAttivi = Boolean(q || tipoId || condizione || proprieta || bloccato || disponibilita || senzaFoto);
+  const filtriAttivi = Boolean(q || tipoId || condizione || proprieta || bloccato || disponibilita || senzaFoto || soloDatiMancanti);
 
   const [righe, tipi] = await Promise.all([
-    getMagazzino({ ricerca: q, tipoId, condizione, proprieta, bloccato, disponibilita, senzaFoto, ordina, direzione }),
+    getMagazzino({ ricerca: q, tipoId, condizione, proprieta, bloccato, disponibilita, senzaFoto, soloDatiMancanti, ordina, direzione }),
     getTipiOggetto(),
   ]);
 
@@ -81,6 +86,7 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
             bloccato: bloccato ?? "tutti",
             disponibilita: disponibilita ?? "tutti",
             senzafoto: senzaFoto ? "si" : "no",
+            mancanti: soloDatiMancanti ? "si" : "no",
           }}
           ordinaAttuale={ordina}
           direzioneAttuale={direzione ?? "asc"}
