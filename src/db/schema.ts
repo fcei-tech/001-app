@@ -276,6 +276,49 @@ export const batchLotti = pgTable(
   (table) => [index("batch_lotti_batch_idx").on(table.batchId, table.skuId)]
 );
 
+// Silenziamento errori di validazione output (modulo Pubblicazione,
+// generazione output, 2026-09-28): un errore di validazione ricorrente e
+// accettato dal cliente per uno sku+canale (es. "zero foto" su uno sku di
+// test) puo' essere silenziato per non essere piu' segnalato nel banner di
+// avviso ad ogni generazione - la riga resta comunque esclusa dal CSV (il
+// silenziamento non forza mai un dato invalido dentro l'export, tocca solo
+// la segnalazione). Chiave logica (skuId, canaleId, tipoErrore) - unique per
+// evitare doppioni. "Sblocco automatico": NON un campo di stato scritto qui,
+// e' calcolato al volo (vedi src/lib/catawiki-resolver.ts) confrontando ogni
+// riga con gli errori correnti - se il tipoErrore silenziato non si
+// ripresenta piu' per quello sku, il silenziamento e' considerato risolto e
+// viene ripulito (DELETE) come effetto collaterale della prossima
+// generazione file (mai una scrittura durante il render di una pagina,
+// stesso principio del resto del modulo) o dal bottone dedicato nella
+// pagina /pubblicazione/silenziamenti.
+export const silenziamentiErrore = pgTable(
+  "silenziamenti_errore",
+  {
+    id: serial("id").primaryKey(),
+    skuId: integer("sku_id")
+      .notNull()
+      .references(() => sku.id),
+    canaleId: integer("canale_id")
+      .notNull()
+      .references(() => canali.id),
+    // Vocabolario aperto (testo libero, vincolato in applicazione), stesso
+    // principio di movimentiMagazzino.causale: "prezzo_mancante_o_sotto_soglia"
+    // | "anno_mancante" | "zero_foto" oggi, estendibile senza migrazione se
+    // servono altri controlli in futuro.
+    tipoErrore: text("tipo_errore").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("silenziamenti_sku_canale_idx").on(table.skuId, table.canaleId),
+  ]
+);
+
+export const silenziamentiErroreRelations = relations(silenziamentiErrore, ({ one }) => ({
+  sku: one(sku, { fields: [silenziamentiErrore.skuId], references: [sku.id] }),
+  canale: one(canali, { fields: [silenziamentiErrore.canaleId], references: [canali.id] }),
+}));
+
 // --- Relazioni (per db.query.*.findFirst/findMany con `with`) ----------
 export const skuRelations = relations(sku, ({ one, many }) => ({
   tipo: one(tipiOggetto, { fields: [sku.tipoId], references: [tipiOggetto.id] }),
