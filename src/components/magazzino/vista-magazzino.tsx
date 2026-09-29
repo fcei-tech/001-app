@@ -201,11 +201,11 @@ const COLONNE: DefinizioneColonna[] = [
     render: (r, ctx) => <CellMisura larghezza={r.larghezza} altezza={r.altezza} onSalva={(l, h) => ctx.salvaMisura(r, l, h)} />,
   },
   {
-    id: "supporto", etichetta: "Supporto", defaultVisibile: false,
+    id: "supporto", etichetta: "Supporto", defaultVisibile: true,
     render: (r, ctx) => <CellTesto valore={r.supporto} onSalva={(v) => ctx.salvaTesto(r, "supporto", v)} />,
   },
   {
-    id: "anno", etichetta: "Anno / epoca", defaultVisibile: false,
+    id: "anno", etichetta: "Anno / epoca", defaultVisibile: true,
     render: (r, ctx) => <CellTesto valore={r.anno} onSalva={(v) => ctx.salvaTesto(r, "anno", v)} />,
   },
   {
@@ -234,7 +234,7 @@ const COLONNE: DefinizioneColonna[] = [
   },
   { id: "proprieta", etichetta: "Proprietà", defaultVisibile: false, render: (r) => r.proprieta || "—" },
   { id: "disponibile", etichetta: "Disponibile", defaultVisibile: true, allineaDestra: true, render: (r) => r.quantitaDisponibile },
-  { id: "numeroFoto", etichetta: "N. foto", defaultVisibile: false, allineaDestra: true, render: (r) => r.numeroFoto },
+  { id: "numeroFoto", etichetta: "N. foto", defaultVisibile: true, allineaDestra: true, render: (r) => r.numeroFoto },
   {
     id: "valoreCarico", etichetta: "Valore di carico", defaultVisibile: false, allineaDestra: true,
     render: (r, ctx) => <CellTesto valore={r.valoreCarico} numerico allineaDestra visualizza={formatEuro} onSalva={(v) => ctx.salvaTesto(r, "valoreCarico", v)} />,
@@ -244,11 +244,11 @@ const COLONNE: DefinizioneColonna[] = [
     render: (r, ctx) => <CellTesto valore={r.prezzoEbay} numerico allineaDestra visualizza={formatEuro} onSalva={(v) => ctx.salvaTesto(r, "prezzoEbay", v)} />,
   },
   {
-    id: "prezzoCatawiki", etichetta: "Prezzo Catawiki", defaultVisibile: false, allineaDestra: true,
+    id: "prezzoCatawiki", etichetta: "Prezzo Catawiki", defaultVisibile: true, allineaDestra: true,
     render: (r, ctx) => <CellTesto valore={r.prezzoCatawiki} numerico allineaDestra visualizza={formatEuro} onSalva={(v) => ctx.salvaTesto(r, "prezzoCatawiki", v)} />,
   },
   {
-    id: "riservaCatawiki", etichetta: "Riserva Catawiki", defaultVisibile: false, allineaDestra: true,
+    id: "riservaCatawiki", etichetta: "Riserva Catawiki", defaultVisibile: true, allineaDestra: true,
     render: (r, ctx) => <CellTesto valore={r.riservaCatawiki} numerico allineaDestra visualizza={formatEuro} onSalva={(v) => ctx.salvaTesto(r, "riservaCatawiki", v)} />,
   },
   {
