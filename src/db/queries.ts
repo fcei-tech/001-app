@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, exists, ilike, notExists, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, ilike, inArray, notExists, or, sql } from "drizzle-orm";
 import { db } from "./index";
 import {
   batchLotti,
@@ -392,6 +392,33 @@ export async function getFotoSku(skuId: number) {
     .from(fotoSku)
     .where(eq(fotoSku.skuId, skuId))
     .orderBy(asc(fotoSku.ordine));
+}
+
+// Foto di piu' sku in una sola query (2026-09-28, generazione output
+// Catawiki: sia per la colonna "Stato export" - conteggio foto per riga -
+// sia per il generatore CSV vero e proprio, che ha bisogno dell'elenco URL
+// gia' ordinato per costruire "Public photo URL", vedi buildElencoFotoUrl in
+// src/lib/catawiki-export.ts) - una singola query invece di N chiamate a
+// getFotoSku, stesso principio "batch intero, non riga per riga" gia' in
+// uso per gli altri dati della pagina batch. Ordine preservato per sku
+// (asc su ordine) cosi' il chiamante puo' semplicemente fare
+// mappa.get(skuId) ?? [] e avere gia' l'elenco nell'ordine giusto.
+export async function getFotoPerSkuIds(skuIds: number[]): Promise<Map<number, { id: number; url: string; ordine: number }[]>> {
+  const mappa = new Map<number, { id: number; url: string; ordine: number }[]>();
+  if (skuIds.length === 0) return mappa;
+
+  const righe = await db
+    .select({ skuId: fotoSku.skuId, id: fotoSku.id, url: fotoSku.url, ordine: fotoSku.ordine })
+    .from(fotoSku)
+    .where(inArray(fotoSku.skuId, skuIds))
+    .orderBy(asc(fotoSku.ordine));
+
+  for (const r of righe) {
+    const elenco = mappa.get(r.skuId) ?? [];
+    elenco.push({ id: r.id, url: r.url, ordine: r.ordine });
+    mappa.set(r.skuId, elenco);
+  }
+  return mappa;
 }
 
 // Saldo per combinazione proprieta'+ubicazione di uno sku, solo saldi > 0 -
