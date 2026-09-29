@@ -20,11 +20,19 @@ export default async function PubblicazionePage() {
     <div className="min-h-full flex flex-col">
       <Header />
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
-        <div className="mb-6 flex flex-col gap-1">
-          <h1 className="text-xl font-semibold tracking-tight">Pubblicazione</h1>
-          <p className="text-sm text-muted-foreground">
-            Canali di vendita — seleziona un canale per creare o aprire un batch di pubblicazione.
-          </p>
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-xl font-semibold tracking-tight">Pubblicazione</h1>
+            <p className="text-sm text-muted-foreground">
+              Canali di vendita — seleziona un canale per creare o aprire un batch di pubblicazione.
+            </p>
+          </div>
+          {/* Pagina dedicata silenziamenti (2026-09-28, generazione output
+              Catawiki) - link diretto qui, non nascosto dentro un singolo
+              batch, dato che elenca TUTTI i silenziamenti di TUTTI i canali. */}
+          <Link href="/pubblicazione/silenziamenti" className="shrink-0 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+            Silenziamenti
+          </Link>
         </div>
 
         {canali.length === 0 ? (
