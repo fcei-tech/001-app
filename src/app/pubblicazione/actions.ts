@@ -466,7 +466,7 @@ export async function generaFileCatawikiAction(batchId: number): Promise<{
 
   const now = new Date();
   const bollino = now.toISOString().replace(/[-:]/g, "").replace("T", "_").slice(0, 13);
-  const filename = `catawiki_batch${batchId}_${bollino}.csv`;
+  const filename = `batch_catawiki_${batchId}_${bollino}.csv`;
 
   revalidatePath(`/pubblicazione/${batch.canaleId}/${batchId}`);
   revalidatePath(`/pubblicazione/${batch.canaleId}`);
