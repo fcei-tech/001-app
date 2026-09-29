@@ -12,16 +12,16 @@
 // dalla stessa query che serve per la tabella - non vale una query
 // aggiuntiva per sku per ricalcolare un dato che si puo' derivare al volo.
 //
-// NOTA (trovata durante questa sessione, non ancora segnalata al cliente):
-// impegnatoSql() conta SOLO bp.stato = 'confermato', non 'generato' - un
-// batch "generato" (output gia' prodotto) smette di consumare disponibilita'
-// appena passa da confermato a generato, anche se nessun lotto e' stato
-// toccato. Sembra un disallineamento con la definizione di "generato" nel
-// commento di batchStatoEnum (schema.ts: "generazione e' un evento
-// ripetibile su un batch confermato, non un nuovo stato terminale") - ma
-// qui viene SOLO replicato lo stesso comportamento realmente in vigore nel
-// codice, non corretto, per non introdurre in silenzio un cambio di
-// comportamento non richiesto. Da confermare col cliente.
+// FIX 2026-09-28: questa funzione contava la prenotazione SOLO se
+// batch.stato === 'confermato', disallineata dalla query reale
+// impegnatoSql() (src/db/queries.ts), che conta 'confermato' E 'pubblicato'
+// fin dal fix del 25/9 (commento su batchStatoEnum in schema.ts lo dice
+// esplicitamente). Risultato del disallineamento: l'avviso non bloccante
+// mostrato su un batch "pubblicato" (Elimina/Cambia stato) diceva "nessuna
+// prenotazione" anche quando il batch teneva ancora disponibilita' bloccata
+// altrove - trovato mentre si costruiva la generazione output Catawiki
+// (che porta normalmente i batch a "pubblicato"), segnalato esplicitamente
+// e corretto qui per restare coerente con impegnatoSql().
 export function tipoLottoContaPrenotazione(
   tipoCanale: "statico" | "asta_online" | "asta_fisica",
   statoRiga: "attivo" | "candidato" | "accettato"
@@ -35,6 +35,6 @@ export function contaLottiConPrenotazione(
   batch: { stato: string; lotti: { statoRiga: "attivo" | "candidato" | "accettato" }[] },
   canale: { esclusivo: boolean; tipo: "statico" | "asta_online" | "asta_fisica" }
 ): number {
-  if (batch.stato !== "confermato" || !canale.esclusivo) return 0;
+  if ((batch.stato !== "confermato" && batch.stato !== "pubblicato") || !canale.esclusivo) return 0;
   return batch.lotti.filter((l) => tipoLottoContaPrenotazione(canale.tipo, l.statoRiga)).length;
 }
