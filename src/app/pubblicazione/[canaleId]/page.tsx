@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { TableEmpty } from "@/components/ui/table-empty";
 import { getCanaleById, getBatchPerCanale } from "@/db/pubblicazione-queries";
 import { creaBatch } from "../actions";
-import { coloreCanale } from "@/lib/colori-canali";
+import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
 import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
 import { ListaBatchCanale, type RigaBatch } from "@/components/pubblicazione/lista-batch-canale";
+import { BarraCanale } from "@/components/pubblicazione/barra-canale";
 
 function formatData(d: Date) {
   return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
@@ -31,6 +32,7 @@ export default async function CanalePubblicazionePage({
   if (!canale) notFound();
 
   const colore = coloreCanale(canale.nome);
+  const fasce = fasceCanale(canale.nome);
   const righe: RigaBatch[] = batch.map((b) => ({
     id: b.id,
     creatoIlFormattato: formatData(b.createdAt),
@@ -61,10 +63,17 @@ export default async function CanalePubblicazionePage({
           </div>
         )}
 
+        {/* 2026-09-29: bordo 20px (SPESSORE_BORDO_CANALE_PX, "opzione C") -
+            eBay/eBay Asta usano BarraCanale (4 fasce) invece del bordo
+            singolo, vedi barra-canale.tsx. "pl-9" (36px = 20px fascia + 16px
+            respiro, come il border-l-[20px]+pl-4 del caso a colore singolo)
+            mantiene il testo alla stessa distanza in entrambi i casi -
+            "relative overflow-hidden" evita qualsiasi sconfinamento. */}
         <div
-          className="mb-6 flex items-center justify-between gap-4 border-l-4 pl-4"
-          style={colore ? { borderLeftColor: colore } : undefined}
+          className={`relative mb-6 flex items-center justify-between gap-4 overflow-hidden ${fasce ? "pl-9" : "border-l-[20px] pl-4"}`}
+          style={!fasce && colore ? { borderLeftColor: colore } : undefined}
         >
+          {fasce && <BarraCanale nomeCanale={canale.nome} />}
           <div className="flex flex-col gap-1">
             <h1 className="text-xl font-semibold tracking-tight">{canale.nome}</h1>
             <p className="text-sm text-muted-foreground">
