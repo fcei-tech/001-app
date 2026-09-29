@@ -40,6 +40,7 @@ import {
 import { ImpostazioniBatchCatawikiForm } from "@/components/pubblicazione/impostazioni-batch-catawiki-form";
 import { GeneraFileCatawikiButton } from "@/components/pubblicazione/genera-file-catawiki-button";
 import { GeneraFileAstaFisicaButton } from "@/components/pubblicazione/genera-file-asta-fisica-button";
+import { SelettoreColonneLotti, type ColonnaLottiBatch } from "@/components/pubblicazione/selettore-colonne-lotti";
 import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
 import { BarraCanale } from "@/components/pubblicazione/barra-canale";
 import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
@@ -194,6 +195,35 @@ export default async function BatchPubblicazionePage({
       : batch.stato === "bozza"
         ? "Conferma il batch prima di generare il file."
         : undefined;
+
+  // Colonne selezionabili della tabella "Lotti nel batch" (2026-09-29): Sku e
+  // Azioni restano sempre visibili. Default = colonne presenti prima di questa
+  // funzione (Misure/Supporto/Anno sono nuove e nascoste di default).
+  const colonneLottiBatch: ColonnaLottiBatch[] = [
+    { id: "artista", etichetta: "Artista", defaultVisibile: true },
+    { id: "opera", etichetta: "Opera", defaultVisibile: true },
+    { id: "misure", etichetta: "Misure", defaultVisibile: false },
+    { id: "supporto", etichetta: "Supporto", defaultVisibile: false },
+    { id: "anno", etichetta: "Anno / epoca", defaultVisibile: false },
+    { id: "stato", etichetta: "Stato riga", defaultVisibile: true },
+    ...(mostraOverride
+      ? [
+          {
+            id: "override",
+            etichetta: mostraRiservaProposta ? "Riserva proposta" : "Prezzo / Riserva evento",
+            defaultVisibile: true,
+          },
+        ]
+      : []),
+    ...(isCatawiki
+      ? [
+          { id: "prezzo", etichetta: "Prezzo", defaultVisibile: true },
+          { id: "riserva", etichetta: "Riserva", defaultVisibile: true },
+          { id: "condizione", etichetta: "Condizione", defaultVisibile: true },
+          { id: "statoExport", etichetta: "Stato export", defaultVisibile: true },
+        ]
+      : []),
+  ];
 
   const tipoId = sp.tipo && sp.tipo !== "tutti" ? Number(sp.tipo) : undefined;
   const condizione = sp.condizione && sp.condizione !== "tutti" ? sp.condizione : undefined;
@@ -433,22 +463,31 @@ export default async function BatchPubblicazionePage({
             {batch.lotti.length === 0 ? (
               <TableEmpty>Nessun lotto ancora aggiunto.</TableEmpty>
             ) : (
+              <div data-lotti-tabella>
+              <div className="mb-3 flex justify-end">
+                <SelettoreColonneLotti tipoCanale={batch.canale.tipo} colonne={colonneLottiBatch} />
+              </div>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Sku</TableHead>
-                    <TableHead>Artista</TableHead>
-                    <TableHead>Opera</TableHead>
-                    <TableHead>Stato riga</TableHead>
+                    <TableHead data-col="artista">Artista</TableHead>
+                    <TableHead data-col="opera">Opera</TableHead>
+                    <TableHead data-col="misure">Misure</TableHead>
+                    <TableHead data-col="supporto">Supporto</TableHead>
+                    <TableHead data-col="anno">Anno / epoca</TableHead>
+                    <TableHead data-col="stato">Stato riga</TableHead>
                     {mostraOverride && (
-                      <TableHead>{mostraRiservaProposta ? "Riserva proposta" : "Prezzo / Riserva evento"}</TableHead>
+                      <TableHead data-col="override">
+                        {mostraRiservaProposta ? "Riserva proposta" : "Prezzo / Riserva evento"}
+                      </TableHead>
                     )}
                     {isCatawiki && (
                       <>
-                        <TableHead className="text-right">Prezzo</TableHead>
-                        <TableHead className="text-right">Riserva</TableHead>
-                        <TableHead>Condizione</TableHead>
-                        <TableHead>Stato export</TableHead>
+                        <TableHead data-col="prezzo" className="text-right">Prezzo</TableHead>
+                        <TableHead data-col="riserva" className="text-right">Riserva</TableHead>
+                        <TableHead data-col="condizione">Condizione</TableHead>
+                        <TableHead data-col="statoExport">Stato export</TableHead>
                       </>
                     )}
                     {mostraColonnaAzioni && <TableHead className="text-right">Azioni</TableHead>}
@@ -460,9 +499,16 @@ export default async function BatchPubblicazionePage({
                     return (
                       <TableRow key={l.id}>
                         <TableCell className="font-mono text-xs">{l.sku.skuCode}</TableCell>
-                        <TableCell>{l.sku.artista}</TableCell>
-                        <TableCell>{l.sku.opera}</TableCell>
-                        <TableCell>
+                        <TableCell data-col="artista">{l.sku.artista}</TableCell>
+                        <TableCell data-col="opera">{l.sku.opera}</TableCell>
+                        <TableCell data-col="misure">
+                          {l.sku.larghezza || l.sku.altezza
+                            ? `${(l.sku.larghezza ?? "?").replace(/\.0+$/, "")} \u00d7 ${(l.sku.altezza ?? "?").replace(/\.0+$/, "")} cm`
+                            : "\u2014"}
+                        </TableCell>
+                        <TableCell data-col="supporto">{l.sku.supporto || "\u2014"}</TableCell>
+                        <TableCell data-col="anno">{l.sku.anno || "\u2014"}</TableCell>
+                        <TableCell data-col="stato">
                           <div className="flex items-center gap-1.5">
                             <Badge variant={statoRiga.variant}>{statoRiga.label}</Badge>
                             {/* Badge visivo in piu' (2026-09-25, sessione 5) - NON un
@@ -472,7 +518,7 @@ export default async function BatchPubblicazionePage({
                           </div>
                         </TableCell>
                         {mostraOverride && (
-                          <TableCell>
+                          <TableCell data-col="override">
                             {overrideModificabile ? (
                               <OverrideLottoForm
                                 batchLottoId={l.id}
@@ -494,7 +540,7 @@ export default async function BatchPubblicazionePage({
                             const override = (l.override as OverrideLottoCatawiki | null) ?? null;
                             return (
                               <>
-                                <TableCell className="text-right">
+                                <TableCell data-col="prezzo" className="text-right">
                                   {catawikiModificabile ? (
                                     <CellaPrezzoCatawiki
                                       batchLottoId={l.id}
@@ -507,7 +553,7 @@ export default async function BatchPubblicazionePage({
                                     (override?.prezzo ?? l.sku.prezzoCatawiki ?? "—")
                                   )}
                                 </TableCell>
-                                <TableCell className="text-right">
+                                <TableCell data-col="riserva" className="text-right">
                                   {catawikiModificabile ? (
                                     <CellaRiservaCatawiki
                                       batchLottoId={l.id}
@@ -520,7 +566,7 @@ export default async function BatchPubblicazionePage({
                                     (override?.riserva ?? "—")
                                   )}
                                 </TableCell>
-                                <TableCell>
+                                <TableCell data-col="condizione">
                                   {catawikiModificabile ? (
                                     <CellaCondizioneCatawiki
                                       batchLottoId={l.id}
@@ -533,7 +579,7 @@ export default async function BatchPubblicazionePage({
                                     <Badge variant="outline">{override?.condizione ?? l.sku.condizione}</Badge>
                                   )}
                                 </TableCell>
-                                <TableCell>
+                                <TableCell data-col="statoExport">
                                   {!risolta ? (
                                     "—"
                                   ) : risolta.valido ? (
@@ -643,6 +689,7 @@ export default async function BatchPubblicazionePage({
                   })}
                 </TableBody>
               </Table>
+              </div>
             )}
           </CardContent>
         </Card>
