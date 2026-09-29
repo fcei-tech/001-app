@@ -11,16 +11,42 @@ import {
   annullaAccettazione as annullaAccettazioneQuery,
   eliminaBatch as eliminaBatchQuery,
   aggiornaOverrideLotto as aggiornaOverrideLottoQuery,
+  aggiornaCampoOverrideLotto as aggiornaCampoOverrideLottoQuery,
+  aggiornaImpostazioniBatch as aggiornaImpostazioniBatchQuery,
   riportaInBozza as riportaInBozzaQuery,
   cambiaStatoBatch as cambiaStatoBatchQuery,
   consegnaLotto as consegnaLottoQuery,
   annullaConsegna as annullaConsegnaQuery,
   rientroLotto as rientroLottoQuery,
+  segnaBatchPubblicato as segnaBatchPubblicatoQuery,
   type ConsegnaDettagli,
+  type OverrideLotto,
   getBatch,
 } from "@/db/pubblicazione-queries";
+import { getFotoPerSkuIds } from "@/db/queries";
+import {
+  silenziaErrore as silenziaErroreQuery,
+  riattivaSilenziamento as riattivaSilenziamentoQuery,
+  riattivaSilenziamentiBulk as riattivaSilenziamentiBulkQuery,
+  ripulisciSilenziamentiRisolti,
+} from "@/db/silenziamenti-queries";
+import {
+  CATAWIKI_PROFILI_SPEDIZIONE,
+  type ProfiloSpedizioneCatawiki,
+} from "@/lib/catawiki-config";
+import {
+  IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
+  risolviBatchCatawiki,
+  TIPI_ERRORE_VALIDAZIONE,
+  type ImpostazioniBatchCatawiki,
+  type LottoPerRisoluzioneCatawiki,
+  type OverrideLottoCatawiki,
+  type TipoErroreValidazione,
+} from "@/lib/catawiki-resolver";
+import { generaCsvCatawiki } from "@/lib/catawiki-export";
 
 type StatoBatch = "bozza" | "confermato" | "pubblicato";
+const CONDIZIONI_VALIDE = ["A", "A-", "B+", "B", "B-", "C"] as const;
 
 export async function creaBatch(formData: FormData) {
   const canaleId = Number(formData.get("canaleId"));
@@ -262,7 +288,11 @@ export async function aggiornaOverrideLottoAction(formData: FormData) {
     }
     const prezzo = (formData.get("prezzo") ?? "").toString();
     const riserva = (formData.get("riserva") ?? "").toString();
-    await aggiornaOverrideLottoQuery(batchLottoId, { prezzo, riserva });
+    const condizione = (formData.get("condizione") ?? "").toString();
+    if (condizione && !CONDIZIONI_VALIDE.includes(condizione as (typeof CONDIZIONI_VALIDE)[number])) {
+      throw new Error("Condizione non valida");
+    }
+    await aggiornaOverrideLottoQuery(batchLottoId, { prezzo, riserva, condizione });
   } else {
     throw new Error("Questo canale non supporta un override per lotto");
   }
@@ -270,149 +300,186 @@ export async function aggiornaOverrideLottoAction(formData: FormData) {
   revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
 }
 
-// Elimina un batch in QUALSIASI stato, SENZA ECCEZIONI (2026-09-23 sera,
-// regola allentata il 2026-09-24, poi cambio di rotta 2026-09-25 - vedi
-// eliminaBatch in pubblicazione-queries.ts per il testo completo della
-// decisione). L'AVVISO non bloccante su cosa si libera (se il batch teneva
-// una prenotazione reale) e' responsabilita' del chiamante lato client
-// (EliminaBatchButton, dialog di conferma) PRIMA di invocare questa action -
-// qui solo l'orchestrazione redirect/revalidate, nessun controllo.
-export async function eliminaBatchAction(formData: FormData) {
+// Salvataggio per singola cella (2026-09-28, generazione output Catawiki):
+// a differenza dell'action sopra (un form unico che invia prezzo+riserva
+// insieme), questa e' pensata per le celle editabili inline della tabella
+// "Lotti nel batch" (CellTesto/CellSelect, stile Magazzino - vedi
+// editable-cell.tsx) - autosave per singolo campo, senza dover rispedire
+// anche gli altri due. Chiamata direttamente con argomenti tipizzati (non
+// FormData) dal componente client, stesso pattern gia' in uso in
+// aggiornaCampiSkuInline (src/app/magazzino/actions.ts).
+export async function aggiornaCampoOverrideLottoAction(input: {
+  batchLottoId: number;
+  batchId: number;
+  canaleId: number;
+  campo: "prezzo" | "riserva" | "condizione";
+  valore: string;
+}) {
+  const { batchLottoId, batchId, canaleId, campo, valore } = input;
+  if (!batchLottoId || !batchId) throw new Error("Riferimento non valido");
+
+  const batch = await getBatch(batchId);
+  if (!batch) throw new Error("Batch non trovato");
+  if (batch.canale.tipo !== "asta_online") {
+    throw new Error("Questo canale non supporta Prezzo/Riserva/Condizione per lotto");
+  }
+  if (batch.stato === "pubblicato") {
+    throw new Error("Non si puo' modificare un lotto di un batch gia' pubblicato");
+  }
+  if (campo === "condizione" && valore.trim() && !CONDIZIONI_VALIDE.includes(valore.trim() as (typeof CONDIZIONI_VALIDE)[number])) {
+    throw new Error("Condizione non valida");
+  }
+
+  await aggiornaCampoOverrideLottoQuery(batchLottoId, campo as keyof OverrideLotto, valore);
+  revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
+}
+
+// Impostazioni di livello batch, SOLO Catawiki per questa release (2026-09-
+// 28, generazione output): profilo di spedizione, riserva attiva si/no per
+// tutto il batch, i due modificatori (%prezzo/€riserva) e il messaggio
+// esperto - vedi ImpostazioniBatchCatawiki in src/lib/catawiki-resolver.ts.
+// Bloccata su batch gia' "pubblicato" (stesso principio di aggiornaOverride
+// LottoAction sopra: l'output di quel batch e' gia' stato generato con le
+// impostazioni di allora).
+export async function aggiornaImpostazioniBatchCatawikiAction(formData: FormData) {
   const batchId = Number(formData.get("batchId"));
   const canaleId = Number(formData.get("canaleId"));
   if (!batchId) throw new Error("Batch non valido");
 
-  await eliminaBatchQuery(batchId);
-  revalidatePath(`/pubblicazione/${canaleId}`);
-  redirect(`/pubblicazione/${canaleId}?eliminato=1`);
-}
-
-// Versione multi-selezione di eliminaBatchAction - usata dalla barra azioni
-// della lista batch di un canale (2026-09-25, punto 2 del backlog UX
-// FINALIZZATO: "cancellazione multipla [...] stessa logica applicata per
-// ogni batch selezionato, un unico avviso consolidato"). L'avviso
-// consolidato (cosa si libera, quanti lotti coinvolti) e' costruito lato
-// client PRIMA di chiamare questa action (vedi contaLottiConPrenotazione in
-// src/lib/prenotazione-batch.ts) - qui elimina ogni batch selezionato senza
-// eccezioni (eliminaBatch non blocca mai, vedi sopra), nessun caso di
-// "alcuni bloccati" da gestire: l'idea di saltare/bloccare solo i batch con
-// lotti accettati e' stata abbandonata insieme al blocco duro.
-export async function eliminaBatchMultiploAction(formData: FormData) {
-  const canaleId = Number(formData.get("canaleId"));
-  const batchIds = formData.getAll("batchId").map(Number).filter((n) => Number.isFinite(n) && n > 0);
-  if (batchIds.length === 0) throw new Error("Nessun batch selezionato");
-
-  for (const batchId of batchIds) {
-    await eliminaBatchQuery(batchId);
-  }
-
-  revalidatePath(`/pubblicazione/${canaleId}`);
-  redirect(`/pubblicazione/${canaleId}?eliminati=${batchIds.length}`);
-}
-
-// --- Consegna/Annulla consegna/Rientro (solo asta_fisica, 2026-09-25,
-// sessione 5 - vedi consegnaLotto/annullaConsegna/rientroLotto in
-// pubblicazione-queries.ts per il dettaglio del meccanismo). Verifica
-// esplicita canale asta_fisica + statoRiga qui nell'azione, non solo lato UI
-// (stesso principio gia' in uso per accettaLottoAction/
-// annullaAccettazioneAction).
-
-const PROPRIETA_VALIDE = ["FP", "CV", "TERZI"] as const;
-
-// Consegna: l'operatore ha scelto origine/destinazione/quantita' dal form
-// guidato (SelettoreOrigineDestinazione, precompilato da saldi reali - vedi
-// getSaldiSkuPerUbicazione in src/db/queries.ts). Disponibile solo su un
-// lotto "accettato" non ancora consegnato.
-export async function consegnaLottoAction(formData: FormData) {
-  const batchLottoId = Number(formData.get("batchLottoId"));
-  const batchId = Number(formData.get("batchId"));
-  const canaleId = Number(formData.get("canaleId"));
-  const proprieta = formData.get("proprieta")?.toString();
-  const ubicazioneOrigineId = Number(formData.get("ubicazioneOrigineId"));
-  const ubicazioneDestinazioneId = Number(formData.get("ubicazioneDestinazioneId"));
-  const quantita = Number(formData.get("quantita"));
-  if (!batchLottoId || !batchId) throw new Error("Riferimento non valido");
-  if (!proprieta || !PROPRIETA_VALIDE.includes(proprieta as (typeof PROPRIETA_VALIDE)[number])) {
-    throw new Error("Proprieta' non valida");
-  }
-  if (!ubicazioneOrigineId || !ubicazioneDestinazioneId) {
-    throw new Error("Scegli ubicazione di origine e destinazione");
-  }
-  if (ubicazioneOrigineId === ubicazioneDestinazioneId) {
-    throw new Error("Origine e destinazione non possono coincidere");
-  }
-  if (!Number.isFinite(quantita) || quantita <= 0) {
-    throw new Error("Quantita' non valida");
-  }
-
   const batch = await getBatch(batchId);
   if (!batch) throw new Error("Batch non trovato");
-  if (batch.canale.tipo !== "asta_fisica") {
-    throw new Error("Consegna si applica solo alle aste fisiche");
+  if (batch.canale.nome !== "Catawiki") {
+    throw new Error("Queste impostazioni sono disponibili solo per il canale Catawiki");
   }
-  const lotto = batch.lotti.find((l) => l.id === batchLottoId);
-  if (!lotto) throw new Error("Lotto non trovato in questo batch");
-  if (lotto.statoRiga !== "accettato") {
-    throw new Error("Solo un lotto accettato puo' essere consegnato");
-  }
-  if (lotto.consegnatoAt) {
-    throw new Error("Questo lotto e' gia' stato consegnato");
+  if (batch.stato === "pubblicato") {
+    throw new Error("Non si possono modificare le impostazioni di un batch gia' pubblicato");
   }
 
-  await consegnaLottoQuery(batchLottoId, lotto.skuId, {
-    proprieta: proprieta as ConsegnaDettagli["proprieta"],
-    ubicazioneOrigineId,
-    ubicazioneDestinazioneId,
-    quantita,
-  });
+  const profiloSpedizione = (formData.get("profiloSpedizione") ?? "").toString();
+  if (!(profiloSpedizione in CATAWIKI_PROFILI_SPEDIZIONE)) {
+    throw new Error("Profilo di spedizione non valido");
+  }
+  const riservaAttiva = formData.get("riservaAttiva") === "on";
+  const modificatorePrezzoPercentuale = Number(formData.get("modificatorePrezzoPercentuale") ?? 0) || 0;
+  const modificatoreRiservaEur = Number(formData.get("modificatoreRiservaEur") ?? 0) || 0;
+  const messaggioEsperto = (formData.get("messaggioEsperto") ?? "").toString();
+
+  const impostazioni: ImpostazioniBatchCatawiki = {
+    profiloSpedizione: profiloSpedizione as ProfiloSpedizioneCatawiki,
+    riservaAttiva,
+    modificatorePrezzoPercentuale,
+    modificatoreRiservaEur,
+    messaggioEsperto,
+  };
+
+  await aggiornaImpostazioniBatchQuery(batchId, impostazioni);
   revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
 }
 
-// "Ho cliccato Consegna per errore" - inverte lo stesso movimento usando i
-// dettagli gia' salvati (consegnaDettagli), nessun input dall'operatore.
-export async function annullaConsegnaAction(formData: FormData) {
-  const batchLottoId = Number(formData.get("batchLottoId"));
-  const batchId = Number(formData.get("batchId"));
-  const canaleId = Number(formData.get("canaleId"));
-  if (!batchLottoId || !batchId) throw new Error("Riferimento non valido");
-
+// Genera il file CSV Catawiki e, nella STESSA azione, porta il batch a
+// "pubblicato" (2026-09-28, richiesta esplicita utente: "un solo bottone,
+// genera E pubblica insieme" - nessun versionamento del file, ogni
+// generazione e' un ricalcolo fresco dai dati correnti, scaricato e finito,
+// mai un file salvato da qualche parte da poter riscaricare dopo). Chiamata
+// direttamente con l'id del batch (non FormData) dal componente client
+// (GeneraFileCatawikiButton), che riceve {csv, filename, scartati} e
+// costruisce lui il download (i Server Actions non possono innescare un
+// download browser direttamente).
+//
+// Righe scartate (errori di validazione non silenziati o silenziati - il
+// silenziamento riguarda SOLO la segnalazione in UI, MAI l'inclusione nel
+// CSV, vedi commento su silenziamentiErrore in schema.ts) sono escluse dal
+// file e restituite al chiamante per il riepilogo mostrato dopo il
+// download. Effetto collaterale: pulizia dei silenziamenti ormai risolti
+// per gli sku di QUESTO batch (vedi ripulisciSilenziamentiRisolti).
+export async function generaFileCatawikiAction(batchId: number): Promise<{
+  csv: string;
+  filename: string;
+  scartati: { skuCode: string; artista: string; opera: string; errori: TipoErroreValidazione[] }[];
+}> {
   const batch = await getBatch(batchId);
   if (!batch) throw new Error("Batch non trovato");
-  if (batch.canale.tipo !== "asta_fisica") {
-    throw new Error("Annulla consegna si applica solo alle aste fisiche");
+  if (batch.canale.nome !== "Catawiki") {
+    throw new Error("La generazione file e' disponibile solo per il canale Catawiki");
   }
-  const lotto = batch.lotti.find((l) => l.id === batchLottoId);
-  if (!lotto) throw new Error("Lotto non trovato in questo batch");
-  if (!lotto.consegnatoAt || !lotto.consegnaDettagli) {
-    throw new Error("Questo lotto non risulta consegnato");
+  if (batch.stato !== "confermato") {
+    throw new Error("Il batch deve essere confermato prima di generare il file");
+  }
+  if (batch.lotti.length === 0) throw new Error("Il batch non ha lotti");
+
+  const impostazioni: ImpostazioniBatchCatawiki = {
+    ...IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
+    ...((batch.impostazioniBatch ?? {}) as Partial<ImpostazioniBatchCatawiki>),
+  };
+
+  const skuIds = batch.lotti.map((l) => l.skuId);
+  const fotoMappa = await getFotoPerSkuIds(skuIds);
+  const skuPerId = new Map(batch.lotti.map((l) => [l.skuId, l.sku]));
+
+  const lottiPerRisoluzione: LottoPerRisoluzioneCatawiki[] = batch.lotti.map((l) => ({
+    batchLottoId: l.id,
+    skuId: l.skuId,
+    skuCode: l.sku.skuCode,
+    skuCondizione: l.sku.condizione,
+    skuAnno: l.sku.anno,
+    skuPrezzoCatawiki: l.sku.prezzoCatawiki,
+    override: (l.override as OverrideLottoCatawiki | null) ?? null,
+    numeroFoto: fotoMappa.get(l.skuId)?.length ?? 0,
+  }));
+
+  const righeRisolte = risolviBatchCatawiki(lottiPerRisoluzione, impostazioni);
+  const righeValide = righeRisolte.filter((r) => r.valido);
+  const righeScartate = righeRisolte.filter((r) => !r.valido);
+
+  if (righeValide.length === 0) {
+    throw new Error("Nessun lotto valido da esportare - correggi gli errori segnalati prima di generare il file");
   }
 
-  await annullaConsegnaQuery(batchLottoId, lotto.skuId, lotto.consegnaDettagli as ConsegnaDettagli);
-  revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
+  const csv = generaCsvCatawiki(
+    righeValide.map((risolta) => {
+      const s = skuPerId.get(risolta.skuId)!;
+      return {
+        risolta,
+        sku: {
+          artista: s.artista,
+          opera: s.opera,
+          larghezza: s.larghezza,
+          altezza: s.altezza,
+          supporto: s.supporto,
+          anno: (s.anno ?? "").trim(),
+        },
+        foto: (fotoMappa.get(risolta.skuId) ?? []).map((f) => f.url),
+      };
+    }),
+    impostazioni
+  );
+
+  // Pulizia silenziamenti risolti (effetto collaterale legittimo: siamo
+  // dentro una mutazione, non un render/GET - vedi commento su
+  // silenziamentiErrore in schema.ts).
+  const erroriAncoraPresenti = righeScartate.flatMap((r) =>
+    r.errori.map((tipoErrore) => ({ skuId: r.skuId, tipoErrore }))
+  );
+  await ripulisciSilenziamentiRisolti(batch.canaleId, skuIds, erroriAncoraPresenti);
+
+  await segnaBatchPubblicatoQuery(batchId);
+
+  const now = new Date();
+  const bollino = now.toISOString().replace(/[-:]/g, "").replace("T", "_").slice(0, 13);
+  const filename = `catawiki_batch${batchId}_${bollino}.csv`;
+
+  revalidatePath(`/pubblicazione/${batch.canaleId}/${batchId}`);
+  revalidatePath(`/pubblicazione/${batch.canaleId}`);
+  revalidatePath(`/pubblicazione/silenziamenti`);
+
+  return {
+    csv,
+    filename,
+    scartati: righeScartate.map((r) => {
+      const s = skuPerId.get(r.skuId)!;
+      return { skuCode: r.skuCode, artista: s.artista, opera: s.opera, errori: r.errori };
+    }),
+  };
 }
 
-// Rientro: il pezzo torna indietro (invenduto/ritirato) - rimuove il lotto
-// dal batch, invertendo anche il movimento fisico della consegna. Disponibile
-// solo su un lotto gia' consegnato (per un lotto accettato ma mai consegnato
-// c'e' gia' "Annulla accettazione" - non serve un secondo percorso allo
-// stesso risultato).
-export async function rientroLottoAction(formData: FormData) {
-  const batchLottoId = Number(formData.get("batchLottoId"));
-  const batchId = Number(formData.get("batchId"));
-  const canaleId = Number(formData.get("canaleId"));
-  if (!batchLottoId || !batchId) throw new Error("Riferimento non valido");
-
-  const batch = await getBatch(batchId);
-  if (!batch) throw new Error("Batch non trovato");
-  if (batch.canale.tipo !== "asta_fisica") {
-    throw new Error("Rientro si applica solo alle aste fisiche");
-  }
-  const lotto = batch.lotti.find((l) => l.id === batchLottoId);
-  if (!lotto) throw new Error("Lotto non trovato in questo batch");
-  if (!lotto.consegnatoAt) {
-    throw new Error("Questo lotto non risulta consegnato - usa Annulla accettazione");
-  }
-
-  await rientroLottoQuery(batchLottoId, lotto.skuId, (lotto.consegnaDettagli as ConsegnaDettagli | null) ?? null);
-  revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
-}
+// --- Silenziamento errori di validazione (2026-09-28)
