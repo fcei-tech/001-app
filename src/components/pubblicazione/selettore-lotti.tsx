@@ -458,3 +458,128 @@ export function SelettoreLottiBatch({
       <form action={aggiungiLottiABatch} className="flex flex-col gap-3">
         <input type="hidden" name="batchId" value={batchId} />
         <input type="hidden" name="canaleId" value={canaleId} />
+        {/* Prezzo/riserva NON si scrivono piu' qui (2026-09-29, richiesta
+            esplicita del cliente, generalizzata a tutti i canali asta_online:
+            aggiungi il lotto "nudo", il prezzo/riserva si scrive sempre e
+            solo dopo in "Lotti nel batch" - un solo punto d'ingresso, meno
+            ambiguita' su "dove l'ho gia' scritto"). aggiungiLotti accetta
+            ancora prezzo/riserva nella sua firma per compatibilita', ma
+            questo form ora invia sempre solo lo skuId. */}
+        {Array.from(selezionati).map((id) => (
+          <input key={id} type="hidden" name="skuId" value={id} />
+        ))}
+
+        {/* Bottone in cima, non in fondo (2026-09-23 notte, feedback utente
+            dopo test installazione reale: "il bottone aggiungi sku in basso
+            e' scomodo se le liste sono lunghe" -> "voglio i bottoni in
+            alto", rigettando esplicitamente la versione precedente con
+            barra sticky in fondo alla viewport). Sta comunque dentro questo
+            form: la posizione nel JSX non deve coincidere con l'ultimo
+            elemento del form perche' il submit funzioni. */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            {righe.length} sku disponibili con questi filtri (già esclusi: bloccati per la vendita, quantità esaurita, già presenti nel batch).
+          </p>
+          <div className="flex items-center gap-3">
+            {selezionati.size > 0 && (
+              <span className="text-sm text-muted-foreground">{selezionati.size} selezionati</span>
+            )}
+            <Button type="submit" disabled={selezionati.size === 0}>
+              Aggiungi {selezionati.size > 0 ? `${selezionati.size} sku` : "selezionati"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border overflow-x-auto">
+          {righe.length === 0 ? (
+            <TableEmpty><p className="font-medium text-foreground">Nessuno sku trovato</p><p>Prova a modificare la ricerca o i filtri.</p></TableEmpty>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={tuttiSelezionati ? true : alcuniSelezionati ? "indeterminate" : false}
+                      onCheckedChange={(v) => selezionaTutti(v === true)}
+                      aria-label="Seleziona tutti"
+                    />
+                  </TableHead>
+                  <IntestazioneOrdinabile
+                    etichetta="SKU"
+                    chiave="skuCode"
+                    attiva={ordinamentoCorrente === "skuCode"}
+                    direzione={direzioneAttuale}
+                    onOrdina={gestisciOrdinamento}
+                  />
+                  {colonneVisibili.map((c) => (
+                    <IntestazioneOrdinabile
+                      key={c.id}
+                      etichetta={c.etichetta}
+                      chiave={c.chiaveOrdinamento}
+                      attiva={ordinamentoCorrente === c.chiaveOrdinamento}
+                      direzione={direzioneAttuale}
+                      allineaDestra={c.allineaDestra}
+                      onOrdina={gestisciOrdinamento}
+                    />
+                  ))}
+                  <IntestazioneOrdinabile
+                    etichetta="Disponibile"
+                    chiave="disponibile"
+                    attiva={ordinamentoCorrente === "disponibile"}
+                    direzione={direzioneAttuale}
+                    allineaDestra
+                    onOrdina={gestisciOrdinamento}
+                  />
+                  <IntestazioneOrdinabile
+                    etichetta="Impegnato"
+                    chiave="impegnato"
+                    attiva={ordinamentoCorrente === "impegnato"}
+                    direzione={direzioneAttuale}
+                    allineaDestra
+                    onOrdina={gestisciOrdinamento}
+                  />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {righe.map((r) => {
+                  const disponibileReale = r.quantitaDisponibile - r.impegnato;
+                  return (
+                    <TableRow key={r.id}>
+                      <TableCell onClickCapture={segnalaShift}>
+                        <Checkbox checked={selezionati.has(r.id)} onCheckedChange={(v) => gestisciSeleziona(r.id, v === true)} aria-label={`Seleziona ${r.skuCode}`} />
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{r.skuCode}</TableCell>
+                      {colonneVisibili.map((c) => (
+                        <TableCell key={c.id} className={c.allineaDestra ? "text-right tabular-nums" : undefined}>
+                          {c.render(r)}
+                        </TableCell>
+                      ))}
+                      <TableCell className="text-right tabular-nums">{r.quantitaDisponibile}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {r.impegnato > 0 ? (
+                          <span
+                            className={`inline-flex items-center gap-1 ${disponibileReale <= 0 ? "font-medium text-warning" : "text-muted-foreground"}`}
+                            title={
+                              disponibileReale <= 0
+                                ? "Già impegnato per intero su un altro batch confermato (canale esclusivo) - selezionabile comunque, verifica prima di confermare."
+                                : "Parzialmente impegnato su un altro batch confermato (canale esclusivo)."
+                            }
+                          >
+                            {disponibileReale <= 0 && <TriangleAlert className="size-3.5" />}
+                            {r.impegnato}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">0</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+      </form>
+    </div>
+  );
+}
