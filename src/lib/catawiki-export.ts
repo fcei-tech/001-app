@@ -115,6 +115,18 @@ function calcolaEra(anno: string): string {
   return "After 2000";
 }
 
+// Capitalizza SOLO il primo carattere alfabetico di una stringa, lascia
+// invariato tutto il resto (2026-09-29, richiesta esplicita cliente dopo
+// test su batch reale: leggere "artista: amleto dalla costa" tutto
+// minuscolo, etichetta inclusa, non e' grammaticalmente corretto). Non
+// tocca il testo dopo il primo carattere: e' deliberatamente il minimo
+// indispensabile, non un title-case per parola ne' un ripristino dei nomi
+// propri originali - vedi nota sotto sul perche'.
+function capitalizzaPrimaLettera(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 // Description: template confermato (claude/03c_master_config_formule_
 // regole.yaml/formula_descrizione/template_catawiki_CORRETTO), minuscolo
 // SU TUTTO IL BLOCCO (Catawiki segnala un avviso reale se il testo ha
@@ -122,6 +134,18 @@ function calcolaEra(anno: string): string {
 // SOTTO, che restano nel case originale (correzione esplicita del cliente
 // 2026-09-28: il vecchio Master li metteva minuscoli anche li', ma non era
 // corretto).
+//
+// CORREZIONE 2026-09-29 (capitalizzazione minima, NON un cambio di rotta
+// sulla nota sopra): tutto il blocco resta minuscolo come prima - qui si
+// capitalizza SOLO la prima lettera di ogni riga (quindi l'etichetta:
+// "Artista", "Opera", "Epoca", "Dimensioni", "Condizioni", "Garanzia",
+// "Spedizione" - e il valore quando e' lui il primo carattere della riga,
+// non capita in questo template). Scelta deliberata fra le opzioni
+// discusse con il cliente: NON un title-case per parola (es. "Amleto Dalla
+// Costa"), che avrebbe riportato il testo vicino al livello di maiuscole
+// che aveva originato l'avviso Catawiki in primo luogo - qui l'aumento di
+// maiuscole nel blocco e' minimo (una lettera per riga, 7 righe), il resto
+// (nomi propri, "UE", ecc.) resta minuscolo esattamente come prima.
 function buildDescription(sku: SkuDettagliCatawiki): string {
   const misure = `${formatNumero(Number(sku.larghezza ?? 0))}x${formatNumero(Number(sku.altezza ?? 0))}`;
   const telatura = sku.supporto === "T" ? FRASE_TELATURA : "";
@@ -136,7 +160,7 @@ function buildDescription(sku: SkuDettagliCatawiki): string {
     "",
     `Spedizione: ${TESTO_SPEDIZIONE}`,
   ];
-  return righe.join("\n").toLowerCase();
+  return righe.map((riga) => (riga ? capitalizzaPrimaLettera(riga.toLowerCase()) : riga)).join("\n");
 }
 
 // Foto: minimo 5, se ce ne sono meno si completa ripetendo la PRIMA foto
