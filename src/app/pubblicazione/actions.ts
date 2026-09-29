@@ -44,6 +44,7 @@ import {
   type TipoErroreValidazione,
 } from "@/lib/catawiki-resolver";
 import { generaCsvCatawiki } from "@/lib/catawiki-export";
+import { generaPdfAstaFisica, scaricaMiniatureInParallelo } from "@/lib/asta-fisica-pdf";
 
 type StatoBatch = "bozza" | "confermato" | "pubblicato";
 const CONDIZIONI_VALIDE = ["A", "A-", "B+", "B", "B-", "C"] as const;
@@ -672,4 +673,104 @@ export async function rientroLottoAction(formData: FormData) {
 
   await rientroLottoQuery(batchLottoId, lotto.skuId, (lotto.consegnaDettagli as ConsegnaDettagli | null) ?? null);
   revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
+}
+
+// Genera il PDF "lista lotti" per una casa d'asta fisica (2026-09-29) - vale
+// per TUTTI i canali con tipo asta_fisica (Cambi, Bolaffi, Wannenes, Libero,
+// e qualsiasi canale futuro dello stesso tipo), nessun nome cablato. Il PDF
+// e' descritto in src/lib/asta-fisica-pdf.ts.
+//
+// Regola di stato (stessa logica di generaFileCatawikiAction, con una
+// differenza voluta): da "confermato" genera e porta il batch a "pubblicato"
+// (= lista mandata alla casa); da "pubblicato" rigenera SENZA cambiare stato
+// (serve: la Riserva proposta resta modificabile dopo l'invio, vedi
+// mostraOverride nella pagina batch, e la lista puo' andare rispedita); da
+// "bozza" rifiuta. Se la generazione fallisce lo stato non cambia mai: il
+// passaggio a "pubblicato" avviene DOPO che il PDF e' stato costruito.
+//
+// Ritorna il PDF in base64 (i Server Actions restituiscono valori
+// serializzabili): il download lo costruisce il componente client.
+export async function generaFilePdfAstaFisicaAction(batchId: number): Promise<{
+  pdfBase64: string;
+  filename: string;
+  senzaMiniatura: { skuCode: string; artista: string; opera: string }[];
+  senzaFoto: { skuCode: string; artista: string; opera: string }[];
+  passatoAPubblicato: boolean;
+}> {
+  const batch = await getBatch(batchId);
+  if (!batch) throw new Error("Batch non trovato");
+  if (batch.canale.tipo !== "asta_fisica") {
+    throw new Error("La generazione del PDF e' disponibile solo per le aste fisiche");
+  }
+  if (batch.stato === "bozza") {
+    throw new Error("Il batch deve essere confermato prima di generare il file");
+  }
+  if (batch.lotti.length === 0) throw new Error("Il batch non ha lotti");
+
+  const fotoMappa = await getFotoPerSkuIds(batch.lotti.map((l) => l.skuId));
+  const pulisciMisura = (v: string | null) => (v ? v.replace(/\.0+$/, "") : "?");
+
+  const lotti = batch.lotti.map((l) => {
+    const fotoUrls = (fotoMappa.get(l.skuId) ?? []).map((f) => f.url);
+    const haMisure = l.sku.larghezza || l.sku.altezza;
+    return {
+      skuCode: l.sku.skuCode,
+      artista: l.sku.artista,
+      opera: l.sku.opera,
+      misure: haMisure ? `${pulisciMisura(l.sku.larghezza)} \u00d7 ${pulisciMisura(l.sku.altezza)} cm` : "",
+      riserva: ((l.override as OverrideLotto | null)?.riservaProposta ?? "").trim(),
+      fotoUrls,
+    };
+  });
+
+  const miniature = await scaricaMiniatureInParallelo(lotti.map((l) => l.fotoUrls[0] ?? null));
+
+  const now = new Date();
+  const partiRoma = new Intl.DateTimeFormat("it-IT", {
+    timeZone: "Europe/Rome",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const parte = (tipo: string) => partiRoma.find((p) => p.type === tipo)?.value ?? "";
+  const dataTesto = `${parte("day")}/${parte("month")}/${parte("year")}`;
+  const bollino = `${parte("year")}${parte("month")}${parte("day")}_${parte("hour")}${parte("minute")}`;
+  const slugCasa =
+    batch.canale.nome
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "asta";
+  const filename = `batch_${slugCasa}_${batchId}_${bollino}.pdf`;
+
+  const bytes = await generaPdfAstaFisica({
+    nomeCasa: batch.canale.nome,
+    batchId,
+    dataTesto,
+    lotti: lotti.map((l, idx) => ({ ...l, miniatura: miniature[idx] })),
+  });
+
+  // Il passaggio di stato avviene SOLO a PDF costruito con successo.
+  const passatoAPubblicato = batch.stato === "confermato";
+  if (passatoAPubblicato) await segnaBatchPubblicatoQuery(batchId);
+
+  revalidatePath(`/pubblicazione/${batch.canaleId}/${batchId}`);
+  revalidatePath(`/pubblicazione/${batch.canaleId}`);
+
+  const descrivi = (idx: number) => ({
+    skuCode: lotti[idx].skuCode,
+    artista: lotti[idx].artista,
+    opera: lotti[idx].opera,
+  });
+  return {
+    pdfBase64: Buffer.from(bytes).toString("base64"),
+    filename,
+    senzaMiniatura: lotti.map((l, i) => i).filter((i) => lotti[i].fotoUrls.length > 0 && !miniature[i]).map(descrivi),
+    senzaFoto: lotti.map((l, i) => i).filter((i) => lotti[i].fotoUrls.length === 0).map(descrivi),
+    passatoAPubblicato,
+  };
 }
