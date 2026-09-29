@@ -482,4 +482,194 @@ export async function generaFileCatawikiAction(batchId: number): Promise<{
   };
 }
 
-// --- Silenziamento errori di validazione (2026-09-28)
+// --- Silenziamento errori di validazione (2026-09-28) --------------------
+// Vedi commento su silenziamentiErrore in schema.ts per il design completo.
+// Chiamate con argomenti tipizzati (non FormData), stesso pattern di
+// generaFileCatawikiAction/aggiornaCampoOverrideLottoAction sopra - usate
+// sia dal banner di avviso nella pagina batch (silenzia singolo/multiplo)
+// sia dalla pagina dedicata /pubblicazione/silenziamenti (riattiva singolo/
+// multiplo).
+export async function silenziaErroreAction(input: {
+  skuId: number;
+  canaleId: number;
+  tipoErrore: TipoErroreValidazione;
+  note?: string;
+  batchId?: number;
+}) {
+  if (!TIPI_ERRORE_VALIDAZIONE.includes(input.tipoErrore)) {
+    throw new Error("Tipo di errore non valido");
+  }
+  await silenziaErroreQuery(input);
+  if (input.batchId) revalidatePath(`/pubblicazione/${input.canaleId}/${input.batchId}`);
+  revalidatePath(`/pubblicazione/silenziamenti`);
+}
+
+export async function silenziaErroriBulkAction(input: {
+  voci: { skuId: number; canaleId: number; tipoErrore: TipoErroreValidazione }[];
+  batchId?: number;
+}) {
+  for (const voce of input.voci) {
+    if (!TIPI_ERRORE_VALIDAZIONE.includes(voce.tipoErrore)) continue;
+    await silenziaErroreQuery(voce);
+  }
+  const canaleId = input.voci[0]?.canaleId;
+  if (input.batchId && canaleId) revalidatePath(`/pubblicazione/${canaleId}/${input.batchId}`);
+  revalidatePath(`/pubblicazione/silenziamenti`);
+}
+
+export async function riattivaSilenziamentoAction(id: number) {
+  await riattivaSilenziamentoQuery(id);
+  revalidatePath(`/pubblicazione/silenziamenti`);
+}
+
+export async function riattivaSilenziamentiBulkAction(ids: number[]) {
+  await riattivaSilenziamentiBulkQuery(ids);
+  revalidatePath(`/pubblicazione/silenziamenti`);
+}
+
+// Elimina un batch in QUALSIASI stato, SENZA ECCEZIONI (2026-09-23 sera,
+// regola allentata il 2026-09-24, poi cambio di rotta 2026-09-25 - vedi
+// eliminaBatch in pubblicazione-queries.ts per il testo completo della
+// decisione). L'AVVISO non bloccante su cosa si libera (se il batch teneva
+// una prenotazione reale) e' responsabilita' del chiamante lato client
+// (EliminaBatchButton, dialog di conferma) PRIMA di invocare questa action -
+// qui solo l'orchestrazione redirect/revalidate, nessun controllo.
+export async function eliminaBatchAction(formData: FormData) {
+  const batchId = Number(formData.get("batchId"));
+  const canaleId = Number(formData.get("canaleId"));
+  if (!batchId) throw new Error("Batch non valido");
+
+  await eliminaBatchQuery(batchId);
+  revalidatePath(`/pubblicazione/${canaleId}`);
+  redirect(`/pubblicazione/${canaleId}?eliminato=1`);
+}
+
+// Versione multi-selezione di eliminaBatchAction - usata dalla barra azioni
+// della lista batch di un canale (2026-09-25, punto 2 del backlog UX
+// FINALIZZATO: "cancellazione multipla [...] stessa logica applicata per
+// ogni batch selezionato, un unico avviso consolidato"). L'avviso
+// consolidato (cosa si libera, quanti lotti coinvolti) e' costruito lato
+// client PRIMA di chiamare questa action (vedi contaLottiConPrenotazione in
+// src/lib/prenotazione-batch.ts) - qui elimina ogni batch selezionato senza
+// eccezioni (eliminaBatch non blocca mai, vedi sopra), nessun caso di
+// "alcuni bloccati" da gestire: l'idea di saltare/bloccare solo i batch con
+// lotti accettati e' stata abbandonata insieme al blocco duro.
+export async function eliminaBatchMultiploAction(formData: FormData) {
+  const canaleId = Number(formData.get("canaleId"));
+  const batchIds = formData.getAll("batchId").map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  if (batchIds.length === 0) throw new Error("Nessun batch selezionato");
+
+  for (const batchId of batchIds) {
+    await eliminaBatchQuery(batchId);
+  }
+
+  revalidatePath(`/pubblicazione/${canaleId}`);
+  redirect(`/pubblicazione/${canaleId}?eliminati=${batchIds.length}`);
+}
+
+// --- Consegna/Annulla consegna/Rientro (solo asta_fisica, 2026-09-25,
+// sessione 5 - vedi consegnaLotto/annullaConsegna/rientroLotto in
+// pubblicazione-queries.ts per il dettaglio del meccanismo). Verifica
+// esplicita canale asta_fisica + statoRiga qui nell'azione, non solo lato UI
+// (stesso principio gia' in uso per accettaLottoAction/
+// annullaAccettazioneAction).
+
+const PROPRIETA_VALIDE = ["FP", "CV", "TERZI"] as const;
+
+// Consegna: l'operatore ha scelto origine/destinazione/quantita' dal form
+// guidato (SelettoreOrigineDestinazione, precompilato da saldi reali - vedi
+// getSaldiSkuPerUbicazione in src/db/queries.ts). Disponibile solo su un
+// lotto "accettato" non ancora consegnato.
+export async function consegnaLottoAction(formData: FormData) {
+  const batchLottoId = Number(formData.get("batchLottoId"));
+  const batchId = Number(formData.get("batchId"));
+  const canaleId = Number(formData.get("canaleId"));
+  const proprieta = formData.get("proprieta")?.toString();
+  const ubicazioneOrigineId = Number(formData.get("ubicazioneOrigineId"));
+  const ubicazioneDestinazioneId = Number(formData.get("ubicazioneDestinazioneId"));
+  const quantita = Number(formData.get("quantita"));
+  if (!batchLottoId || !batchId) throw new Error("Riferimento non valido");
+  if (!proprieta || !PROPRIETA_VALIDE.includes(proprieta as (typeof PROPRIETA_VALIDE)[number])) {
+    throw new Error("Proprieta' non valida");
+  }
+  if (!ubicazioneOrigineId || !ubicazioneDestinazioneId) {
+    throw new Error("Scegli ubicazione di origine e destinazione");
+  }
+  if (ubicazioneOrigineId === ubicazioneDestinazioneId) {
+    throw new Error("Origine e destinazione non possono coincidere");
+  }
+  if (!Number.isFinite(quantita) || quantita <= 0) {
+    throw new Error("Quantita' non valida");
+  }
+
+  const batch = await getBatch(batchId);
+  if (!batch) throw new Error("Batch non trovato");
+  if (batch.canale.tipo !== "asta_fisica") {
+    throw new Error("Consegna si applica solo alle aste fisiche");
+  }
+  const lotto = batch.lotti.find((l) => l.id === batchLottoId);
+  if (!lotto) throw new Error("Lotto non trovato in questo batch");
+  if (lotto.statoRiga !== "accettato") {
+    throw new Error("Solo un lotto accettato puo' essere consegnato");
+  }
+  if (lotto.consegnatoAt) {
+    throw new Error("Questo lotto e' gia' stato consegnato");
+  }
+
+  await consegnaLottoQuery(batchLottoId, lotto.skuId, {
+    proprieta: proprieta as ConsegnaDettagli["proprieta"],
+    ubicazioneOrigineId,
+    ubicazioneDestinazioneId,
+    quantita,
+  });
+  revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
+}
+
+// "Ho cliccato Consegna per errore" - inverte lo stesso movimento usando i
+// dettagli gia' salvati (consegnaDettagli), nessun input dall'operatore.
+export async function annullaConsegnaAction(formData: FormData) {
+  const batchLottoId = Number(formData.get("batchLottoId"));
+  const batchId = Number(formData.get("batchId"));
+  const canaleId = Number(formData.get("canaleId"));
+  if (!batchLottoId || !batchId) throw new Error("Riferimento non valido");
+
+  const batch = await getBatch(batchId);
+  if (!batch) throw new Error("Batch non trovato");
+  if (batch.canale.tipo !== "asta_fisica") {
+    throw new Error("Annulla consegna si applica solo alle aste fisiche");
+  }
+  const lotto = batch.lotti.find((l) => l.id === batchLottoId);
+  if (!lotto) throw new Error("Lotto non trovato in questo batch");
+  if (!lotto.consegnatoAt || !lotto.consegnaDettagli) {
+    throw new Error("Questo lotto non risulta consegnato");
+  }
+
+  await annullaConsegnaQuery(batchLottoId, lotto.skuId, lotto.consegnaDettagli as ConsegnaDettagli);
+  revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
+}
+
+// Rientro: il pezzo torna indietro (invenduto/ritirato) - rimuove il lotto
+// dal batch, invertendo anche il movimento fisico della consegna. Disponibile
+// solo su un lotto gia' consegnato (per un lotto accettato ma mai consegnato
+// c'e' gia' "Annulla accettazione" - non serve un secondo percorso allo
+// stesso risultato).
+export async function rientroLottoAction(formData: FormData) {
+  const batchLottoId = Number(formData.get("batchLottoId"));
+  const batchId = Number(formData.get("batchId"));
+  const canaleId = Number(formData.get("canaleId"));
+  if (!batchLottoId || !batchId) throw new Error("Riferimento non valido");
+
+  const batch = await getBatch(batchId);
+  if (!batch) throw new Error("Batch non trovato");
+  if (batch.canale.tipo !== "asta_fisica") {
+    throw new Error("Rientro si applica solo alle aste fisiche");
+  }
+  const lotto = batch.lotti.find((l) => l.id === batchLottoId);
+  if (!lotto) throw new Error("Lotto non trovato in questo batch");
+  if (!lotto.consegnatoAt) {
+    throw new Error("Questo lotto non risulta consegnato - usa Annulla accettazione");
+  }
+
+  await rientroLottoQuery(batchLottoId, lotto.skuId, (lotto.consegnaDettagli as ConsegnaDettagli | null) ?? null);
+  revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
+}
