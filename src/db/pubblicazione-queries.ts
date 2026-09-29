@@ -169,10 +169,16 @@ export async function annullaAccettazione(batchLottoId: number) {
 //   valore specifico di QUESTO batch/evento di pubblicazione (es. varia il
 //   prezzo per un'asta particolare), anche qui mai scritto sullo sku nel
 //   Magazzino, che resta la fonte "certa e fissa".
+// "condizione" aggiunta 2026-09-28 (generazione output Catawiki): stesso
+// principio usa-e-getta degli altri due campi, editabile per singolo lotto
+// nella tabella "Lotti nel batch" (cella CellSelect, vedi pagina batch) -
+// vince sempre sulla condizione reale dello sku (livello 3 su livello 1),
+// mai scritta sullo sku stesso.
 export type OverrideLotto = {
   riservaProposta?: string;
   prezzo?: string;
   riserva?: string;
+  condizione?: string;
 };
 
 // Scrive/azzera l'override di un singolo lotto nel batch. Ogni campo vuoto
@@ -186,9 +192,41 @@ export async function aggiornaOverrideLotto(batchLottoId: number, valori: Overri
   if (valori.riservaProposta?.trim()) pulito.riservaProposta = valori.riservaProposta.trim();
   if (valori.prezzo?.trim()) pulito.prezzo = valori.prezzo.trim();
   if (valori.riserva?.trim()) pulito.riserva = valori.riserva.trim();
+  if (valori.condizione?.trim()) pulito.condizione = valori.condizione.trim();
   await db
     .update(batchLotti)
     .set({ override: Object.keys(pulito).length > 0 ? pulito : null })
+    .where(eq(batchLotti.id, batchLottoId));
+}
+
+// Aggiorna UN SOLO campo dell'override di un lotto, mantenendo intatti gli
+// altri gia' presenti (2026-09-28, generazione output Catawiki: celle
+// editabili inline Prezzo/Riserva/Condizione nella tabella "Lotti nel
+// batch", stile Magazzino - autosave per singola cella, non un form unico
+// che invia tutti i campi insieme come aggiornaOverrideLotto sopra, ancora
+// in uso per Riserva proposta/asta_fisica e per il picker). Legge
+// l'override attuale, sovrascrive/rimuove solo il campo richiesto, riscrive
+// l'intero oggetto - stringa vuota rimuove il campo (torna al fallback di
+// livello 1), stesso principio di "campo vuoto = nessun override" delle
+// altre funzioni di questo file.
+export async function aggiornaCampoOverrideLotto(
+  batchLottoId: number,
+  campo: keyof OverrideLotto,
+  valore: string
+) {
+  const lotto = await db.query.batchLotti.findFirst({
+    where: (l, { eq }) => eq(l.id, batchLottoId),
+  });
+  if (!lotto) throw new Error("Lotto non trovato");
+
+  const attuale = { ...((lotto.override as OverrideLotto | null) ?? {}) };
+  const pulito = valore.trim();
+  if (pulito) attuale[campo] = pulito;
+  else delete attuale[campo];
+
+  await db
+    .update(batchLotti)
+    .set({ override: Object.keys(attuale).length > 0 ? attuale : null })
     .where(eq(batchLotti.id, batchLottoId));
 }
 
@@ -301,6 +339,23 @@ export async function segnaBatchPubblicato(batchId: number) {
   await db
     .update(batchPubblicazione)
     .set({ stato: "pubblicato" })
+    .where(eq(batchPubblicazione.id, batchId));
+}
+
+// Scrive le impostazioni di livello batch (2026-09-28, generazione output
+// Catawiki: profiloSpedizione/riservaAttiva/modificatorePrezzoPercentuale/
+// modificatoreRiservaEur/messaggioEsperto, vedi ImpostazioniBatchCatawiki in
+// src/lib/catawiki-resolver.ts) - jsonb generico, non tipizzato qui (il
+// chiamante passa gia' l'oggetto tipato per il canale corretto): stesso
+// principio di snapshot, un solo campo jsonb per tutti i tipi di canale,
+// forma diversa a seconda di canale.tipo. Nessun controllo di stato batch
+// qui (basso livello, stesso principio delle altre funzioni di questo
+// file) - il chiamante verifica che il batch sia ancora modificabile
+// (bozza o confermato, MAI pubblicato) prima di chiamare questa funzione.
+export async function aggiornaImpostazioniBatch(batchId: number, impostazioni: Record<string, unknown>) {
+  await db
+    .update(batchPubblicazione)
+    .set({ impostazioniBatch: impostazioni })
     .where(eq(batchPubblicazione.id, batchId));
 }
 
