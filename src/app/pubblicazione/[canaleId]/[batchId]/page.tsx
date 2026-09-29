@@ -291,6 +291,68 @@ export default async function BatchPubblicazionePage({
           </div>
         )}
 
+        {/* Ordine sezioni (2026-09-29, richiesta esplicita del cliente dopo
+            il primo test reale: "1 apro picker e aggiungo lotti senza
+            modificare, 2 applico impostazioni batch, 3 passo alla lista
+            lotti nel batch che si sono aggiornati secondo le impostazioni
+            precedenti e posso modificarli singolarmente, 4 pubblico csv") -
+            Aggiungi lotti (picker) PRIMA, poi Impostazioni batch, poi Lotti
+            nel batch come tabella di revisione/modifica finale in fondo,
+            dove la colonna "Stato export" mostra gia' stima/riserva
+            calcolate con le impostazioni appena salvate. Generalizzato a
+            tutti i canali (non solo Catawiki): "Aggiungi lotti" viene prima
+            ovunque, "Impostazioni batch" esiste solo per Catawiki quindi
+            semplicemente non compare per gli altri canali. */}
+        {inBozza && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Aggiungi lotti</CardTitle>
+              <CardDescription>
+                Modulo Magazzino filtrato e interattivo: esclude sempre sku bloccati per la vendita, senza scorta o già nel batch.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SelettoreLottiBatch
+                righe={righePicker}
+                tipi={tipi}
+                batchId={batch.id}
+                canaleId={Number(canaleId)}
+                basePath={`/pubblicazione/${canaleId}/${batchId}`}
+                filtriAttivi={filtriAttiviPicker}
+                filtriIniziali={{
+                  q: sp.q ?? "",
+                  tipo: tipoId ? String(tipoId) : "tutti",
+                  condizione: condizione ?? "tutti",
+                  proprieta: proprieta ?? "tutti",
+                  confoto: conFoto ? "si" : "no",
+                }}
+                ordinaAttuale={ordina}
+                direzioneAttuale={direzione ?? "asc"}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {isCatawiki && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Impostazioni batch (Catawiki)</CardTitle>
+              <CardDescription>
+                Si applicano a tutti i lotti di questo batch - profilo di spedizione, riserva attiva, modificatori
+                prezzo/riserva, messaggio a Expert.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ImpostazioniBatchCatawikiForm
+                batchId={batch.id}
+                canaleId={Number(canaleId)}
+                valoreIniziale={impostazioniCatawiki}
+                disabilitato={batch.stato === "pubblicato"}
+              />
+            </CardContent>
+          </Card>
+        )}
+
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>Lotti nel batch</CardTitle>
@@ -368,6 +430,7 @@ export default async function BatchPubblicazionePage({
                                       batchId={batch.id}
                                       canaleId={Number(canaleId)}
                                       valore={override?.prezzo ?? null}
+                                      fallback={l.sku.prezzoCatawiki}
                                     />
                                   ) : (
                                     (override?.prezzo ?? l.sku.prezzoCatawiki ?? "—")
@@ -380,6 +443,7 @@ export default async function BatchPubblicazionePage({
                                       batchId={batch.id}
                                       canaleId={Number(canaleId)}
                                       valore={override?.riserva ?? null}
+                                      fallback={risolta?.riservaFinale != null ? String(risolta.riservaFinale) : null}
                                     />
                                   ) : (
                                     (override?.riserva ?? "—")
@@ -511,57 +575,6 @@ export default async function BatchPubblicazionePage({
             )}
           </CardContent>
         </Card>
-
-        {isCatawiki && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Impostazioni batch (Catawiki)</CardTitle>
-              <CardDescription>
-                Si applicano a tutti i lotti di questo batch - profilo di spedizione, riserva attiva, modificatori
-                prezzo/riserva, messaggio a Expert.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ImpostazioniBatchCatawikiForm
-                batchId={batch.id}
-                canaleId={Number(canaleId)}
-                valoreIniziale={impostazioniCatawiki}
-                disabilitato={batch.stato === "pubblicato"}
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        {inBozza && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Aggiungi lotti</CardTitle>
-              <CardDescription>
-                Modulo Magazzino filtrato e interattivo: esclude sempre sku bloccati per la vendita, senza scorta o già nel batch.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <SelettoreLottiBatch
-                righe={righePicker}
-                tipi={tipi}
-                batchId={batch.id}
-                canaleId={Number(canaleId)}
-                tipoCanale={batch.canale.tipo}
-                basePath={`/pubblicazione/${canaleId}/${batchId}`}
-                filtriAttivi={filtriAttiviPicker}
-                filtriIniziali={{
-                  q: sp.q ?? "",
-                  tipo: tipoId ? String(tipoId) : "tutti",
-                  condizione: condizione ?? "tutti",
-                  proprieta: proprieta ?? "tutti",
-                  confoto: conFoto ? "si" : "no",
-                }}
-                ordinaAttuale={ordina}
-                direzioneAttuale={direzione ?? "asc"}
-              />
-            </CardContent>
-          </Card>
-        )}
       </main>
     </div>
   );
