@@ -11,6 +11,7 @@ import {
   tipiOggetto,
   ubicazioni,
 } from "./schema";
+import { CATAWIKI_SOGLIA_MINIMA_STIMA_IMPORT } from "@/lib/catawiki-config";
 
 export type RigaMagazzino = {
   id: number;
@@ -75,7 +76,8 @@ export type ColonnaOrdinabile =
   | "note"
   | "stato"
   | "creato"
-  | "aggiornato";
+  | "aggiornato"
+  | "datiMancanti";
 
 export type FiltriMagazzino = {
   ricerca?: string;
@@ -91,6 +93,27 @@ export type FiltriMagazzino = {
   // (vedi getSkuSelezionabiliPerBatch sotto) - tenerla separata da senzaFoto
   // evita di toccare il filtro gia' in uso su src/app/page.tsx.
   conFoto?: boolean;
+  // Filtri di profondita' min/max (2026-09-29, richiesta esplicita cliente:
+  // "i valori di prezzo, riserva, disponibilita'/quantita' mi servono
+  // filtrabili piu' profondamente", confermato con l'elenco esatto dei 4
+  // campi - vedi commento su SelettoreLottiBatch/picker in
+  // selettore-lotti.tsx). Ognuno indipendente e opzionale: min e max
+  // possono essere passati anche singolarmente. prezzoEbayMin/Max e
+  // prezzoCatawikiMin/Max e riservaCatawikiMin/Max confrontano la colonna
+  // sku diretta (WHERE); quantitaMin/Max confronta la SUM aggregata dei
+  // movimenti (HAVING, stesso motivo di "disponibilita'" sotto).
+  prezzoEbayMin?: number;
+  prezzoEbayMax?: number;
+  prezzoCatawikiMin?: number;
+  prezzoCatawikiMax?: number;
+  riservaCatawikiMin?: number;
+  riservaCatawikiMax?: number;
+  quantitaMin?: number;
+  quantitaMax?: number;
+  // "Solo con dati mancanti" (2026-09-29, indicatore Magazzino generale) -
+  // vedi campiMancantiCountSql sotto e src/lib/campi-mancanti-pubblicazione.ts
+  // per la stessa logica lato client (badge in tabella).
+  soloDatiMancanti?: boolean;
   ordina?: ColonnaOrdinabile;
   direzione?: "asc" | "desc";
 };
@@ -121,6 +144,24 @@ const RANGO_CONDIZIONE = sql`case ${sku.condizione}
 const quantitaDisponibileSql = () => sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`;
 const proprietaSql = () => sql`coalesce(string_agg(distinct ${movimentiMagazzino.proprieta}::text, ', '), '')`;
 const numeroFotoSql = () => sql`(select count(*) from foto_sku fs where fs.sku_id = ${sku.id})`;
+
+// Conteggio campi mancanti (2026-09-29) - stessa identica logica di
+// campiMancanti() in src/lib/campi-mancanti-pubblicazione.ts, riscritta in
+// SQL per poter ordinare/filtrare lato server senza scaricare tutto il
+// Magazzino in memoria. Le due versioni (qui e in TS) vanno tenute allineate
+// a mano se la regola cambia - stesso principio gia' in uso per
+// RANGO_CONDIZIONE (ordinamento) rispetto a condizioneVariant() lato client.
+// Nessuna dipendenza da GROUP BY: opera solo su colonne dirette di sku' e
+// una subquery scalare correlata (numeroFotoSql), quindi utilizzabile sia in
+// WHERE sia in ORDER BY di una query con GROUP BY sku.id.
+function campiMancantiCountSql() {
+  return sql<number>`(
+    (case when ${sku.prezzoEbay} is null or ${sku.prezzoEbay} <= 0 then 1 else 0 end)
+    + (case when ${sku.prezzoCatawiki} is null or ${sku.prezzoCatawiki} < ${CATAWIKI_SOGLIA_MINIMA_STIMA_IMPORT} then 1 else 0 end)
+    + (case when ${sku.anno} is null or trim(${sku.anno}) = '' then 1 else 0 end)
+    + (case when ${numeroFotoSql()} <= 0 then 1 else 0 end)
+  )`;
+}
 
 // Equivalente dinamico di MASTER!QTY_DISPONIBILE_REALE: conta le righe
 // batch_lotti dove il batch e' confermato O pubblicato (fix 2026-09-25,
@@ -199,13 +240,24 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
       exists(db.select({ uno: sql`1` }).from(fotoSku).where(eq(fotoSku.skuId, sku.id)))
     );
   }
+  if (filtri.prezzoEbayMin != null) condizioniWhere.push(sql`${sku.prezzoEbay} >= ${filtri.prezzoEbayMin}`);
+  if (filtri.prezzoEbayMax != null) condizioniWhere.push(sql`${sku.prezzoEbay} <= ${filtri.prezzoEbayMax}`);
+  if (filtri.prezzoCatawikiMin != null) condizioniWhere.push(sql`${sku.prezzoCatawiki} >= ${filtri.prezzoCatawikiMin}`);
+  if (filtri.prezzoCatawikiMax != null) condizioniWhere.push(sql`${sku.prezzoCatawiki} <= ${filtri.prezzoCatawikiMax}`);
+  if (filtri.riservaCatawikiMin != null) condizioniWhere.push(sql`${sku.riservaCatawiki} >= ${filtri.riservaCatawikiMin}`);
+  if (filtri.riservaCatawikiMax != null) condizioniWhere.push(sql`${sku.riservaCatawiki} <= ${filtri.riservaCatawikiMax}`);
+  if (filtri.soloDatiMancanti) condizioniWhere.push(sql`${campiMancantiCountSql()} > 0`);
 
-  const having =
-    filtri.disponibilita === "disponibile"
-      ? sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0) > 0`
-      : filtri.disponibilita === "esaurito"
-        ? sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0) <= 0`
-        : undefined;
+  // disponibilita'/quantitaMin/quantitaMax condividono lo stesso HAVING
+  // (tutti e tre confrontano la SUM aggregata dei movimenti) - combinati con
+  // and() invece di sovrascriversi a vicenda, cosi' "Esaurito" e un range
+  // quantita' esplicito possono coesistere senza conflitti impliciti.
+  const condizioniHaving = [];
+  if (filtri.disponibilita === "disponibile") condizioniHaving.push(sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0) > 0`);
+  if (filtri.disponibilita === "esaurito") condizioniHaving.push(sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0) <= 0`);
+  if (filtri.quantitaMin != null) condizioniHaving.push(sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0) >= ${filtri.quantitaMin}`);
+  if (filtri.quantitaMax != null) condizioniHaving.push(sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0) <= ${filtri.quantitaMax}`);
+  const having = condizioniHaving.length ? and(...condizioniHaving) : undefined;
 
   // Colonne cliccabili in intestazione per l'ordinamento lista (2026-09-23,
   // esteso lo stesso giorno a TUTTE le colonne della tabella per regola
@@ -233,6 +285,7 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
     stato: sku.bloccatoVendita,
     creato: sku.createdAt,
     aggiornato: sku.updatedAt,
+    datiMancanti: campiMancantiCountSql(),
   };
   const colonnaOrdinamento = filtri.ordina ? COLONNE_ORDINABILI[filtri.ordina] : sku.skuCode;
   const direzioneOrdinamento = filtri.direzione === "desc" ? desc : asc;
