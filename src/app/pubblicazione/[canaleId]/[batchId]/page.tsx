@@ -25,6 +25,7 @@ import {
   annullaConsegnaAction,
 } from "../../actions";
 import { SelettoreLottiBatch } from "@/components/pubblicazione/selettore-lotti";
+import { SezioneAggiungiLotti } from "@/components/pubblicazione/sezione-aggiungi-lotti";
 import { EliminaBatchButton } from "@/components/pubblicazione/elimina-batch-button";
 import { OverrideLottoForm } from "@/components/pubblicazione/override-lotto-form";
 import { CambiaStatoBatchControl } from "@/components/pubblicazione/cambia-stato-batch-control";
@@ -38,7 +39,8 @@ import {
 } from "@/components/pubblicazione/celle-override-catawiki";
 import { ImpostazioniBatchCatawikiForm } from "@/components/pubblicazione/impostazioni-batch-catawiki-form";
 import { GeneraFileCatawikiButton } from "@/components/pubblicazione/genera-file-catawiki-button";
-import { coloreCanale } from "@/lib/colori-canali";
+import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
+import { BarraCanale } from "@/components/pubblicazione/barra-canale";
 import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
 import {
   risolviBatchCatawiki,
@@ -80,7 +82,26 @@ type SearchParams = {
   direzione?: string;
   aggiunti?: string;
   confermato?: string;
+  // Filtri di profondita' min/max del picker "Aggiungi lotti" (2026-09-29) -
+  // vedi FiltriPickerIniziali in selettore-lotti.tsx.
+  prezzoEbayMin?: string;
+  prezzoEbayMax?: string;
+  prezzoCatawikiMin?: string;
+  prezzoCatawikiMax?: string;
+  riservaCatawikiMin?: string;
+  riservaCatawikiMax?: string;
+  quantitaMin?: string;
+  quantitaMax?: string;
 };
+
+// Converte una stringa da URLSearchParams in numero, ignorando valori vuoti
+// o non numerici (stesso principio "whitelist esplicita, mai fidarsi
+// dell'URL a occhio" gia' in uso per COLONNE_ORDINABILI sopra).
+function numeroParam(v: string | undefined): number | undefined {
+  if (!v) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
 
 export default async function BatchPubblicazionePage({
   params,
@@ -111,6 +132,7 @@ export default async function BatchPubblicazionePage({
   // si libera), mai un blocco.
   const numeroLottiConPrenotazione = contaLottiConPrenotazione(batch, batch.canale);
   const colore = coloreCanale(batch.canale.nome);
+  const fasce = fasceCanale(batch.canale.nome);
   // Override per lotto (2026-09-24, richiesta esplicita utente - vedi
   // OverrideLotto in pubblicazione-queries.ts): "Riserva proposta" su
   // asta_fisica, "Prezzo/Riserva evento" sugli altri canali asta_online
@@ -178,7 +200,21 @@ export default async function BatchPubblicazionePage({
   const conFoto = sp.confoto === "si";
   const ordina = sp.ordina && (COLONNE_ORDINABILI as string[]).includes(sp.ordina) ? (sp.ordina as ColonnaOrdinabile) : undefined;
   const direzione = sp.direzione === "desc" ? "desc" : sp.direzione === "asc" ? "asc" : undefined;
-  const filtriAttiviPicker = Boolean(sp.q || tipoId || condizione || proprieta || conFoto);
+  const prezzoEbayMin = numeroParam(sp.prezzoEbayMin);
+  const prezzoEbayMax = numeroParam(sp.prezzoEbayMax);
+  const prezzoCatawikiMin = numeroParam(sp.prezzoCatawikiMin);
+  const prezzoCatawikiMax = numeroParam(sp.prezzoCatawikiMax);
+  const riservaCatawikiMin = numeroParam(sp.riservaCatawikiMin);
+  const riservaCatawikiMax = numeroParam(sp.riservaCatawikiMax);
+  const quantitaMin = numeroParam(sp.quantitaMin);
+  const quantitaMax = numeroParam(sp.quantitaMax);
+  const filtriAttiviPicker = Boolean(
+    sp.q || tipoId || condizione || proprieta || conFoto ||
+    prezzoEbayMin != null || prezzoEbayMax != null ||
+    prezzoCatawikiMin != null || prezzoCatawikiMax != null ||
+    riservaCatawikiMin != null || riservaCatawikiMax != null ||
+    quantitaMin != null || quantitaMax != null
+  );
 
   const [righeDisponibili, tipi] = inBozza
     ? await Promise.all([
@@ -189,7 +225,11 @@ export default async function BatchPubblicazionePage({
         // esclusivo non genera mai questo conflitto, quindi resta al
         // comportamento precedente.
         getSkuSelezionabiliPerBatch(
-          { ricerca: sp.q, tipoId, condizione, proprieta, conFoto, ordina, direzione },
+          {
+            ricerca: sp.q, tipoId, condizione, proprieta, conFoto, ordina, direzione,
+            prezzoEbayMin, prezzoEbayMax, prezzoCatawikiMin, prezzoCatawikiMax,
+            riservaCatawikiMin, riservaCatawikiMax, quantitaMin, quantitaMax,
+          },
           batch.canale.esclusivo
         ),
         getTipiOggetto(),
@@ -226,10 +266,17 @@ export default async function BatchPubblicazionePage({
           <ChevronLeft className="size-4" /> {batch.canale.nome}
         </Link>
 
+        {/* 2026-09-29: bordo 20px (SPESSORE_BORDO_CANALE_PX, "opzione C") -
+            eBay/eBay Asta usano BarraCanale (4 fasce) invece del bordo
+            singolo, vedi barra-canale.tsx. "pl-9" (36px = 20px fascia + 16px
+            respiro, come il border-l-[20px]+pl-4 del caso a colore singolo)
+            mantiene il testo alla stessa distanza in entrambi i casi -
+            "relative overflow-hidden" evita qualsiasi sconfinamento. */}
         <div
-          className="mb-6 flex items-center justify-between gap-4 border-l-4 pl-4"
-          style={colore ? { borderLeftColor: colore } : undefined}
+          className={`relative mb-6 flex items-center justify-between gap-4 overflow-hidden ${fasce ? "pl-9" : "border-l-[20px] pl-4"}`}
+          style={!fasce && colore ? { borderLeftColor: colore } : undefined}
         >
+          {fasce && <BarraCanale nomeCanale={batch.canale.nome} />}
           <div className="flex flex-col gap-1">
             <h1 className="text-xl font-semibold tracking-tight">
               Batch #{batch.id} — {batch.canale.nome}
@@ -302,280 +349,32 @@ export default async function BatchPubblicazionePage({
             calcolate con le impostazioni appena salvate. Generalizzato a
             tutti i canali (non solo Catawiki): "Aggiungi lotti" viene prima
             ovunque, "Impostazioni batch" esiste solo per Catawiki quindi
-            semplicemente non compare per gli altri canali. */}
+            semplicemente non compare per gli altri canali.
+
+            CORREZIONE 2026-09-29 (stesso giorno, dopo test sulla release):
+            "Aggiungi lotti" e' comprimibile - vedi commento in
+            sezione-aggiungi-lotti.tsx. Senza questo, un picker magazzino
+            lungo (nessuna paginazione) spingeva "Impostazioni batch"/"Lotti
+            nel batch" fuori dalla vista, dando l'impressione che fossero
+            sparite - segnalato dal cliente sulla build installata. */}
         {inBozza && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Aggiungi lotti</CardTitle>
-              <CardDescription>
-                Modulo Magazzino filtrato e interattivo: esclude sempre sku bloccati per la vendita, senza scorta o già nel batch.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <SelettoreLottiBatch
-                righe={righePicker}
-                tipi={tipi}
-                batchId={batch.id}
-                canaleId={Number(canaleId)}
-                basePath={`/pubblicazione/${canaleId}/${batchId}`}
-                filtriAttivi={filtriAttiviPicker}
-                filtriIniziali={{
-                  q: sp.q ?? "",
-                  tipo: tipoId ? String(tipoId) : "tutti",
-                  condizione: condizione ?? "tutti",
-                  proprieta: proprieta ?? "tutti",
-                  confoto: conFoto ? "si" : "no",
-                }}
-                ordinaAttuale={ordina}
-                direzioneAttuale={direzione ?? "asc"}
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        {isCatawiki && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Impostazioni batch (Catawiki)</CardTitle>
-              <CardDescription>
-                Si applicano a tutti i lotti di questo batch - profilo di spedizione, riserva attiva, modificatori
-                prezzo/riserva, messaggio a Expert.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ImpostazioniBatchCatawikiForm
-                batchId={batch.id}
-                canaleId={Number(canaleId)}
-                valoreIniziale={impostazioniCatawiki}
-                disabilitato={batch.stato === "pubblicato"}
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Lotti nel batch</CardTitle>
-            <CardDescription>{batch.lotti.length} sku selezionati.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {batch.lotti.length === 0 ? (
-              <TableEmpty>Nessun lotto ancora aggiunto.</TableEmpty>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Sku</TableHead>
-                    <TableHead>Artista</TableHead>
-                    <TableHead>Opera</TableHead>
-                    <TableHead>Stato riga</TableHead>
-                    {mostraOverride && (
-                      <TableHead>{mostraRiservaProposta ? "Riserva proposta" : "Prezzo / Riserva evento"}</TableHead>
-                    )}
-                    {isCatawiki && (
-                      <>
-                        <TableHead className="text-right">Prezzo</TableHead>
-                        <TableHead className="text-right">Riserva</TableHead>
-                        <TableHead>Condizione</TableHead>
-                        <TableHead>Stato export</TableHead>
-                      </>
-                    )}
-                    {mostraColonnaAzioni && <TableHead className="text-right">Azioni</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {batch.lotti.map((l) => {
-                    const statoRiga = ETICHETTE_STATO_RIGA[l.statoRiga] ?? { label: l.statoRiga, variant: "outline" as const };
-                    return (
-                      <TableRow key={l.id}>
-                        <TableCell className="font-mono text-xs">{l.sku.skuCode}</TableCell>
-                        <TableCell>{l.sku.artista}</TableCell>
-                        <TableCell>{l.sku.opera}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            <Badge variant={statoRiga.variant}>{statoRiga.label}</Badge>
-                            {/* Badge visivo in piu' (2026-09-25, sessione 5) - NON un
-                                nuovo lottoStatoEnum (decisione 2026-09-14), solo
-                                consegnatoAt valorizzato su un lotto "accettato". */}
-                            {l.consegnatoAt && <Badge variant="warning">Consegnato</Badge>}
-                          </div>
-                        </TableCell>
-                        {mostraOverride && (
-                          <TableCell>
-                            {overrideModificabile ? (
-                              <OverrideLottoForm
-                                batchLottoId={l.id}
-                                batchId={batch.id}
-                                canaleId={Number(canaleId)}
-                                mostraRiservaProposta={mostraRiservaProposta}
-                                valoreIniziale={l.override as OverrideLotto | null}
-                              />
-                            ) : mostraRiservaProposta ? (
-                              (l.override as OverrideLotto | null)?.riservaProposta ?? "—"
-                            ) : (
-                              `${(l.override as OverrideLotto | null)?.prezzo ?? "—"} / ${(l.override as OverrideLotto | null)?.riserva ?? "—"}`
-                            )}
-                          </TableCell>
-                        )}
-                        {isCatawiki &&
-                          (() => {
-                            const risolta = risoltaPerLottoId.get(l.id);
-                            const override = (l.override as OverrideLottoCatawiki | null) ?? null;
-                            return (
-                              <>
-                                <TableCell className="text-right">
-                                  {catawikiModificabile ? (
-                                    <CellaPrezzoCatawiki
-                                      batchLottoId={l.id}
-                                      batchId={batch.id}
-                                      canaleId={Number(canaleId)}
-                                      valore={override?.prezzo ?? null}
-                                      fallback={l.sku.prezzoCatawiki}
-                                    />
-                                  ) : (
-                                    (override?.prezzo ?? l.sku.prezzoCatawiki ?? "—")
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {catawikiModificabile ? (
-                                    <CellaRiservaCatawiki
-                                      batchLottoId={l.id}
-                                      batchId={batch.id}
-                                      canaleId={Number(canaleId)}
-                                      valore={override?.riserva ?? null}
-                                      fallback={risolta?.riservaFinale != null ? String(risolta.riservaFinale) : null}
-                                    />
-                                  ) : (
-                                    (override?.riserva ?? "—")
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {catawikiModificabile ? (
-                                    <CellaCondizioneCatawiki
-                                      batchLottoId={l.id}
-                                      batchId={batch.id}
-                                      canaleId={Number(canaleId)}
-                                      valoreAttuale={override?.condizione ?? null}
-                                      fallbackSku={l.sku.condizione}
-                                    />
-                                  ) : (
-                                    <Badge variant="outline">{override?.condizione ?? l.sku.condizione}</Badge>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {!risolta ? (
-                                    "—"
-                                  ) : risolta.valido ? (
-                                    <div className="whitespace-nowrap text-xs text-muted-foreground">
-                                      Stima: {risolta.stimaLotto !== null ? `€ ${risolta.stimaLotto.toFixed(2)}` : "—"}
-                                      {" · "}
-                                      Riserva: {risolta.riservaFinale !== null ? `€ ${risolta.riservaFinale.toFixed(2)}` : "—"}
-                                    </div>
-                                  ) : (
-                                    <div className="flex flex-wrap gap-1">
-                                      {risolta.errori.map((err) => {
-                                        const silenziato = silenziamentiMappa.get(risolta.skuId)?.has(err) ?? false;
-                                        return (
-                                          <Badge key={err} variant={silenziato ? "outline" : "destructive"}>
-                                            {ETICHETTA_ERRORE_VALIDAZIONE[err]}
-                                            {!silenziato && (
-                                              <SilenziaErroreButton
-                                                skuId={risolta.skuId}
-                                                canaleId={batch.canaleId}
-                                                batchId={batch.id}
-                                                tipoErrore={err}
-                                              />
-                                            )}
-                                          </Badge>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </TableCell>
-                              </>
-                            );
-                          })()}
-                        {mostraColonnaAzioni && (
-                          <TableCell className="text-right">
-                            {inBozza ? (
-                              <form action={rimuoviLottoDaBatch}>
-                                <input type="hidden" name="batchLottoId" value={l.id} />
-                                <input type="hidden" name="batchId" value={batch.id} />
-                                <input type="hidden" name="canaleId" value={canaleId} />
-                                <Button type="submit" variant="ghost" size="sm">
-                                  Rimuovi
-                                </Button>
-                              </form>
-                            ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "candidato" ? (
-                              <form action={accettaLottoAction}>
-                                <input type="hidden" name="batchLottoId" value={l.id} />
-                                <input type="hidden" name="batchId" value={batch.id} />
-                                <input type="hidden" name="canaleId" value={canaleId} />
-                                <Button type="submit" variant="secondary" size="sm">
-                                  Accetta
-                                </Button>
-                              </form>
-                            ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "accettato" && !l.consegnatoAt ? (
-                              // Accettato, non ancora consegnato: "Annulla
-                              // accettazione" (2026-09-24, vedi commento
-                              // storico sotto) + "Consegna" (2026-09-25,
-                              // sessione 5) - sempre distanziati nel flusso
-                              // reale del cliente ("accetta e consega, sono
-                              // sempre distanziati").
-                              <div className="flex flex-wrap justify-end gap-1.5">
-                                <form action={annullaAccettazioneAction}>
-                                  <input type="hidden" name="batchLottoId" value={l.id} />
-                                  <input type="hidden" name="batchId" value={batch.id} />
-                                  <input type="hidden" name="canaleId" value={canaleId} />
-                                  {/* "Annulla accettazione" (2026-09-24, richiesta
-                                      esplicita utente): finche' non c'e' un
-                                      collegamento reale con le vendite, deve
-                                      restare possibile liberare un lotto da
-                                      "accettato" - altrimenti un errore o un
-                                      accordo saltato con la casa d'asta blocca
-                                      per sempre Elimina/Riporta in bozza sul
-                                      batch intero, senza rimedio. */}
-                                  <Button type="submit" variant="outline" size="sm">
-                                    Annulla accettazione
-                                  </Button>
-                                </form>
-                                <ConsegnaLottoForm
-                                  batchLottoId={l.id}
-                                  batchId={batch.id}
-                                  canaleId={Number(canaleId)}
-                                  canaleNome={batch.canale.nome}
-                                  saldi={saldiPerLottoId.get(l.id) ?? []}
-                                  ubicazioniAttive={ubicazioniAttive}
-                                />
-                              </div>
-                            ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "accettato" && l.consegnatoAt ? (
-                              // Consegnato: "Annulla consegna" (deterministico,
-                              // inverte esattamente lo stesso movimento - vedi
-                              // annullaConsegnaAction) + "Rientro" (rimuove il
-                              // lotto, con dialog di conferma).
-                              <div className="flex flex-wrap justify-end gap-1.5">
-                                <form action={annullaConsegnaAction}>
-                                  <input type="hidden" name="batchLottoId" value={l.id} />
-                                  <input type="hidden" name="batchId" value={batch.id} />
-                                  <input type="hidden" name="canaleId" value={canaleId} />
-                                  <Button type="submit" variant="outline" size="sm">
-                                    Annulla consegna
-                                  </Button>
-                                </form>
-                                <RientroLottoButton batchLottoId={l.id} batchId={batch.id} canaleId={Number(canaleId)} />
-                              </div>
-                            ) : null}
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </main>
-    </div>
-  );
-}
+          <SezioneAggiungiLotti
+            apertaDiDefault={batch.lotti.length === 0 || Boolean(sp.aggiunti)}
+            numeroLottiNelBatch={batch.lotti.length}
+          >
+            <SelettoreLottiBatch
+              righe={righePicker}
+              tipi={tipi}
+              batchId={batch.id}
+              canaleId={Number(canaleId)}
+              basePath={`/pubblicazione/${canaleId}/${batchId}`}
+              filtriAttivi={filtriAttiviPicker}
+              filtriIniziali={{
+                q: sp.q ?? "",
+                tipo: tipoId ? String(tipoId) : "tutti",
+                condizione: condizione ?? "tutti",
+                proprieta: proprieta ?? "tutti",
+                confoto: conFoto ? "si" : "no",
+                prezzoEbayMin: sp.prezzoEbayMin ?? "",
+                prezzoEbayMax: sp.prezzoEbayMax ?? "",
+                prezzoCatawikiMin: sp.prezzoCatawik
