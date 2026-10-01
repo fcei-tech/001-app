@@ -24,18 +24,6 @@ export const condizioneEnum = pgEnum("condizione", [
   "C",
 ]);
 
-// Proprieta': asse chiuso a 3 valori (esteso 2026-09-17, era solo FP/CV).
-// FP = materiale aziendale (valore di carico obbligatorio, margine pieno).
-// CV = collezione privata condivisa (proprietario, socio) - nessun valore
-// di carico, la societa' trattiene una percentuale calcolata su formula
-// (vedi note di progetto, non ancora implementata: soglia 100 EUR, sotto
-// 25 EUR fissi, sopra 25% del valore - logica del futuro Registro Vendite,
-// non del Magazzino).
-// TERZI = merce di collezionisti esterni affidata su base contrattuale,
-// piu' proprietari distinti possibili (anagrafica dedicata, da costruire
-// quando arriva la prima merce di questo tipo - oggi nessuna in gestione,
-// il valore resta qui solo per non dover fare una migrazione futura).
-export const proprietaEnum = pgEnum("proprieta", ["FP", "CV", "TERZI"]);
 
 // --- Vocabolari Pubblicazione (modulo 2026-09-23, struttura di base) ---
 // Tipo canale: determina quale meccanismo di consumo disponibilita' si
@@ -91,13 +79,43 @@ export const tipiOggetto = pgTable("tipi_oggetto", {
   attivo: boolean("attivo").notNull().default(true),
 });
 
-// Ubicazione fisica: depositi propri + case d'asta fisiche, elenco aperto.
+// Proprietari (2026-10-01, release 1 Manutenzione): sostituisce l'enum
+// chiuso "proprieta" (FP/CV/TERZI). "Di chi e' il pezzo" e' ora un elenco
+// aperto, uno per ogni soggetto - FP (la societa'), CV (i due privati
+// soci, voce unica) e ogni cliente che ci affida merce.
+// - tipo: 'azienda' | 'soci' | 'terzo' (vocabolario applicativo, non enum
+//   DB, come ubicazioni.tipo). L'import Excel mappa il foglio STOCK FP sul
+//   primo proprietario attivo di tipo 'azienda' e STOCK FOGLI CV sul primo
+//   di tipo 'soci', cosi' i nomi si possono cambiare senza rompere l'import.
+// - contaValoreAziendale: informativo per ora (nessun totale di magazzino
+//   esiste ancora) - il valore di magazzino aziendale si calcolera' solo
+//   sui proprietari con questo interruttore acceso (FP), indipendentemente
+//   da dove sta la merce.
+export const proprietari = pgTable("proprietari", {
+  id: serial("id").primaryKey(),
+  nome: text("nome").notNull().unique(),
+  tipo: text("tipo").notNull().default("terzo"),
+  contaValoreAziendale: boolean("conta_valore_aziendale").notNull().default(false),
+  attivo: boolean("attivo").notNull().default(true),
+});
+
+// Ubicazione fisica ("deposito"): elenco aperto.
+// - tipo: 'deposito' (aziendale) | 'presso_proprietario' | 'esposizione' |
+//   'asta_fisica'. Vocabolario applicativo, non enum DB. Le ubicazioni
+//   'asta_fisica' nascono insieme al canale omonimo (il nome deve restare
+//   uguale a quello del canale: legame con Consegna/Rientro) e hanno nome
+//   e tipo bloccati.
+// - vendibile / fiscale: informativi per ora, non cambiano ancora nessun
+//   conteggio. vendibile = i pezzi qui sono pubblicabili sui portali;
+//   fiscale = e' il magazzino segnalato a livello fiscale.
+// - referente: testo libero (persona o spazio di riferimento).
 export const ubicazioni = pgTable("ubicazioni", {
   id: serial("id").primaryKey(),
   nome: text("nome").notNull().unique(),
-  // 'deposito' | 'asta_fisica' - non enum chiuso a livello DB per restare
-  // coerente con "elenco aperto", ma vincolato in applicazione.
   tipo: text("tipo").notNull().default("deposito"),
+  vendibile: boolean("vendibile").notNull().default(true),
+  fiscale: boolean("fiscale").notNull().default(false),
+  referente: text("referente"),
   attivo: boolean("attivo").notNull().default(true),
 });
 
@@ -170,7 +188,9 @@ export const movimentiMagazzino = pgTable(
     skuId: integer("sku_id")
       .notNull()
       .references(() => sku.id),
-    proprieta: proprietaEnum("proprieta").notNull(),
+    proprietarioId: integer("proprietario_id")
+      .notNull()
+      .references(() => proprietari.id),
     ubicazioneId: integer("ubicazione_id")
       .notNull()
       .references(() => ubicazioni.id),
@@ -329,6 +349,10 @@ export const skuRelations = relations(sku, ({ one, many }) => ({
 
 export const movimentiMagazzinoRelations = relations(movimentiMagazzino, ({ one }) => ({
   sku: one(sku, { fields: [movimentiMagazzino.skuId], references: [sku.id] }),
+  proprietario: one(proprietari, {
+    fields: [movimentiMagazzino.proprietarioId],
+    references: [proprietari.id],
+  }),
   ubicazione: one(ubicazioni, {
     fields: [movimentiMagazzino.ubicazioneId],
     references: [ubicazioni.id],
