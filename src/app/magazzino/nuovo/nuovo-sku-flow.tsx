@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SelettoreProprietario, type ProprietarioOpzione } from "@/components/magazzino/selettore-proprietario";
 import {
   cercaCandidati,
   creaNuovoSku,
@@ -33,9 +34,11 @@ type Vocabolario = { id: number; nome: string }[];
 export function NuovoSkuFlow({
   tipi,
   ubicazioni,
+  proprietari,
 }: {
   tipi: Vocabolario;
   ubicazioni: Vocabolario;
+  proprietari: ProprietarioOpzione[];
 }) {
   const [query, setQuery] = React.useState("");
   const [candidati, setCandidati] = React.useState<Candidato[]>([]);
@@ -78,16 +81,7 @@ export function NuovoSkuFlow({
           <form action={aggiungiCaricoSkuEsistente} className="flex flex-col gap-4 max-w-sm">
             <input type="hidden" name="skuId" value={candidatoScelto.id} />
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="proprieta">Proprieta&apos;</Label>
-              <Select name="proprieta" defaultValue="FP">
-                <SelectTrigger id="proprieta">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="FP">FP</SelectItem>
-                  <SelectItem value="CV">CV</SelectItem>
-                </SelectContent>
-              </Select>
+              <SelettoreProprietario proprietari={proprietari} idBase="proprietario-esistente" />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="ubicazioneId">Ubicazione</Label>
@@ -192,16 +186,7 @@ export function NuovoSkuFlow({
               </p>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="proprieta">Proprieta&apos;</Label>
-                  <Select name="proprieta" defaultValue="FP">
-                    <SelectTrigger id="proprieta">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="FP">FP</SelectItem>
-                      <SelectItem value="CV">CV</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SelettoreProprietario proprietari={proprietari} idBase="proprietario-nuovo" />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="ubicazioneId">Ubicazione</Label>
