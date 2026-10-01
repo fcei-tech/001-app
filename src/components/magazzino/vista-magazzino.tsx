@@ -232,7 +232,7 @@ const COLONNE: DefinizioneColonna[] = [
       />
     ),
   },
-  { id: "proprieta", etichetta: "Proprietà", defaultVisibile: false, render: (r) => r.proprieta || "—" },
+  { id: "proprieta", etichetta: "Proprietario", defaultVisibile: false, render: (r) => r.proprieta || "—" },
   { id: "disponibile", etichetta: "Disponibile", defaultVisibile: true, allineaDestra: true, render: (r) => r.quantitaDisponibile },
   { id: "numeroFoto", etichetta: "N. foto", defaultVisibile: true, allineaDestra: true, render: (r) => r.numeroFoto },
   {
@@ -389,6 +389,7 @@ export type FiltriIniziali = {
 export function VistaMagazzino({
   righe,
   tipi,
+  proprietari,
   filtriIniziali,
   filtriAttivi,
   ordinaAttuale,
@@ -396,6 +397,7 @@ export function VistaMagazzino({
 }: {
   righe: RigaMagazzino[];
   tipi: { id: number; nome: string }[];
+  proprietari: { id: number; nome: string }[];
   filtriIniziali: FiltriIniziali;
   filtriAttivi: boolean;
   ordinaAttuale?: ColonnaOrdinabile;
@@ -631,11 +633,10 @@ export function VistaMagazzino({
           </Select>
 
           <Select value={filtri.proprieta} onValueChange={(v) => setFiltri((f) => ({ ...f, proprieta: v }))}>
-            <SelectTrigger className="w-36" aria-label="Proprieta'"><SelectValue placeholder="Proprieta'" /></SelectTrigger>
+            <SelectTrigger className="w-36" aria-label="Proprietario"><SelectValue placeholder="Proprietario" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="tutti">Tutte le proprieta&apos;</SelectItem>
-              <SelectItem value="FP">FP</SelectItem>
-              <SelectItem value="CV">CV</SelectItem>
+              <SelectItem value="tutti">Tutti i proprietari</SelectItem>
+              {proprietari.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.nome}</SelectItem>)}
             </SelectContent>
           </Select>
 
