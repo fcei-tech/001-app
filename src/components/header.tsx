@@ -49,6 +49,9 @@ export function Header() {
           <Link href="/pubblicazione" onClick={vaiA("/pubblicazione")} className="hover:text-foreground">
             Pubblicazione
           </Link>
+          <Link href="/manutenzione" onClick={vaiA("/manutenzione")} className="hover:text-foreground">
+            Manutenzione
+          </Link>
           <Link href="/impostazioni" onClick={vaiA("/impostazioni")} className="hover:text-foreground">
             Impostazioni
           </Link>
