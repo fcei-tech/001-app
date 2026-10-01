@@ -5,6 +5,7 @@ import {
   batchPubblicazione,
   batchLotti,
   movimentiMagazzino,
+  ubicazioni,
 } from "./schema";
 
 // Canale non e' esportato come tipo da schema.ts (nessuna convenzione
@@ -49,8 +50,20 @@ export async function creaCanale(dati: {
   tipo: "statico" | "asta_online" | "asta_fisica";
   esclusivo?: boolean;
 }) {
-  const [canale] = await db.insert(canali).values(dati).returning();
-  return canale;
+  // Una casa d'asta fisica ha sempre il proprio deposito (stesso nome del
+  // canale, nome/tipo bloccati in Manutenzione) dove finiscono i pezzi
+  // consegnati: lo creiamo insieme al canale, non venduta da li' (vendibile
+  // false) finche' non rientra.
+  return db.transaction(async (tx) => {
+    const [canale] = await tx.insert(canali).values(dati).returning();
+    if (dati.tipo === "asta_fisica") {
+      await tx
+        .insert(ubicazioni)
+        .values({ nome: dati.nome, tipo: "asta_fisica", vendibile: false, fiscale: false })
+        .onConflictDoNothing();
+    }
+    return canale;
+  });
 }
 
 export async function creaBatch(canaleId: number) {
@@ -367,13 +380,13 @@ export async function aggiornaImpostazioniBatch(batchId: number, impostazioni: R
 // (torna accettato senza consegnatoAt) o Rientro (rimuove il lotto dal
 // batch, il pezzo e' tornato indietro invenduto/ritirato).
 export type ConsegnaDettagli = {
-  proprieta: "FP" | "CV" | "TERZI";
+  proprietarioId: number;
   ubicazioneOrigineId: number;
   ubicazioneDestinazioneId: number;
   quantita: number;
 };
 
-// Sposta fisicamente `quantita` unita' (proprieta' scelta) dall'ubicazione di
+// Sposta fisicamente `quantita` unita' (proprietario scelto) dall'ubicazione di
 // origine a quella di destinazione (di norma la casa d'asta stessa) e segna
 // il lotto come consegnato. SCELTA GUIDATA MANUALE (confermato dal cliente
 // 2026-09-25 dopo il rischio segnalato): nessun automatismo indovina "dove
@@ -398,7 +411,7 @@ export async function consegnaLotto(
     await tx.insert(movimentiMagazzino).values([
       {
         skuId,
-        proprieta: dettagli.proprieta,
+        proprietarioId: dettagli.proprietarioId,
         ubicazioneId: dettagli.ubicazioneOrigineId,
         causale: "consegna_asta_fisica",
         quantitaDelta: -dettagli.quantita,
@@ -406,7 +419,7 @@ export async function consegnaLotto(
       },
       {
         skuId,
-        proprieta: dettagli.proprieta,
+        proprietarioId: dettagli.proprietarioId,
         ubicazioneId: dettagli.ubicazioneDestinazioneId,
         causale: "consegna_asta_fisica",
         quantitaDelta: dettagli.quantita,
@@ -435,7 +448,7 @@ export async function annullaConsegna(
     await tx.insert(movimentiMagazzino).values([
       {
         skuId,
-        proprieta: dettagli.proprieta,
+        proprietarioId: dettagli.proprietarioId,
         ubicazioneId: dettagli.ubicazioneDestinazioneId,
         causale: "annulla_consegna_asta_fisica",
         quantitaDelta: -dettagli.quantita,
@@ -443,7 +456,7 @@ export async function annullaConsegna(
       },
       {
         skuId,
-        proprieta: dettagli.proprieta,
+        proprietarioId: dettagli.proprietarioId,
         ubicazioneId: dettagli.ubicazioneOrigineId,
         causale: "annulla_consegna_asta_fisica",
         quantitaDelta: dettagli.quantita,
@@ -475,7 +488,7 @@ export async function rientroLotto(
       await tx.insert(movimentiMagazzino).values([
         {
           skuId,
-          proprieta: dettagli.proprieta,
+          proprietarioId: dettagli.proprietarioId,
           ubicazioneId: dettagli.ubicazioneDestinazioneId,
           causale: "rientro_asta_fisica",
           quantitaDelta: -dettagli.quantita,
@@ -483,7 +496,7 @@ export async function rientroLotto(
         },
         {
           skuId,
-          proprieta: dettagli.proprieta,
+          proprietarioId: dettagli.proprietarioId,
           ubicazioneId: dettagli.ubicazioneOrigineId,
           causale: "rientro_asta_fisica",
           quantitaDelta: dettagli.quantita,
