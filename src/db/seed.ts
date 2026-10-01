@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { db } from "./index";
 import { tipiOggetto, ubicazioni, sku, movimentiMagazzino } from "./schema";
+import { seedProprietariBase } from "./proprietari-base";
 import { seedCanaliBase } from "./canali-base";
 
 async function main() {
@@ -24,6 +25,10 @@ async function main() {
   // richiamata anche automaticamente ad ogni avvio da src/db/index.ts - qui
   // resta solo per completezza dello script demo, non e' piu' l'unica via.
   await seedCanaliBase(db);
+  await seedProprietariBase(db);
+  const fp = await db.query.proprietari.findFirst({ where: (p, { eq }) => eq(p.nome, "FP") });
+  const cv = await db.query.proprietari.findFirst({ where: (p, { eq }) => eq(p.nome, "CV") });
+  if (!fp || !cv) throw new Error("Seed proprietari fallito");
 
   const tipoPoster =
     poster ?? (await db.query.tipiOggetto.findFirst({ where: (t, { eq }) => eq(t.nome, "Poster") }));
@@ -68,7 +73,7 @@ async function main() {
     if (c.qty > 0) {
       await db.insert(movimentiMagazzino).values({
         skuId: nuovo.id,
-        proprieta: "FP",
+        proprietarioId: fp.id,
         ubicazioneId: deposito.id,
         causale: "carico",
         quantitaDelta: c.qty,
@@ -81,7 +86,7 @@ async function main() {
     const z2 = await db.query.sku.findFirst({ where: (s, { eq }) => eq(s.skuCode, "Z-00002") });
     if (z2) {
       await db.insert(movimentiMagazzino).values([
-        { skuId: z2.id, proprieta: "CV", ubicazioneId: cambi.id, causale: "carico", quantitaDelta: 1, note: "Candidato asta Cambi" },
+        { skuId: z2.id, proprietarioId: cv.id, ubicazioneId: cambi.id, causale: "carico", quantitaDelta: 1, note: "Candidato asta Cambi" },
       ]);
     }
   }
