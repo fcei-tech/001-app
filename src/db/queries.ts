@@ -7,6 +7,7 @@ import {
   condizioneEnum,
   fotoSku,
   movimentiMagazzino,
+  proprietari,
   sku,
   tipiOggetto,
   ubicazioni,
@@ -83,7 +84,9 @@ export type FiltriMagazzino = {
   ricerca?: string;
   tipoId?: number;
   condizione?: string;
-  proprieta?: "FP" | "CV";
+  // id del proprietario (tabella proprietari) - il nome del parametro URL
+  // resta "proprieta" per non rompere link/preferenze esistenti.
+  proprietarioId?: number;
   bloccato?: "si" | "no";
   disponibilita?: "disponibile" | "esaurito";
   senzaFoto?: boolean;
@@ -142,7 +145,7 @@ const RANGO_CONDIZIONE = sql`case ${sku.condizione}
 // funzione garantisce un'istanza fresca per ogni chiamata invece di
 // condividerne una fra tutte le esecuzioni concorrenti di getMagazzino.
 const quantitaDisponibileSql = () => sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`;
-const proprietaSql = () => sql`coalesce(string_agg(distinct ${movimentiMagazzino.proprieta}::text, ', '), '')`;
+const proprietaSql = () => sql`coalesce(string_agg(distinct ${proprietari.nome}, ', '), '')`;
 const numeroFotoSql = () => sql`(select count(*) from foto_sku fs where fs.sku_id = ${sku.id})`;
 
 // Conteggio campi mancanti (2026-09-29) - stessa identica logica di
@@ -220,13 +223,13 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
   }
   if (filtri.bloccato === "si") condizioniWhere.push(eq(sku.bloccatoVendita, true));
   if (filtri.bloccato === "no") condizioniWhere.push(eq(sku.bloccatoVendita, false));
-  if (filtri.proprieta) {
+  if (filtri.proprietarioId) {
     condizioniWhere.push(
       exists(
         db
           .select({ uno: sql`1` })
           .from(movimentiMagazzino)
-          .where(and(eq(movimentiMagazzino.skuId, sku.id), eq(movimentiMagazzino.proprieta, filtri.proprieta!)))
+          .where(and(eq(movimentiMagazzino.skuId, sku.id), eq(movimentiMagazzino.proprietarioId, filtri.proprietarioId!)))
       )
     );
   }
@@ -328,6 +331,7 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
     .from(sku)
     .innerJoin(tipiOggetto, eq(sku.tipoId, tipiOggetto.id))
     .leftJoin(movimentiMagazzino, eq(movimentiMagazzino.skuId, sku.id))
+    .leftJoin(proprietari, eq(movimentiMagazzino.proprietarioId, proprietari.id))
     .where(condizioniWhere.length ? and(...condizioniWhere) : undefined)
     .groupBy(sku.id, tipiOggetto.nome)
     .having(having)
@@ -432,6 +436,56 @@ export async function getUbicazioniAttive() {
   });
 }
 
+export async function getProprietariAttivi() {
+  return db.query.proprietari.findMany({
+    where: (p, { eq }) => eq(p.attivo, true),
+    orderBy: (p, { asc }) => asc(p.nome),
+  });
+}
+
+// Tutti i proprietari (anche disattivati) con uso: numero di movimenti e
+// pezzi attualmente a magazzino. Alimenta la finestra Manutenzione.
+export async function getProprietariConUso() {
+  const righe = await db
+    .select({
+      id: proprietari.id,
+      nome: proprietari.nome,
+      tipo: proprietari.tipo,
+      contaValoreAziendale: proprietari.contaValoreAziendale,
+      attivo: proprietari.attivo,
+      movimenti: sql<number>`count(${movimentiMagazzino.id})`.mapWith(Number),
+      pezzi: sql<number>`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`.mapWith(Number),
+    })
+    .from(proprietari)
+    .leftJoin(movimentiMagazzino, eq(movimentiMagazzino.proprietarioId, proprietari.id))
+    .groupBy(proprietari.id)
+    .orderBy(asc(proprietari.id));
+  return righe;
+}
+
+// Tutti i depositi (anche disattivati) con uso e, per le aste fisiche, se
+// esiste un canale con lo stesso nome (collegamento voluto).
+export async function getUbicazioniConUso() {
+  const righe = await db
+    .select({
+      id: ubicazioni.id,
+      nome: ubicazioni.nome,
+      tipo: ubicazioni.tipo,
+      vendibile: ubicazioni.vendibile,
+      fiscale: ubicazioni.fiscale,
+      referente: ubicazioni.referente,
+      attivo: ubicazioni.attivo,
+      movimenti: sql<number>`count(${movimentiMagazzino.id})`.mapWith(Number),
+      pezzi: sql<number>`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`.mapWith(Number),
+      collegatoCanale: sql<boolean>`exists (select 1 from canali c where c.nome = ${ubicazioni.nome})`,
+    })
+    .from(ubicazioni)
+    .leftJoin(movimentiMagazzino, eq(movimentiMagazzino.ubicazioneId, ubicazioni.id))
+    .groupBy(ubicazioni.id)
+    .orderBy(asc(ubicazioni.id));
+  return righe;
+}
+
 export async function getSkuById(id: number) {
   return db.query.sku.findFirst({
     where: (s, { eq }) => eq(s.id, id),
@@ -484,13 +538,15 @@ export async function getSaldiSkuPerUbicazione(skuId: number) {
     .select({
       ubicazioneId: movimentiMagazzino.ubicazioneId,
       ubicazioneNome: ubicazioni.nome,
-      proprieta: movimentiMagazzino.proprieta,
+      proprietarioId: movimentiMagazzino.proprietarioId,
+      proprietarioNome: proprietari.nome,
       saldo: sql<number>`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`.mapWith(Number),
     })
     .from(movimentiMagazzino)
     .innerJoin(ubicazioni, eq(movimentiMagazzino.ubicazioneId, ubicazioni.id))
+    .innerJoin(proprietari, eq(movimentiMagazzino.proprietarioId, proprietari.id))
     .where(eq(movimentiMagazzino.skuId, skuId))
-    .groupBy(movimentiMagazzino.ubicazioneId, ubicazioni.nome, movimentiMagazzino.proprieta)
+    .groupBy(movimentiMagazzino.ubicazioneId, ubicazioni.nome, movimentiMagazzino.proprietarioId, proprietari.nome)
     .having(sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0) > 0`)
     .orderBy(asc(ubicazioni.nome));
 }
@@ -499,7 +555,7 @@ export async function getMovimentiSku(skuId: number) {
   return db
     .select({
       id: movimentiMagazzino.id,
-      proprieta: movimentiMagazzino.proprieta,
+      proprieta: proprietari.nome,
       ubicazione: ubicazioni.nome,
       causale: movimentiMagazzino.causale,
       quantitaDelta: movimentiMagazzino.quantitaDelta,
@@ -508,6 +564,7 @@ export async function getMovimentiSku(skuId: number) {
     })
     .from(movimentiMagazzino)
     .innerJoin(ubicazioni, eq(movimentiMagazzino.ubicazioneId, ubicazioni.id))
+    .innerJoin(proprietari, eq(movimentiMagazzino.proprietarioId, proprietari.id))
     .where(eq(movimentiMagazzino.skuId, skuId))
     .orderBy(desc(movimentiMagazzino.createdAt));
 }
