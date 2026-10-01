@@ -16,7 +16,7 @@
 
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { movimentiMagazzino, sku } from "@/db/schema";
+import { movimentiMagazzino, proprietari, sku } from "@/db/schema";
 import type { ProprietaImport, RigaGrezza } from "./excel-import";
 
 type SkuEsistente = {
@@ -176,14 +176,22 @@ async function caricaContestoDb() {
   const somme = await db
     .select({
       skuId: movimentiMagazzino.skuId,
-      proprieta: movimentiMagazzino.proprieta,
+      tipoProprietario: proprietari.tipo,
       totale: sql<number>`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`.mapWith(Number),
     })
     .from(movimentiMagazzino)
-    .groupBy(movimentiMagazzino.skuId, movimentiMagazzino.proprieta);
-  const mappaQuantita = new Map<string, number>(
-    somme.map((s) => [`${s.skuId}:${s.proprieta}`, s.totale])
-  );
+    .innerJoin(proprietari, eq(movimentiMagazzino.proprietarioId, proprietari.id))
+    .groupBy(movimentiMagazzino.skuId, proprietari.tipo);
+  // Foglio FP = proprietari di tipo "azienda", foglio CV = tipo "soci"
+  // (robusto ai rinomini). I proprietari "terzo" non esistono in Excel e
+  // non entrano nel confronto.
+  const mappaQuantita = new Map<string, number>();
+  for (const s of somme) {
+    const foglio = s.tipoProprietario === "azienda" ? "FP" : s.tipoProprietario === "soci" ? "CV" : null;
+    if (!foglio) continue;
+    const chiave = `${s.skuId}:${foglio}`;
+    mappaQuantita.set(chiave, (mappaQuantita.get(chiave) ?? 0) + s.totale);
+  }
 
   return { mappaSku, mappaQuantita, totaleSkuEsistenti: tuttiSku.length };
 }
@@ -317,12 +325,27 @@ export async function eseguiImport(anteprima: AnteprimaImport): Promise<{
   const tipoPoster = await db.query.tipiOggetto.findFirst({
     where: (t, { eq: eqFn }) => eqFn(t.nome, "Poster"),
   });
-  const depositoDefault =
-    (await db.query.ubicazioni.findFirst({ where: (u, { eq: eqFn }) => eqFn(u.nome, "Deposito") })) ??
-    (await db.query.ubicazioni.findFirst({ where: (u, { eq: eqFn }) => eqFn(u.attivo, true) }));
+  // Deposito di default dell'import: il primo deposito aziendale attivo
+  // (per id, non per nome: i nomi sono modificabili in Manutenzione).
+  const depositoDefault = await db.query.ubicazioni.findFirst({
+    where: (u, { and: andFn, eq: eqFn }) => andFn(eqFn(u.tipo, "deposito"), eqFn(u.attivo, true)),
+    orderBy: (u, { asc }) => asc(u.id),
+  });
+  const propFP = await db.query.proprietari.findFirst({
+    where: (p, { and: andFn, eq: eqFn }) => andFn(eqFn(p.tipo, "azienda"), eqFn(p.attivo, true)),
+    orderBy: (p, { asc }) => asc(p.id),
+  });
+  const propCV = await db.query.proprietari.findFirst({
+    where: (p, { and: andFn, eq: eqFn }) => andFn(eqFn(p.tipo, "soci"), eqFn(p.attivo, true)),
+    orderBy: (p, { asc }) => asc(p.id),
+  });
+  if (!propFP || !propCV) {
+    throw new Error('Servono un proprietario attivo di tipo "azienda" (foglio FP) e uno di tipo "soci" (foglio CV): controlla Manutenzione.');
+  }
+  const proprietarioDelFoglio = (f: ProprietaImport) => (f === "FP" ? propFP.id : propCV.id);
 
   if (!tipoPoster) throw new Error('Tipo oggetto "Poster" non trovato - impostazioni vocabolari da verificare.');
-  if (!depositoDefault) throw new Error("Nessuna ubicazione disponibile per registrare i movimenti di import.");
+  if (!depositoDefault) throw new Error("Nessun deposito aziendale attivo per registrare i movimenti di import.");
 
   let movimentiCreati = 0;
 
@@ -350,7 +373,7 @@ export async function eseguiImport(anteprima: AnteprimaImport): Promise<{
       for (const m of op.movimenti) {
         await tx.insert(movimentiMagazzino).values({
           skuId: nuovo.id,
-          proprieta: m.proprieta,
+          proprietarioId: proprietarioDelFoglio(m.proprieta),
           ubicazioneId: depositoDefault.id,
           causale: "carico",
           quantitaDelta: m.quantita,
@@ -363,7 +386,7 @@ export async function eseguiImport(anteprima: AnteprimaImport): Promise<{
     for (const op of anteprima.movimenti) {
       await tx.insert(movimentiMagazzino).values({
         skuId: op.skuId,
-        proprieta: op.proprieta,
+        proprietarioId: proprietarioDelFoglio(op.proprieta),
         ubicazioneId: depositoDefault.id,
         causale: op.causale,
         quantitaDelta: op.delta,
