@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { getSkuById, getTipiOggetto, getUbicazioniAttive, getMovimentiSku, getFotoSku } from "@/db/queries";
+import { getSkuById, getTipiOggetto, getUbicazioniAttive, getProprietariAttivi, getMovimentiSku, getFotoSku } from "@/db/queries";
 import { eliminaFotoSku, spostaFotoSku } from "@/app/magazzino/actions";
 import { MovimentoForm } from "./movimento-form";
 import { FotoForm } from "./foto-form";
@@ -41,10 +41,11 @@ export default async function ModificaSkuPage({
               ? "fotoeliminata"
               : undefined;
 
-  const [item, tipi, ubicazioni, movimenti, foto] = await Promise.all([
+  const [item, tipi, ubicazioni, proprietari, movimenti, foto] = await Promise.all([
     getSkuById(skuId),
     getTipiOggetto(),
     getUbicazioniAttive(),
+    getProprietariAttivi(),
     getMovimentiSku(skuId),
     getFotoSku(skuId),
   ]);
@@ -111,7 +112,7 @@ export default async function ModificaSkuPage({
             <CardDescription>La quantita&apos; disponibile e&apos; sempre calcolata dalla somma di questi movimenti.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <MovimentoForm skuId={item.id} ubicazioni={ubicazioni} />
+            <MovimentoForm skuId={item.id} ubicazioni={ubicazioni} proprietari={proprietari} />
             <div className="rounded-lg border">
               {movimenti.length === 0 ? (
                 <TableEmpty>Nessun movimento registrato.</TableEmpty>
