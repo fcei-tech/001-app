@@ -11,6 +11,7 @@ import { getBatch, type OverrideLotto } from "@/db/pubblicazione-queries";
 import {
   getSkuSelezionabiliPerBatch,
   getTipiOggetto,
+  getProprietariAttivi,
   getUbicazioniAttive,
   getSaldiSkuPerUbicazione,
   getFotoPerSkuIds,
@@ -227,7 +228,7 @@ export default async function BatchPubblicazionePage({
 
   const tipoId = sp.tipo && sp.tipo !== "tutti" ? Number(sp.tipo) : undefined;
   const condizione = sp.condizione && sp.condizione !== "tutti" ? sp.condizione : undefined;
-  const proprieta = sp.proprieta === "FP" || sp.proprieta === "CV" ? sp.proprieta : undefined;
+  const proprietarioId = sp.proprieta && Number.isInteger(Number(sp.proprieta)) && Number(sp.proprieta) > 0 ? Number(sp.proprieta) : undefined;
   const conFoto = sp.confoto === "si";
   const ordina = sp.ordina && (COLONNE_ORDINABILI as string[]).includes(sp.ordina) ? (sp.ordina as ColonnaOrdinabile) : undefined;
   const direzione = sp.direzione === "desc" ? "desc" : sp.direzione === "asc" ? "asc" : undefined;
@@ -240,14 +241,14 @@ export default async function BatchPubblicazionePage({
   const quantitaMin = numeroParam(sp.quantitaMin);
   const quantitaMax = numeroParam(sp.quantitaMax);
   const filtriAttiviPicker = Boolean(
-    sp.q || tipoId || condizione || proprieta || conFoto ||
+    sp.q || tipoId || condizione || proprietarioId || conFoto ||
     prezzoEbayMin != null || prezzoEbayMax != null ||
     prezzoCatawikiMin != null || prezzoCatawikiMax != null ||
     riservaCatawikiMin != null || riservaCatawikiMax != null ||
     quantitaMin != null || quantitaMax != null
   );
 
-  const [righeDisponibili, tipi] = inBozza
+  const [righeDisponibili, tipi, proprietariElenco] = inBozza
     ? await Promise.all([
         // soloDisponibileReale = canale.esclusivo (2026-09-25, sessione 6):
         // esclude gli sku gia' interamente impegnati su un ALTRO canale
@@ -257,15 +258,16 @@ export default async function BatchPubblicazionePage({
         // comportamento precedente.
         getSkuSelezionabiliPerBatch(
           {
-            ricerca: sp.q, tipoId, condizione, proprieta, conFoto, ordina, direzione,
+            ricerca: sp.q, tipoId, condizione, proprietarioId, conFoto, ordina, direzione,
             prezzoEbayMin, prezzoEbayMax, prezzoCatawikiMin, prezzoCatawikiMax,
             riservaCatawikiMin, riservaCatawikiMax, quantitaMin, quantitaMax,
           },
           batch.canale.esclusivo
         ),
         getTipiOggetto(),
+        getProprietariAttivi(),
       ])
-    : [[], []];
+    : [[], [], []];
   const righePicker = righeDisponibili.filter((r) => !idGiaInBatch.has(r.id));
 
   // Dati per il form "Consegna" (asta_fisica, 2026-09-25 sessione 5) - solo
@@ -409,6 +411,7 @@ export default async function BatchPubblicazionePage({
             <SelettoreLottiBatch
               righe={righePicker}
               tipi={tipi}
+              proprietari={proprietariElenco}
               batchId={batch.id}
               canaleId={Number(canaleId)}
               basePath={`/pubblicazione/${canaleId}/${batchId}`}
@@ -417,7 +420,7 @@ export default async function BatchPubblicazionePage({
                 q: sp.q ?? "",
                 tipo: tipoId ? String(tipoId) : "tutti",
                 condizione: condizione ?? "tutti",
-                proprieta: proprieta ?? "tutti",
+                proprieta: proprietarioId ? String(proprietarioId) : "tutti",
                 confoto: conFoto ? "si" : "no",
                 prezzoEbayMin: sp.prezzoEbayMin ?? "",
                 prezzoEbayMax: sp.prezzoEbayMax ?? "",
