@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { fotoSku, movimentiMagazzino, sku } from "@/db/schema";
+import { fotoSku, movimentiMagazzino, proprietari, sku, ubicazioni } from "@/db/schema";
 import { asc, eq, sql } from "drizzle-orm";
 import { cercaCandidatiDuplicati } from "@/db/queries";
 import { caricaFotoSuShopify } from "@/lib/shopify";
@@ -19,7 +19,60 @@ export async function cercaCandidati(query: string) {
 }
 
 const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"] as const;
-const PROPRIETA = ["FP", "CV"] as const;
+const TIPI_PROPRIETARIO = ["azienda", "soci", "terzo"] as const;
+
+// Risolve proprietario + ubicazione dal form. proprietarioId puo' essere un
+// id esistente (attivo) oppure "nuovo": in quel caso crea al volo il
+// proprietario (nuovoProprietarioNome/Tipo) e, se creaDepositoPresso e'
+// spuntato, il deposito "Presso <nome>" (tipo presso_proprietario) usato
+// come ubicazione al posto di quella scelta.
+async function risolviProprietarioEUbicazione(
+  formData: FormData
+): Promise<{ proprietarioId: number; ubicazioneId: number }> {
+  const raw = formData.get("proprietarioId")?.toString() ?? "";
+  let ubicazioneId = Number(formData.get("ubicazioneId"));
+  let proprietarioId: number;
+
+  if (raw === "nuovo") {
+    const nome = testoOVuoto(formData.get("nuovoProprietarioNome"));
+    if (!nome) throw new Error("Nome del nuovo proprietario obbligatorio");
+    const tipoRaw = formData.get("nuovoProprietarioTipo")?.toString() || "terzo";
+    if (!TIPI_PROPRIETARIO.includes(tipoRaw as (typeof TIPI_PROPRIETARIO)[number])) {
+      throw new Error("Tipo proprietario non valido");
+    }
+    const creaDeposito = formData.get("creaDepositoPresso") === "on";
+    const esito = await db.transaction(async (tx) => {
+      const esistente = await tx.query.proprietari.findFirst({ where: eq(proprietari.nome, nome) });
+      if (esistente) throw new Error(`Esiste gia' un proprietario "${nome}"`);
+      const [p] = await tx
+        .insert(proprietari)
+        .values({ nome, tipo: tipoRaw, contaValoreAziendale: tipoRaw === "azienda" })
+        .returning();
+      let ub: number | null = null;
+      if (creaDeposito) {
+        const nomeDep = `Presso ${nome}`;
+        const [d] = await tx
+          .insert(ubicazioni)
+          .values({ nome: nomeDep, tipo: "presso_proprietario", vendibile: true, fiscale: false, referente: nome })
+          .onConflictDoNothing()
+          .returning();
+        const dep = d ?? (await tx.query.ubicazioni.findFirst({ where: eq(ubicazioni.nome, nomeDep) }));
+        ub = dep?.id ?? null;
+      }
+      return { proprietarioId: p.id, ubicazioneId: ub };
+    });
+    proprietarioId = esito.proprietarioId;
+    if (esito.ubicazioneId) ubicazioneId = esito.ubicazioneId;
+  } else {
+    proprietarioId = Number(raw);
+    if (!proprietarioId) throw new Error("Proprietario non valido");
+    const p = await db.query.proprietari.findFirst({ where: eq(proprietari.id, proprietarioId) });
+    if (!p || !p.attivo) throw new Error("Proprietario non valido o disattivato");
+  }
+
+  if (!ubicazioneId) throw new Error("Ubicazione non valida");
+  return { proprietarioId, ubicazioneId };
+}
 
 function testoOVuoto(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -42,18 +95,14 @@ async function prossimoSkuCode(): Promise<string> {
 export async function creaNuovoSku(formData: FormData) {
   const artista = testoOVuoto(formData.get("artista"));
   const opera = testoOVuoto(formData.get("opera"));
-  const proprieta = formData.get("proprieta")?.toString();
-  const ubicazioneId = Number(formData.get("ubicazioneId"));
   const quantita = Number(formData.get("quantita"));
 
   if (!artista || !opera) throw new Error("Artista e opera sono obbligatori");
-  if (!proprieta || !PROPRIETA.includes(proprieta as (typeof PROPRIETA)[number])) {
-    throw new Error("Proprieta' non valida");
-  }
-  if (!ubicazioneId || !Number.isFinite(quantita) || quantita < 0) {
-    throw new Error("Ubicazione o quantita' non valide");
+  if (!Number.isFinite(quantita) || quantita < 0) {
+    throw new Error("Quantita' non valida");
   }
 
+  const { proprietarioId, ubicazioneId } = await risolviProprietarioEUbicazione(formData);
   const skuCode = await prossimoSkuCode();
   const condizioneRaw = formData.get("condizione")?.toString() || "A-";
   if (!CONDIZIONI.includes(condizioneRaw as (typeof CONDIZIONI)[number])) {
@@ -83,7 +132,7 @@ export async function creaNuovoSku(formData: FormData) {
   if (quantita > 0) {
     await db.insert(movimentiMagazzino).values({
       skuId: nuovo.id,
-      proprieta: proprieta as (typeof PROPRIETA)[number],
+      proprietarioId,
       ubicazioneId,
       causale: "carico",
       quantitaDelta: quantita,
@@ -97,21 +146,17 @@ export async function creaNuovoSku(formData: FormData) {
 
 export async function aggiungiCaricoSkuEsistente(formData: FormData) {
   const skuId = Number(formData.get("skuId"));
-  const proprieta = formData.get("proprieta")?.toString();
-  const ubicazioneId = Number(formData.get("ubicazioneId"));
   const quantita = Number(formData.get("quantita"));
 
   if (!skuId) throw new Error("Sku non valido");
-  if (!proprieta || !PROPRIETA.includes(proprieta as (typeof PROPRIETA)[number])) {
-    throw new Error("Proprieta' non valida");
+  if (!Number.isFinite(quantita) || quantita <= 0) {
+    throw new Error("Quantita' non valida");
   }
-  if (!ubicazioneId || !Number.isFinite(quantita) || quantita <= 0) {
-    throw new Error("Ubicazione o quantita' non valide");
-  }
+  const { proprietarioId, ubicazioneId } = await risolviProprietarioEUbicazione(formData);
 
   await db.insert(movimentiMagazzino).values({
     skuId,
-    proprieta: proprieta as (typeof PROPRIETA)[number],
+    proprietarioId,
     ubicazioneId,
     causale: "carico",
     quantitaDelta: quantita,
@@ -160,23 +205,19 @@ export async function modificaSku(formData: FormData) {
 
 export async function aggiungiMovimento(formData: FormData) {
   const skuId = Number(formData.get("skuId"));
-  const proprieta = formData.get("proprieta")?.toString();
-  const ubicazioneId = Number(formData.get("ubicazioneId"));
   const causale = testoOVuoto(formData.get("causale")) ?? "correzione";
   const quantitaDelta = Number(formData.get("quantitaDelta"));
   const note = testoOVuoto(formData.get("note"));
 
   if (!skuId) throw new Error("Sku non valido");
-  if (!proprieta || !PROPRIETA.includes(proprieta as (typeof PROPRIETA)[number])) {
-    throw new Error("Proprieta' non valida");
+  if (!Number.isFinite(quantitaDelta) || quantitaDelta === 0) {
+    throw new Error("Quantita' non valida");
   }
-  if (!ubicazioneId || !Number.isFinite(quantitaDelta) || quantitaDelta === 0) {
-    throw new Error("Ubicazione o quantita' non valide");
-  }
+  const { proprietarioId, ubicazioneId } = await risolviProprietarioEUbicazione(formData);
 
   await db.insert(movimentiMagazzino).values({
     skuId,
-    proprieta: proprieta as (typeof PROPRIETA)[number],
+    proprietarioId,
     ubicazioneId,
     causale,
     quantitaDelta,
