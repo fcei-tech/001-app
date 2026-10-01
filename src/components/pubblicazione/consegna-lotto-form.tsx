@@ -18,7 +18,7 @@ import { consegnaLottoAction } from "@/app/pubblicazione/actions";
 // page.tsx - zero query aggiuntive lato client), "A" precompilato
 // sull'ubicazione asta_fisica omonima del canale quando esiste (es. canale
 // "Cambi" -> ubicazione "Cambi") ma sempre modificabile.
-type SaldoOrigine = { ubicazioneId: number; ubicazioneNome: string; proprieta: string; saldo: number };
+type SaldoOrigine = { ubicazioneId: number; ubicazioneNome: string; proprietarioId: number; proprietarioNome: string; saldo: number };
 type Ubicazione = { id: number; nome: string; tipo: string };
 
 export function ConsegnaLottoForm({
@@ -49,12 +49,12 @@ export function ConsegnaLottoForm({
   // toccato nulla (bug trovato in test 2026-09-25). Fallback al primo saldo
   // in assoluto se davvero l'unica scorta e' gia' nella destinazione.
   const primoSaldoValido = saldi.find((s) => s.ubicazioneId !== destinazioneIniziale) ?? saldi[0];
-  const chiaveOrigineIniziale = primoSaldoValido ? `${primoSaldoValido.ubicazioneId}:${primoSaldoValido.proprieta}` : "";
+  const chiaveOrigineIniziale = primoSaldoValido ? `${primoSaldoValido.ubicazioneId}:${primoSaldoValido.proprietarioId}` : "";
   const [chiaveOrigine, setChiaveOrigine] = useState(chiaveOrigineIniziale);
   const [quantita, setQuantita] = useState("1");
 
   const origineScelta = useMemo(
-    () => saldi.find((s) => `${s.ubicazioneId}:${s.proprieta}` === chiaveOrigine),
+    () => saldi.find((s) => `${s.ubicazioneId}:${s.proprietarioId}` === chiaveOrigine),
     [saldi, chiaveOrigine]
   );
 
@@ -73,7 +73,7 @@ export function ConsegnaLottoForm({
     fd.set("batchLottoId", String(batchLottoId));
     fd.set("batchId", String(batchId));
     fd.set("canaleId", String(canaleId));
-    fd.set("proprieta", origineScelta.proprieta);
+    fd.set("proprietarioId", String(origineScelta.proprietarioId));
     fd.set("ubicazioneOrigineId", String(origineScelta.ubicazioneId));
     fd.set("ubicazioneDestinazioneId", String(ubicazioneDestinazioneId));
     fd.set("quantita", quantita);
@@ -114,8 +114,8 @@ export function ConsegnaLottoForm({
                   </SelectTrigger>
                   <SelectContent>
                     {saldi.map((s) => (
-                      <SelectItem key={`${s.ubicazioneId}:${s.proprieta}`} value={`${s.ubicazioneId}:${s.proprieta}`}>
-                        {s.ubicazioneNome} ({s.proprieta}) — disponibili: {s.saldo}
+                      <SelectItem key={`${s.ubicazioneId}:${s.proprietarioId}`} value={`${s.ubicazioneId}:${s.proprietarioId}`}>
+                        {s.ubicazioneNome} ({s.proprietarioNome}) — disponibili: {s.saldo}
                       </SelectItem>
                     ))}
                   </SelectContent>
