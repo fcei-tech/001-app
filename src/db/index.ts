@@ -2,6 +2,7 @@ import path from "node:path";
 import * as schema from "./schema";
 import { seedCanaliBase } from "./canali-base";
 import { seedUbicazioniBase } from "./ubicazioni-base";
+import { seedProprietariBase } from "./proprietari-base";
 
 // Due modalita' di connessione al database, scelte automaticamente in base
 // alla presenza di DATABASE_URL nell'ambiente:
@@ -64,6 +65,11 @@ async function createRealDb(connectionString: string) {
   } catch (err) {
     console.error("Bootstrap ubicazioni non applicato:", err);
   }
+  try {
+    await seedProprietariBase(realDb);
+  } catch (err) {
+    console.error("Bootstrap proprietari non applicato:", err);
+  }
   return realDb;
 }
 
@@ -83,6 +89,11 @@ async function createDevDb() {
     await seedUbicazioniBase(devDb);
   } catch (err) {
     console.error("Bootstrap ubicazioni non applicato:", err);
+  }
+  try {
+    await seedProprietariBase(devDb);
+  } catch (err) {
+    console.error("Bootstrap proprietari non applicato:", err);
   }
   return devDb;
 }
