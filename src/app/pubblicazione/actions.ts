@@ -585,8 +585,6 @@ export async function eliminaBatchMultiploAction(formData: FormData) {
 // (stesso principio gia' in uso per accettaLottoAction/
 // annullaAccettazioneAction).
 
-const PROPRIETA_VALIDE = ["FP", "CV", "TERZI"] as const;
-
 // Consegna: l'operatore ha scelto origine/destinazione/quantita' dal form
 // guidato (SelettoreOrigineDestinazione, precompilato da saldi reali - vedi
 // getSaldiSkuPerUbicazione in src/db/queries.ts). Disponibile solo su un
@@ -595,13 +593,13 @@ export async function consegnaLottoAction(formData: FormData) {
   const batchLottoId = Number(formData.get("batchLottoId"));
   const batchId = Number(formData.get("batchId"));
   const canaleId = Number(formData.get("canaleId"));
-  const proprieta = formData.get("proprieta")?.toString();
+  const proprietarioId = Number(formData.get("proprietarioId"));
   const ubicazioneOrigineId = Number(formData.get("ubicazioneOrigineId"));
   const ubicazioneDestinazioneId = Number(formData.get("ubicazioneDestinazioneId"));
   const quantita = Number(formData.get("quantita"));
   if (!batchLottoId || !batchId) throw new Error("Riferimento non valido");
-  if (!proprieta || !PROPRIETA_VALIDE.includes(proprieta as (typeof PROPRIETA_VALIDE)[number])) {
-    throw new Error("Proprieta' non valida");
+  if (!proprietarioId) {
+    throw new Error("Proprietario non valido");
   }
   if (!ubicazioneOrigineId || !ubicazioneDestinazioneId) {
     throw new Error("Scegli ubicazione di origine e destinazione");
@@ -628,7 +626,7 @@ export async function consegnaLottoAction(formData: FormData) {
   }
 
   await consegnaLottoQuery(batchLottoId, lotto.skuId, {
-    proprieta: proprieta as ConsegnaDettagli["proprieta"],
+    proprietarioId,
     ubicazioneOrigineId,
     ubicazioneDestinazioneId,
     quantita,
