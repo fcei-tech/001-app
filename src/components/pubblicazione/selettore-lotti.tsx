@@ -90,7 +90,7 @@ const COLONNE: DefinizioneColonna[] = [
     id: "condizione", etichetta: "Condizione", defaultVisibile: true, chiaveOrdinamento: "condizione",
     render: (r) => <Badge variant={condizioneVariant(r.condizione)}>{r.condizione}</Badge>,
   },
-  { id: "proprieta", etichetta: "Proprietà", defaultVisibile: false, chiaveOrdinamento: "proprieta", render: (r) => r.proprieta || "—" },
+  { id: "proprieta", etichetta: "Proprietario", defaultVisibile: false, chiaveOrdinamento: "proprieta", render: (r) => r.proprieta || "—" },
   { id: "numeroFoto", etichetta: "N. foto", defaultVisibile: true, allineaDestra: true, chiaveOrdinamento: "numeroFoto", render: (r) => r.numeroFoto },
   { id: "valoreCarico", etichetta: "Valore di carico", defaultVisibile: false, allineaDestra: true, chiaveOrdinamento: "valoreCarico", render: (r) => formatEuro(r.valoreCarico) },
   { id: "prezzoEbay", etichetta: "Prezzo eBay", defaultVisibile: true, allineaDestra: true, chiaveOrdinamento: "prezzoEbay", render: (r) => formatEuro(r.prezzoEbay) },
@@ -222,6 +222,7 @@ export type FiltriPickerIniziali = {
 export function SelettoreLottiBatch({
   righe,
   tipi,
+  proprietari,
   batchId,
   canaleId,
   basePath,
@@ -232,6 +233,7 @@ export function SelettoreLottiBatch({
 }: {
   righe: RigaMagazzino[];
   tipi: { id: number; nome: string }[];
+  proprietari: { id: number; nome: string }[];
   batchId: number;
   canaleId: number;
   // Percorso base della pagina batch corrente (es. /pubblicazione/3/12) - i
@@ -369,11 +371,10 @@ export function SelettoreLottiBatch({
           </Select>
 
           <Select value={filtri.proprieta} onValueChange={(v) => setFiltri((f) => ({ ...f, proprieta: v }))}>
-            <SelectTrigger className="w-36" aria-label="Proprieta'"><SelectValue placeholder="Proprieta'" /></SelectTrigger>
+            <SelectTrigger className="w-36" aria-label="Proprietario"><SelectValue placeholder="Proprietario" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="tutti">Tutte le proprieta&apos;</SelectItem>
-              <SelectItem value="FP">FP</SelectItem>
-              <SelectItem value="CV">CV</SelectItem>
+              <SelectItem value="tutti">Tutti i proprietari</SelectItem>
+              {proprietari.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.nome}</SelectItem>)}
             </SelectContent>
           </Select>
 
