@@ -13,11 +13,14 @@ import { ubicazioni } from "./schema";
 // fisiche gia' presenti come canali in CANALI_INIZIALI, piu' "Deposito"
 // come ubicazione di partenza di default.
 export const UBICAZIONI_INIZIALI: (typeof ubicazioni.$inferInsert)[] = [
-  { nome: "Deposito", tipo: "deposito" },
-  { nome: "Cambi", tipo: "asta_fisica" },
-  { nome: "Bolaffi", tipo: "asta_fisica" },
-  { nome: "Wannenes", tipo: "asta_fisica" },
-  { nome: "Libero", tipo: "asta_fisica" },
+  // Due depositi aziendali di partenza (il primo e' quello fiscale). Nomi e
+  // dettagli sono modificabili da Manutenzione.
+  { nome: "Deposito", tipo: "deposito", vendibile: true, fiscale: true },
+  { nome: "Deposito 2", tipo: "deposito", vendibile: true, fiscale: false },
+  { nome: "Cambi", tipo: "asta_fisica", vendibile: false },
+  { nome: "Bolaffi", tipo: "asta_fisica", vendibile: false },
+  { nome: "Wannenes", tipo: "asta_fisica", vendibile: false },
+  { nome: "Libero", tipo: "asta_fisica", vendibile: false },
 ];
 
 // Stessa firma "larga" di seedCanaliBase (canali-base.ts) - accetta sia il
@@ -25,5 +28,10 @@ export const UBICAZIONI_INIZIALI: (typeof ubicazioni.$inferInsert)[] = [
 // Idempotente (onConflictDoNothing sulla colonna nome, unique).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function seedUbicazioniBase(db: any) {
+  // Solo su tabella VUOTA (prima installazione): da quando i depositi sono
+  // modificabili/eliminabili in Manutenzione, rilanciare l'inserimento ad
+  // ogni avvio ricreerebbe i nomi rinominati o eliminati.
+  const esistente = await db.select({ id: ubicazioni.id }).from(ubicazioni).limit(1);
+  if (esistente.length > 0) return;
   await db.insert(ubicazioni).values(UBICAZIONI_INIZIALI).onConflictDoNothing();
 }
