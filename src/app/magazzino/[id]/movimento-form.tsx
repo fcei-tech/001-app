@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SelettoreProprietario, type ProprietarioOpzione } from "@/components/magazzino/selettore-proprietario";
 import { aggiungiMovimento } from "@/app/magazzino/actions";
 
 const CAUSALI = [
@@ -22,9 +23,11 @@ const CAUSALI = [
 export function MovimentoForm({
   skuId,
   ubicazioni,
+  proprietari,
 }: {
   skuId: number;
   ubicazioni: { id: number; nome: string }[];
+  proprietari: ProprietarioOpzione[];
 }) {
   const [aperto, setAperto] = React.useState(false);
 
@@ -41,16 +44,7 @@ export function MovimentoForm({
       <input type="hidden" name="skuId" value={skuId} />
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="mov-proprieta">Proprieta&apos;</Label>
-          <Select name="proprieta" defaultValue="FP">
-            <SelectTrigger id="mov-proprieta">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="FP">FP</SelectItem>
-              <SelectItem value="CV">CV</SelectItem>
-            </SelectContent>
-          </Select>
+          <SelettoreProprietario proprietari={proprietari} idBase="mov-proprietario" />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="mov-ubicazione">Ubicazione</Label>
