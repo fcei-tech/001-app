@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { fotoSku, movimentiMagazzino, proprietari, sku, ubicazioni } from "@/db/schema";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { cercaCandidatiDuplicati } from "@/db/queries";
+import { cercaCandidatiDuplicati, getDisponibileSku, getImpegnatoPerSku } from "@/db/queries";
+import { CAUSALE_CORREZIONE } from "@/lib/giacenza";
 import { caricaFotoSuShopify } from "@/lib/shopify";
 import type {
   CampoEditabileInline,
@@ -411,7 +412,14 @@ export async function eliminaSku(formData: FormData) {
 // origine + entrata in quello di destinazione, stesso proprietario): la
 // quantita' totale dello sku non cambia mai. Esiti restituiti come oggetto
 // (mai eccezioni) perche' in produzione Next maschera il testo degli errori.
-export type EsitoSpostamento = { ok: boolean; errore?: string; messaggio?: string };
+export type EsitoSpostamento = {
+  ok: boolean;
+  errore?: string;
+  messaggio?: string;
+  avviso?: string;
+  // Movimenti scritti: servono ad "Annulla" per cancellarli.
+  movimentoIds?: number[];
+};
 
 // Dal Magazzino: sposta TUTTI i pezzi degli sku selezionati nel deposito
 // scelto, mantenendo il proprietario. I pezzi che si trovano in una casa
@@ -476,28 +484,39 @@ export async function spostaSkuInDeposito(skuIds: number[], destinazioneId: numb
   }
 }
 
-// Dalla scheda sku: sposta `quantita` pezzi di un proprietario da un deposito
-// a un altro (anche da una casa d'asta, ma mai verso una casa d'asta).
+// Sposta `quantita` pezzi da (proprietario, deposito) a (proprietario, deposito)
+// scelti. Puo' cambiare il deposito, il proprietario o entrambi; non tocca
+// mai il valore di carico dello sku. Anche da una casa d'asta, mai verso una.
 export async function spostaGiacenza(dati: {
   skuId: number;
   proprietarioId: number;
   daUbicazioneId: number;
   aUbicazioneId: number;
+  aProprietarioId?: number;
   quantita: number;
 }): Promise<EsitoSpostamento> {
   try {
     const { skuId, proprietarioId, daUbicazioneId, aUbicazioneId } = dati;
+    const aProprietarioId = dati.aProprietarioId ?? proprietarioId;
     const quantita = Math.trunc(Number(dati.quantita));
     if (!skuId || !proprietarioId || !daUbicazioneId || !aUbicazioneId) return { ok: false, errore: "Dati non validi" };
     if (!Number.isFinite(quantita) || quantita <= 0) return { ok: false, errore: "Quantita' non valida" };
-    if (daUbicazioneId === aUbicazioneId) return { ok: false, errore: "Origine e destinazione coincidono" };
+    if (daUbicazioneId === aUbicazioneId && proprietarioId === aProprietarioId) {
+      return { ok: false, errore: "Scegli un deposito o un proprietario diverso" };
+    }
 
     const dest = await db.query.ubicazioni.findFirst({ where: eq(ubicazioni.id, aUbicazioneId) });
     const orig = await db.query.ubicazioni.findFirst({ where: eq(ubicazioni.id, daUbicazioneId) });
-    if (!dest || !dest.attivo || !orig) return { ok: false, errore: "Deposito non valido o disattivato" };
-    if (dest.tipo === "asta_fisica") {
+    if (!dest || !orig) return { ok: false, errore: "Deposito non valido" };
+    if (dest.id !== orig.id && !dest.attivo) return { ok: false, errore: "Il deposito di destinazione e' disattivato" };
+    if (dest.tipo === "asta_fisica" && dest.id !== orig.id) {
       return { ok: false, errore: "Per portare i pezzi a una casa d'asta usa Consegna dal batch" };
     }
+    const nuovoProp = await db.query.proprietari.findFirst({ where: eq(proprietari.id, aProprietarioId) });
+    if (!nuovoProp || (aProprietarioId !== proprietarioId && !nuovoProp.attivo)) {
+      return { ok: false, errore: "Proprietario di destinazione non valido o disattivato" };
+    }
+    const vecchioProp = await db.query.proprietari.findFirst({ where: eq(proprietari.id, proprietarioId) });
 
     const [{ saldo }] = await db
       .select({ saldo: sql<number>`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`.mapWith(Number) })
@@ -509,20 +528,111 @@ export async function spostaGiacenza(dati: {
           eq(movimentiMagazzino.ubicazioneId, daUbicazioneId)
         )
       );
-    if (quantita > saldo) return { ok: false, errore: `In "${orig.nome}" ci sono solo ${saldo} pezzi` };
+    if (quantita > saldo) return { ok: false, errore: `Qui ci sono solo ${saldo} pezzi` };
 
-    const nota = `Spostamento da ${orig.nome} a ${dest.nome}`;
-    await db.transaction(async (tx) => {
-      await tx.insert(movimentiMagazzino).values([
-        { skuId, proprietarioId, ubicazioneId: daUbicazioneId, causale: "spostamento", quantitaDelta: -quantita, note: nota },
-        { skuId, proprietarioId, ubicazioneId: aUbicazioneId, causale: "spostamento", quantitaDelta: quantita, note: nota },
-      ]);
-    });
+    const parti: string[] = [];
+    if (orig.id !== dest.id) parti.push(`da ${orig.nome} a ${dest.nome}`);
+    if (proprietarioId !== aProprietarioId) parti.push(`da ${vecchioProp?.nome ?? "?"} a ${nuovoProp.nome}`);
+    const nota = `Spostamento ${parti.join(", ")}`;
+
+    const scritti = await db.transaction(async (tx) =>
+      tx
+        .insert(movimentiMagazzino)
+        .values([
+          { skuId, proprietarioId, ubicazioneId: daUbicazioneId, causale: "spostamento", quantitaDelta: -quantita, note: nota },
+          { skuId, proprietarioId: aProprietarioId, ubicazioneId: aUbicazioneId, causale: "spostamento", quantitaDelta: quantita, note: nota },
+        ])
+        .returning()
+    );
 
     revalidatePath("/");
     revalidatePath(`/magazzino/${skuId}`);
-    return { ok: true, messaggio: `Spostati ${quantita} pezzi in "${dest.nome}".` };
+    return { ok: true, messaggio: `Spostati ${quantita} pezzi (${parti.join(", ")}).`, movimentoIds: scritti.map((x) => x.id) };
   } catch (e) {
     return { ok: false, errore: `Spostamento non riuscito: ${e instanceof Error ? e.message : "errore"}` };
+  }
+}
+
+// Scrive il numero giusto: imposta a `nuovaQuantita` i pezzi di un
+// proprietario in un deposito scrivendo UN movimento di correzione nascosto
+// (la differenza). Mai un numero sovrascritto: il totale resta la somma dei
+// movimenti. Bloccata sulle case d'asta (li' i pezzi si muovono con Consegna/
+// Rientro/Sposta). Sotto l'impegnato dei batch NON blocca: avvisa.
+export async function correggiQuantita(dati: {
+  skuId: number;
+  proprietarioId: number;
+  ubicazioneId: number;
+  nuovaQuantita: number;
+}): Promise<EsitoSpostamento> {
+  try {
+    const { skuId, proprietarioId, ubicazioneId } = dati;
+    const nuova = Number(dati.nuovaQuantita);
+    if (!skuId || !proprietarioId || !ubicazioneId) return { ok: false, errore: "Dati non validi" };
+    if (!Number.isInteger(nuova) || nuova < 0) return { ok: false, errore: "Scrivi un numero intero, zero o maggiore" };
+
+    const ub = await db.query.ubicazioni.findFirst({ where: eq(ubicazioni.id, ubicazioneId) });
+    if (!ub) return { ok: false, errore: "Deposito non valido" };
+    if (ub.tipo === "asta_fisica") {
+      return { ok: false, errore: "In una casa d'asta il numero non si corregge a mano: usa Sposta o Rientro" };
+    }
+    const prop = await db.query.proprietari.findFirst({ where: eq(proprietari.id, proprietarioId) });
+    if (!prop) return { ok: false, errore: "Proprietario non valido" };
+
+    const [{ saldo }] = await db
+      .select({ saldo: sql<number>`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`.mapWith(Number) })
+      .from(movimentiMagazzino)
+      .where(
+        and(
+          eq(movimentiMagazzino.skuId, skuId),
+          eq(movimentiMagazzino.proprietarioId, proprietarioId),
+          eq(movimentiMagazzino.ubicazioneId, ubicazioneId)
+        )
+      );
+    const delta = nuova - saldo;
+    if (delta === 0) return { ok: true, messaggio: "Nessuna modifica" , movimentoIds: [] };
+
+    const [scritto] = await db
+      .insert(movimentiMagazzino)
+      .values({ skuId, proprietarioId, ubicazioneId, causale: CAUSALE_CORREZIONE, quantitaDelta: delta })
+      .returning();
+
+    let avviso: string | undefined;
+    const [totale, impegnato] = await Promise.all([getDisponibileSku(skuId), getImpegnatoPerSku(skuId)]);
+    if (totale < impegnato) {
+      avviso = `Attenzione: ora ci sono ${totale} pezzi ma ${impegnato} risultano impegnati in batch.`;
+    }
+
+    revalidatePath("/");
+    revalidatePath(`/magazzino/${skuId}`);
+    return { ok: true, messaggio: `Quantita' portata a ${nuova}.`, avviso, movimentoIds: [scritto.id] };
+  } catch (e) {
+    return { ok: false, errore: `Correzione non riuscita: ${e instanceof Error ? e.message : "errore"}` };
+  }
+}
+
+// Annulla = cancella i movimenti scritti per ultimi su quello sku. Rifiuta se
+// nel frattempo e' arrivato un altro movimento (qualcosa e' stato scritto
+// dopo): in quel caso cancellare lascerebbe i conti incoerenti.
+export async function annullaMovimenti(skuId: number, ids: number[]): Promise<{ ok: boolean; errore?: string }> {
+  try {
+    if (!skuId || !ids.length) return { ok: false, errore: "Niente da annullare" };
+    const esito = await db.transaction(async (tx) => {
+      const [{ maxId }] = await tx
+        .select({ maxId: sql<number>`coalesce(max(${movimentiMagazzino.id}), 0)`.mapWith(Number) })
+        .from(movimentiMagazzino)
+        .where(eq(movimentiMagazzino.skuId, skuId));
+      if (maxId > Math.max(...ids)) {
+        return { ok: false as const, errore: "Dopo quell'operazione e' arrivato un altro movimento: non si puo' piu' annullare." };
+      }
+      await tx.delete(movimentiMagazzino).where(and(eq(movimentiMagazzino.skuId, skuId), inArray(movimentiMagazzino.id, ids)));
+      return { ok: true as const };
+    });
+    if (esito.ok) {
+      revalidatePath("/");
+      revalidatePath(`/magazzino/${skuId}`);
+    }
+    return esito;
+  } catch (e) {
+    return { ok: false, errore: `Annulla non riuscito: ${e instanceof Error ? e.message : "errore"}` };
   }
 }

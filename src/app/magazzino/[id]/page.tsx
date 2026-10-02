@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { getSkuById, getTipiOggetto, getUbicazioniAttive, getProprietariAttivi, getMovimentiSku, getSaldiSkuPerUbicazione, getFotoSku } from "@/db/queries";
+import { getSkuById, getTipiOggetto, getUbicazioniAttive, getProprietariAttivi, getMovimentiSku, getSaldiSkuPerUbicazione, getDisponibileSku, getImpegnatoPerSku, getFotoSku } from "@/db/queries";
 import { eliminaFotoSku, spostaFotoSku } from "@/app/magazzino/actions";
 import { MovimentoForm } from "./movimento-form";
 import { GiacenzaSku } from "./giacenza-sku";
@@ -42,7 +42,7 @@ export default async function ModificaSkuPage({
               ? "fotoeliminata"
               : undefined;
 
-  const [item, tipi, ubicazioni, proprietari, movimenti, foto, giacenza] = await Promise.all([
+  const [item, tipi, ubicazioni, proprietari, movimenti, foto, giacenza, disponibile, impegnato] = await Promise.all([
     getSkuById(skuId),
     getTipiOggetto(),
     getUbicazioniAttive(),
@@ -50,11 +50,12 @@ export default async function ModificaSkuPage({
     getMovimentiSku(skuId),
     getFotoSku(skuId),
     getSaldiSkuPerUbicazione(skuId),
+    getDisponibileSku(skuId),
+    getImpegnatoPerSku(skuId),
   ]);
 
   if (!item) notFound();
 
-  const disponibile = movimenti.reduce((tot, m) => tot + m.quantitaDelta, 0);
 
   return (
     <div className="min-h-full flex flex-col">
@@ -72,6 +73,8 @@ export default async function ModificaSkuPage({
               skuId={item.id}
               righe={giacenza}
               destinazioni={ubicazioni.filter((u) => u.tipo !== "asta_fisica").map((u) => ({ id: u.id, nome: u.nome }))}
+              proprietari={proprietari.map((p) => ({ id: p.id, nome: p.nome }))}
+              impegnato={impegnato}
             />
           </CardContent>
         </Card>

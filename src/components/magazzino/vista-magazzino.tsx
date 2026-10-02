@@ -22,7 +22,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TableEmpty } from "@/components/ui/table-empty";
 import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
-import { aggiornaCampiSkuInline, spostaSkuInDeposito } from "@/app/magazzino/actions";
+import { aggiornaCampiSkuInline, spostaSkuInDeposito, correggiQuantita, annullaMovimenti } from "@/app/magazzino/actions";
+import { GiacenzaSku } from "@/app/magazzino/[id]/giacenza-sku";
+import { CellaQuantita } from "@/components/magazzino/cella-quantita";
+import type { GiacenzaRiga } from "@/lib/giacenza";
 import { useSelezioneMultipla } from "@/lib/selezione-multipla";
 import {
   CAMPI_EDITABILI_INLINE,
@@ -96,6 +99,8 @@ type RenderCtx = {
   salvaCondizione: (r: RigaMagazzino, valore: string) => void;
   salvaTipo: (r: RigaMagazzino, tipoId: number) => void;
   salvaBloccato: (r: RigaMagazzino, valore: boolean) => void;
+  correggiDaTabella: (r: RigaMagazzino, riga: GiacenzaRiga, nuova: number) => void;
+  apriGiacenza: (r: RigaMagazzino) => void;
 };
 
 type DefinizioneColonna = {
@@ -234,9 +239,21 @@ const COLONNE: DefinizioneColonna[] = [
       />
     ),
   },
-  { id: "proprieta", etichetta: "Proprietario", defaultVisibile: false, render: (r) => r.proprieta || "—" },
+  { id: "proprieta", etichetta: "Proprietario", defaultVisibile: false, render: (r, ctx) => (
+      <button type="button" onClick={() => ctx.apriGiacenza(r)} title="Clicca per vedere e spostare i pezzi" className="-mx-1.5 -my-1 w-[calc(100%+0.75rem)] rounded px-1.5 py-1 text-left hover:bg-muted/60">
+        {r.proprieta || "—"}
+      </button>
+    ) },
   { id: "deposito", etichetta: "Deposito", defaultVisibile: true, render: (r) => r.depositi || "—" },
-  { id: "disponibile", etichetta: "Disponibile", defaultVisibile: true, allineaDestra: true, render: (r) => r.quantitaDisponibile },
+  { id: "disponibile", etichetta: "Disponibile", defaultVisibile: true, allineaDestra: true,
+    render: (r, ctx) => (
+      <CellaQuantita
+        totale={r.quantitaDisponibile}
+        giacenze={r.giacenze}
+        onSalvaDiretta={(riga, nuovo) => ctx.correggiDaTabella(r, riga, nuovo)}
+        onApriGiacenza={() => ctx.apriGiacenza(r)}
+      />
+    ) },
   { id: "numeroFoto", etichetta: "N. foto", defaultVisibile: true, allineaDestra: true, render: (r) => r.numeroFoto },
   {
     id: "valoreCarico", etichetta: "Valore di carico", defaultVisibile: false, allineaDestra: true,
@@ -453,6 +470,9 @@ export function VistaMagazzino({
   const [dialogSpostaAperto, setDialogSpostaAperto] = useState(false);
   const [spostaInCorso, setSpostaInCorso] = useState(false);
   const [infoOk, setInfoOk] = useState<string | null>(null);
+  const [avvisoMsg, setAvvisoMsg] = useState<string | null>(null);
+  // Finestra Giacenza (numero, Sposta, Aggiungi, Annulla) di uno sku.
+  const [giacenzaSkuId, setGiacenzaSkuId] = useState<number | null>(null);
 
   async function salvaCampi(voci: VoceModificaInline[], descrizioneUndo: string) {
     setErrore(null);
@@ -494,7 +514,44 @@ export function VistaMagazzino({
     }
   }
 
+  // Scrive il numero giusto da tabella: correzione nascosta + "Annulla"
+  // che cancella quel movimento (rifiutato se nel frattempo ne e' arrivato un
+  // altro). Sotto l'impegnato avvisa, non blocca.
+  async function correggiDaTabella(r: RigaMagazzino, riga: GiacenzaRiga, nuova: number) {
+    setErrore(null);
+    setInfoOk(null);
+    setAvvisoMsg(null);
+    const esito = await correggiQuantita({
+      skuId: r.id,
+      proprietarioId: riga.proprietarioId,
+      ubicazioneId: riga.ubicazioneId,
+      nuovaQuantita: nuova,
+    });
+    if (!esito.ok) {
+      setErrore(esito.errore ?? "Correzione non riuscita");
+      router.refresh();
+      return;
+    }
+    if (esito.avviso) setAvvisoMsg(esito.avviso);
+    const ids = esito.movimentoIds ?? [];
+    if (ids.length > 0) {
+      setUndoSlot({
+        descrizione: `Quantità di ${r.skuCode}: ${riga.saldo} → ${nuova}`,
+        ripristina: async () => {
+          const e = await annullaMovimenti(r.id, ids);
+          if (!e.ok) setErrore(e.errore ?? "Annulla non riuscito");
+          setUndoSlot(null);
+          setAvvisoMsg(null);
+          router.refresh();
+        },
+      });
+    }
+    router.refresh();
+  }
+
   const ctx: RenderCtx = {
+    correggiDaTabella,
+    apriGiacenza: (r) => setGiacenzaSkuId(r.id),
     tipi,
     salvaTesto: (r, campo, valore) => salvaCampi([{ id: r.id, campi: { [campo]: valore } }], `${ETICHETTE_CAMPI[campo]} di ${r.skuCode}`),
     salvaMisura: (r, larghezza, altezza) => salvaCampi([{ id: r.id, campi: { larghezza, altezza } }], `Misura di ${r.skuCode}`),
@@ -759,6 +816,13 @@ export function VistaMagazzino({
         </div>
       )}
 
+      {avvisoMsg && (
+        <div className="mb-4 flex items-center justify-between rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+          <span>{avvisoMsg}</span>
+          <button type="button" onClick={() => setAvvisoMsg(null)} className="opacity-70 hover:opacity-100"><X className="size-4" /></button>
+        </div>
+      )}
+
       {infoOk && (
         <div className="mb-4 flex items-center justify-between rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm">
           <span>{infoOk}</span>
@@ -890,6 +954,30 @@ export function VistaMagazzino({
           </Table>
         )}
       </div>
+
+      <Dialog open={giacenzaSkuId !== null} onOpenChange={(aperto) => { if (!aperto) setGiacenzaSkuId(null); }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          {(() => {
+            const rigaG = righeLocal.find((x) => x.id === giacenzaSkuId);
+            if (!rigaG) return null;
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Giacenza di {rigaG.skuCode}</DialogTitle>
+                  <DialogDescription>{rigaG.artista} — {rigaG.opera}</DialogDescription>
+                </DialogHeader>
+                <GiacenzaSku
+                  skuId={rigaG.id}
+                  righe={rigaG.giacenze}
+                  destinazioni={ubicazioni.filter((u) => u.tipo !== "asta_fisica")}
+                  proprietari={proprietari}
+                  impegnato={rigaG.impegnato}
+                />
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialogSpostaAperto} onOpenChange={setDialogSpostaAperto}>
         <DialogContent>

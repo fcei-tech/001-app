@@ -13,6 +13,7 @@ import {
   ubicazioni,
 } from "./schema";
 import { CATAWIKI_SOGLIA_MINIMA_STIMA_IMPORT } from "@/lib/catawiki-config";
+import { CAUSALE_CORREZIONE, type GiacenzaRiga } from "@/lib/giacenza";
 
 export type RigaMagazzino = {
   id: number;
@@ -40,6 +41,8 @@ export type RigaMagazzino = {
   proprieta: string;
   // Dove stanno i pezzi, es. "Deposito (3), Cambi (1)" - solo saldi diversi da 0.
   depositi: string;
+  // Dettaglio strutturato dei saldi != 0 per proprietario e deposito.
+  giacenze: GiacenzaRiga[];
   numeroFoto: number;
   // Quanto di quantitaDisponibile e' gia' bloccato su un altro batch
   // CONFERMATO su un canale ESCLUSIVO (vedi impegnatoSql sotto) - disponibile
@@ -164,6 +167,22 @@ const depositiSql = () => sql<string>`coalesce((
   ) s
   inner join ubicazioni u on u.id = s.ubicazione_id
 ), '')`;
+const giacenzeSql = () => sql<GiacenzaRiga[]>`coalesce((
+  select json_agg(json_build_object(
+    'proprietarioId', s.pid, 'proprietarioNome', p.nome,
+    'ubicazioneId', s.uid, 'ubicazioneNome', u.nome, 'ubicazioneTipo', u.tipo,
+    'saldo', s.q
+  ) order by u.nome, p.nome)
+  from (
+    select m.proprietario_id as pid, m.ubicazione_id as uid, sum(m.quantita_delta)::int as q
+    from movimenti_magazzino m
+    where m.sku_id = "sku"."id"
+    group by m.proprietario_id, m.ubicazione_id
+    having sum(m.quantita_delta) <> 0
+  ) s
+  inner join ubicazioni u on u.id = s.uid
+  inner join proprietari p on p.id = s.pid
+), '[]'::json)`;
 const numeroFotoSql = () => sql`(select count(*) from foto_sku fs where fs.sku_id = ${sku.id})`;
 
 // Conteggio campi mancanti (2026-09-29) - stessa identica logica di
@@ -349,6 +368,7 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
       // left join) - nessun gate esplicito necessario.
       proprieta: proprietaSql().mapWith(String),
       depositi: depositiSql().mapWith(String),
+      giacenze: giacenzeSql(),
       // Subquery correlata (non un altro left join): un secondo left join a
       // foto_sku qui creerebbe un fan-out incrociato con i movimenti gia'
       // joinati, gonfiando quantitaDisponibile. Stesso pattern gia' in uso
@@ -598,6 +618,16 @@ export async function getMovimentiSku(skuId: number) {
     .from(movimentiMagazzino)
     .innerJoin(ubicazioni, eq(movimentiMagazzino.ubicazioneId, ubicazioni.id))
     .innerJoin(proprietari, eq(movimentiMagazzino.proprietarioId, proprietari.id))
-    .where(eq(movimentiMagazzino.skuId, skuId))
+    .where(and(eq(movimentiMagazzino.skuId, skuId), sql`${movimentiMagazzino.causale} <> ${CAUSALE_CORREZIONE}`))
     .orderBy(desc(movimentiMagazzino.createdAt));
+}
+
+// Quantita' disponibile totale di uno sku (somma di TUTTI i movimenti,
+// correzioni nascoste incluse - sono nascoste solo alla vista, non al conto).
+export async function getDisponibileSku(skuId: number): Promise<number> {
+  const [riga] = await db
+    .select({ totale: sql<number>`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`.mapWith(Number) })
+    .from(movimentiMagazzino)
+    .where(eq(movimentiMagazzino.skuId, skuId));
+  return riga?.totale ?? 0;
 }
