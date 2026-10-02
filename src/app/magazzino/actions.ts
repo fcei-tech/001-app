@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { fotoSku, movimentiMagazzino, proprietari, sku, ubicazioni } from "@/db/schema";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { cercaCandidatiDuplicati, getDisponibileSku, getImpegnatoPerSku } from "@/db/queries";
-import { CAUSALE_CORREZIONE } from "@/lib/giacenza";
+import { CAUSALE_CORREZIONE, CAUSALE_MODIFICA } from "@/lib/giacenza";
 import { caricaFotoSuShopify } from "@/lib/shopify";
 import type {
   CampoEditabileInline,
@@ -131,11 +131,14 @@ export async function creaNuovoSku(formData: FormData) {
     .returning();
 
   if (quantita > 0) {
+    // Casella "Scrivi nel registro": spuntata = carico visibile; tolta =
+    // carico nascosto (conta nel totale, non compare nei Movimenti).
+    const inRegistro = formData.get("inRegistro") === "on";
     await db.insert(movimentiMagazzino).values({
       skuId: nuovo.id,
       proprietarioId,
       ubicazioneId,
-      causale: "carico",
+      causale: inRegistro ? "carico" : CAUSALE_CORREZIONE,
       quantitaDelta: quantita,
       note: "Carico iniziale",
     });
@@ -159,7 +162,7 @@ export async function aggiungiCaricoSkuEsistente(formData: FormData) {
     skuId,
     proprietarioId,
     ubicazioneId,
-    causale: "carico",
+    causale: formData.get("inRegistro") === "on" ? "carico" : CAUSALE_CORREZIONE,
     quantitaDelta: quantita,
     note: "Carico su sku esistente (da ricerca duplicati)",
   });
@@ -425,7 +428,11 @@ export type EsitoSpostamento = {
 // scelto, mantenendo il proprietario. I pezzi che si trovano in una casa
 // d'asta restano dove sono (si muovono solo con Consegna/Rientro dal batch,
 // o dalla scheda sku).
-export async function spostaSkuInDeposito(skuIds: number[], destinazioneId: number): Promise<EsitoSpostamento> {
+export async function spostaSkuInDeposito(
+  skuIds: number[],
+  destinazioneId: number,
+  inRegistro: boolean = true
+): Promise<EsitoSpostamento> {
   try {
     if (!skuIds.length) return { ok: false, errore: "Nessuno sku selezionato" };
     const dest = await db.query.ubicazioni.findFirst({ where: eq(ubicazioni.id, destinazioneId) });
@@ -462,9 +469,10 @@ export async function spostaSkuInDeposito(skuIds: number[], destinazioneId: numb
       await db.transaction(async (tx) => {
         for (const x of daSpostare) {
           const nota = `Spostamento in blocco da Magazzino verso ${dest.nome}`;
+          const causale = inRegistro ? "spostamento" : CAUSALE_CORREZIONE;
           await tx.insert(movimentiMagazzino).values([
-            { skuId: x.skuId, proprietarioId: x.proprietarioId, ubicazioneId: x.ubicazioneId, causale: "spostamento", quantitaDelta: -x.saldo, note: nota },
-            { skuId: x.skuId, proprietarioId: x.proprietarioId, ubicazioneId: destinazioneId, causale: "spostamento", quantitaDelta: x.saldo, note: nota },
+            { skuId: x.skuId, proprietarioId: x.proprietarioId, ubicazioneId: x.ubicazioneId, causale, quantitaDelta: -x.saldo, note: nota },
+            { skuId: x.skuId, proprietarioId: x.proprietarioId, ubicazioneId: destinazioneId, causale, quantitaDelta: x.saldo, note: nota },
           ]);
         }
       });
@@ -494,6 +502,7 @@ export async function spostaGiacenza(dati: {
   aUbicazioneId: number;
   aProprietarioId?: number;
   quantita: number;
+  inRegistro?: boolean;
 }): Promise<EsitoSpostamento> {
   try {
     const { skuId, proprietarioId, daUbicazioneId, aUbicazioneId } = dati;
@@ -535,12 +544,13 @@ export async function spostaGiacenza(dati: {
     if (proprietarioId !== aProprietarioId) parti.push(`da ${vecchioProp?.nome ?? "?"} a ${nuovoProp.nome}`);
     const nota = `Spostamento ${parti.join(", ")}`;
 
+    const causale = dati.inRegistro === false ? CAUSALE_CORREZIONE : "spostamento";
     const scritti = await db.transaction(async (tx) =>
       tx
         .insert(movimentiMagazzino)
         .values([
-          { skuId, proprietarioId, ubicazioneId: daUbicazioneId, causale: "spostamento", quantitaDelta: -quantita, note: nota },
-          { skuId, proprietarioId: aProprietarioId, ubicazioneId: aUbicazioneId, causale: "spostamento", quantitaDelta: quantita, note: nota },
+          { skuId, proprietarioId, ubicazioneId: daUbicazioneId, causale, quantitaDelta: -quantita, note: nota },
+          { skuId, proprietarioId: aProprietarioId, ubicazioneId: aUbicazioneId, causale, quantitaDelta: quantita, note: nota },
         ])
         .returning()
     );
@@ -554,8 +564,8 @@ export async function spostaGiacenza(dati: {
 }
 
 // Scrive il numero giusto: imposta a `nuovaQuantita` i pezzi di un
-// proprietario in un deposito scrivendo UN movimento di correzione nascosto
-// (la differenza). Mai un numero sovrascritto: il totale resta la somma dei
+// proprietario in un deposito scrivendo UN movimento (la differenza), che
+// compare nel registro se inRegistro (default) e resta nascosto altrimenti. Mai un numero sovrascritto: il totale resta la somma dei
 // movimenti. Bloccata sulle case d'asta (li' i pezzi si muovono con Consegna/
 // Rientro/Sposta). Sotto l'impegnato dei batch NON blocca: avvisa.
 export async function correggiQuantita(dati: {
@@ -563,6 +573,8 @@ export async function correggiQuantita(dati: {
   proprietarioId: number;
   ubicazioneId: number;
   nuovaQuantita: number;
+  inRegistro?: boolean;
+  nota?: string;
 }): Promise<EsitoSpostamento> {
   try {
     const { skuId, proprietarioId, ubicazioneId } = dati;
@@ -593,7 +605,14 @@ export async function correggiQuantita(dati: {
 
     const [scritto] = await db
       .insert(movimentiMagazzino)
-      .values({ skuId, proprietarioId, ubicazioneId, causale: CAUSALE_CORREZIONE, quantitaDelta: delta })
+      .values({
+        skuId,
+        proprietarioId,
+        ubicazioneId,
+        causale: dati.inRegistro === false ? CAUSALE_CORREZIONE : CAUSALE_MODIFICA,
+        quantitaDelta: delta,
+        note: dati.nota ?? `Quantita' portata da ${saldo} a ${nuova}`,
+      })
       .returning();
 
     let avviso: string | undefined;
@@ -634,5 +653,28 @@ export async function annullaMovimenti(skuId: number, ids: number[]): Promise<{ 
     return esito;
   } catch (e) {
     return { ok: false, errore: `Annulla non riuscito: ${e instanceof Error ? e.message : "errore"}` };
+  }
+}
+
+// "Non scrivere nel registro" dopo l'operazione: rende nascosti i movimenti
+// appena scritti (modifica quantita' o spostamento). Il totale non cambia.
+export async function togliDalRegistro(skuId: number, ids: number[]): Promise<{ ok: boolean; errore?: string }> {
+  try {
+    if (!skuId || !ids.length) return { ok: false, errore: "Niente da modificare" };
+    await db
+      .update(movimentiMagazzino)
+      .set({ causale: CAUSALE_CORREZIONE })
+      .where(
+        and(
+          eq(movimentiMagazzino.skuId, skuId),
+          inArray(movimentiMagazzino.id, ids),
+          inArray(movimentiMagazzino.causale, [CAUSALE_MODIFICA, "spostamento"])
+        )
+      );
+    revalidatePath("/");
+    revalidatePath(`/magazzino/${skuId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, errore: `Operazione non riuscita: ${e instanceof Error ? e.message : "errore"}` };
   }
 }

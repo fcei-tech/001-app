@@ -22,7 +22,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TableEmpty } from "@/components/ui/table-empty";
 import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
-import { aggiornaCampiSkuInline, spostaSkuInDeposito, correggiQuantita, annullaMovimenti } from "@/app/magazzino/actions";
+import { aggiornaCampiSkuInline, spostaSkuInDeposito, correggiQuantita, annullaMovimenti, togliDalRegistro } from "@/app/magazzino/actions";
+import { CasellaRegistro } from "@/components/magazzino/casella-registro";
 import { GiacenzaSku } from "@/app/magazzino/[id]/giacenza-sku";
 import { CellaQuantita } from "@/components/magazzino/cella-quantita";
 import type { GiacenzaRiga } from "@/lib/giacenza";
@@ -392,6 +393,8 @@ function campiInlineARiga(
 type UndoSlot = {
   descrizione: string;
   ripristina: () => void;
+  // Solo per le modifiche di quantita': "Non scrivere nel registro".
+  togliDalRegistro?: () => void;
 };
 
 export type FiltriIniziali = {
@@ -469,6 +472,7 @@ export function VistaMagazzino({
   const [depositoBulk, setDepositoBulk] = useState("");
   const [dialogSpostaAperto, setDialogSpostaAperto] = useState(false);
   const [spostaInCorso, setSpostaInCorso] = useState(false);
+  const [registroBulk, setRegistroBulk] = useState(true);
   const [infoOk, setInfoOk] = useState<string | null>(null);
   const [avvisoMsg, setAvvisoMsg] = useState<string | null>(null);
   // Finestra Giacenza (numero, Sposta, Aggiungi, Annulla) di uno sku.
@@ -514,9 +518,11 @@ export function VistaMagazzino({
     }
   }
 
-  // Scrive il numero giusto da tabella: correzione nascosta + "Annulla"
-  // che cancella quel movimento (rifiutato se nel frattempo ne e' arrivato un
-  // altro). Sotto l'impegnato avvisa, non blocca.
+  // Scrive il numero giusto da tabella: la modifica va nel registro di default;
+  // il messaggio offre "Annulla" (cancella quel movimento, rifiutato se nel
+  // frattempo ne e' arrivato un altro) e "Non scrivere nel registro" (la
+  // modifica resta nei totali ma sparisce dalla lista Movimenti). Sotto
+  // l'impegnato avvisa, non blocca.
   async function correggiDaTabella(r: RigaMagazzino, riga: GiacenzaRiga, nuova: number) {
     setErrore(null);
     setInfoOk(null);
@@ -542,6 +548,18 @@ export function VistaMagazzino({
           if (!e.ok) setErrore(e.errore ?? "Annulla non riuscito");
           setUndoSlot(null);
           setAvvisoMsg(null);
+          router.refresh();
+        },
+        togliDalRegistro: async () => {
+          const e = await togliDalRegistro(r.id, ids);
+          if (!e.ok) {
+            setErrore(e.errore ?? "Operazione non riuscita");
+            setUndoSlot(null);
+          } else {
+            setUndoSlot((prev) =>
+              prev ? { ...prev, descrizione: `${prev.descrizione} (non scritto nel registro)`, togliDalRegistro: undefined } : prev
+            );
+          }
           router.refresh();
         },
       });
@@ -651,12 +669,13 @@ export function VistaMagazzino({
     setSpostaInCorso(true);
     setErrore(null);
     setInfoOk(null);
-    const esito = await spostaSkuInDeposito(ids, Number(depositoBulk));
+    const esito = await spostaSkuInDeposito(ids, Number(depositoBulk), registroBulk);
     setSpostaInCorso(false);
     if (esito.ok) {
       setInfoOk(esito.messaggio ?? "Spostamento eseguito.");
       setSelezionati(new Set());
       setDepositoBulk("");
+      setRegistroBulk(true);
     } else {
       setErrore(esito.errore ?? "Spostamento non riuscito");
     }
@@ -988,6 +1007,7 @@ export function VistaMagazzino({
               I pezzi che si trovano in una casa d&apos;asta restano dove sono. Confermi?
             </DialogDescription>
           </DialogHeader>
+          <CasellaRegistro id="registro-bulk" checked={registroBulk} onCheckedChange={setRegistroBulk} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDialogSpostaAperto(false)}>Annulla</Button>
             <Button type="button" onClick={confermaSposta}>Conferma spostamento</Button>
@@ -1018,6 +1038,11 @@ export function VistaMagazzino({
           <Button type="button" size="sm" variant="secondary" onClick={undoSlot.ripristina}>
             <Undo2 className="size-3.5" /> Annulla
           </Button>
+          {undoSlot.togliDalRegistro && (
+            <Button type="button" size="sm" variant="outline" onClick={undoSlot.togliDalRegistro}>
+              Non scrivere nel registro
+            </Button>
+          )}
           <button type="button" onClick={() => setUndoSlot(null)} className="text-muted-foreground opacity-70 hover:opacity-100" title="Chiudi">
             <X className="size-3.5" />
           </button>

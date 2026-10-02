@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { CasellaRegistro } from "@/components/magazzino/casella-registro";
 import {
   Card,
   CardContent,
@@ -102,6 +103,7 @@ export function NuovoSkuFlow({
               <Label htmlFor="quantita">Quantita&apos; caricata</Label>
               <Input id="quantita" name="quantita" type="number" min={1} defaultValue={1} required />
             </div>
+            <CasellaRegistro id="registro-esistente" name="inRegistro" defaultChecked />
             <div className="flex gap-2">
               <Button type="submit">Aggiungi carico</Button>
               <Button type="button" variant="ghost" onClick={() => setCandidatoScelto(null)}>
@@ -207,6 +209,9 @@ export function NuovoSkuFlow({
                   <Label htmlFor="quantita">Quantita&apos;</Label>
                   <Input id="quantita" name="quantita" type="number" min={0} defaultValue={1} />
                 </div>
+              </div>
+              <div className="mt-4">
+                <CasellaRegistro id="registro-nuovo" name="inRegistro" defaultChecked />
               </div>
             </div>
 

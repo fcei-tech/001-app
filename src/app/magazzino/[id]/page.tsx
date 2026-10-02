@@ -9,6 +9,7 @@ import { getSkuById, getTipiOggetto, getUbicazioniAttive, getProprietariAttivi, 
 import { eliminaFotoSku, spostaFotoSku } from "@/app/magazzino/actions";
 import { MovimentoForm } from "./movimento-form";
 import { GiacenzaSku } from "./giacenza-sku";
+import { etichettaCausale } from "@/lib/giacenza";
 import { FotoForm } from "./foto-form";
 import { SchedaSkuForm } from "./scheda-form";
 
@@ -155,7 +156,7 @@ export default async function ModificaSkuPage({
                     {movimenti.map((m) => (
                       <TableRow key={m.id}>
                         <TableCell className="text-muted-foreground">{formatData(m.createdAt)}</TableCell>
-                        <TableCell>{m.causale}</TableCell>
+                        <TableCell>{etichettaCausale(m.causale)}</TableCell>
                         <TableCell>{m.proprieta}</TableCell>
                         <TableCell>{m.ubicazione}</TableCell>
                         <TableCell className={`text-right tabular-nums ${m.quantitaDelta < 0 ? "text-destructive" : ""}`}>

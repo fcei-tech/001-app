@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { annullaMovimenti, correggiQuantita, spostaGiacenza, type EsitoSpostamento } from "@/app/magazzino/actions";
+import { CasellaRegistro } from "@/components/magazzino/casella-registro";
 import type { GiacenzaRiga } from "@/lib/giacenza";
 
 type Opzione = { id: number; nome: string };
@@ -21,6 +22,7 @@ type Ctx = {
   righe: GiacenzaRiga[];
   esegui: (op: () => Promise<EsitoSpostamento>, descrizione: string) => Promise<boolean>;
   occupato: boolean;
+  inRegistro: boolean;
 };
 
 function RigaSposta({ riga, ctx }: { riga: GiacenzaRiga; ctx: Ctx }) {
@@ -42,6 +44,7 @@ function RigaSposta({ riga, ctx }: { riga: GiacenzaRiga; ctx: Ctx }) {
           proprietarioId: riga.proprietarioId,
           ubicazioneId: riga.ubicazioneId,
           nuovaQuantita: Number(numero),
+          inRegistro: ctx.inRegistro,
         }),
       `${riga.ubicazioneNome} (${riga.proprietarioNome}): ${riga.saldo} → ${numero}`
     );
@@ -58,6 +61,7 @@ function RigaSposta({ riga, ctx }: { riga: GiacenzaRiga; ctx: Ctx }) {
           aUbicazioneId: Number(aDep),
           aProprietarioId: Number(aProp),
           quantita: Number(quanti),
+          inRegistro: ctx.inRegistro,
         }),
       `Spostamento da ${riga.ubicazioneNome}`
     );
@@ -162,7 +166,15 @@ function AggiungiPezzi({ ctx }: { ctx: Ctx }) {
     const esistente = ctx.righe.find((r) => r.proprietarioId === Number(prop) && r.ubicazioneId === Number(dep));
     const nuova = (esistente?.saldo ?? 0) + Number(quanti);
     const ok = await ctx.esegui(
-      () => correggiQuantita({ skuId: ctx.skuId, proprietarioId: Number(prop), ubicazioneId: Number(dep), nuovaQuantita: nuova }),
+      () =>
+        correggiQuantita({
+          skuId: ctx.skuId,
+          proprietarioId: Number(prop),
+          ubicazioneId: Number(dep),
+          nuovaQuantita: nuova,
+          inRegistro: ctx.inRegistro,
+          nota: `Aggiunti ${quanti} pezzi`,
+        }),
       `Aggiunti ${quanti} pezzi`
     );
     if (ok) setAperto(false);
@@ -205,7 +217,7 @@ function AggiungiPezzi({ ctx }: { ctx: Ctx }) {
 }
 
 // Dove sono i pezzi di questo sku adesso e come cambiarli: numero
-// modificabile (correzione nascosta, mai nello storico), Sposta fra depositi
+// modificabile (nel registro o no, a scelta con la casella), Sposta fra depositi
 // e/o proprietari scegliendo quanti pezzi, Aggiungi pezzi, Annulla dell'ultima
 // operazione. Usato sia nella scheda sku sia nella finestra aperta dalla
 // tabella Magazzino.
@@ -227,6 +239,8 @@ export function GiacenzaSku({
   const [ultima, setUltima] = React.useState<{ ids: number[]; testo: string } | null>(null);
   const [occupato, startTransition] = React.useTransition();
   const [chiave, setChiave] = React.useState(0);
+  // Scelta valida per UNA operazione: dopo ogni operazione torna spuntata.
+  const [inRegistro, setInRegistro] = React.useState(true);
 
   const esegui: Ctx["esegui"] = (op, descrizione) =>
     new Promise<boolean>((resolve) => {
@@ -244,6 +258,7 @@ export function GiacenzaSku({
         );
         setUltima(esito.movimentoIds && esito.movimentoIds.length > 0 ? { ids: esito.movimentoIds, testo: descrizione } : null);
         setChiave((k) => k + 1);
+        setInRegistro(true);
         router.refresh();
         resolve(true);
       });
@@ -265,7 +280,7 @@ export function GiacenzaSku({
     });
   }
 
-  const ctx: Ctx = { skuId, destinazioni, proprietari, righe, esegui, occupato };
+  const ctx: Ctx = { skuId, destinazioni, proprietari, righe, esegui, occupato, inRegistro };
 
   return (
     <div className="flex flex-col gap-3">
@@ -279,6 +294,7 @@ export function GiacenzaSku({
         </ul>
       )}
       <AggiungiPezzi key={`add-${chiave}`} ctx={ctx} />
+      <CasellaRegistro id={`registro-giacenza-${skuId}`} checked={inRegistro} onCheckedChange={setInRegistro} disabled={occupato} />
       {impegnato !== undefined && impegnato > 0 && (
         <p className="text-xs text-muted-foreground">Impegnati in batch: {impegnato}.</p>
       )}
