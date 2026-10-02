@@ -31,6 +31,7 @@ import { EliminaBatchButton } from "@/components/pubblicazione/elimina-batch-but
 import { OverrideLottoForm } from "@/components/pubblicazione/override-lotto-form";
 import { CambiaStatoBatchControl } from "@/components/pubblicazione/cambia-stato-batch-control";
 import { ConsegnaLottoForm } from "@/components/pubblicazione/consegna-lotto-form";
+import { MenuAltreAzioni } from "@/components/menu-altre-azioni";
 import { RientroLottoButton } from "@/components/pubblicazione/rientro-lotto-button";
 import {
   CellaPrezzoCatawiki,
@@ -517,7 +518,10 @@ export default async function BatchPubblicazionePage({
                             {/* Badge visivo in piu' (2026-09-25, sessione 5) - NON un
                                 nuovo lottoStatoEnum (decisione 2026-09-14), solo
                                 consegnatoAt valorizzato su un lotto "accettato". */}
-                            {l.consegnatoAt && <Badge variant="warning">Consegnato</Badge>}
+                            {l.consegnatoAt && <Badge variant="warning">{`Consegnato a ${batch.canale.nome}`}</Badge>}
+                            {batch.canale.tipo === "asta_fisica" && l.statoRiga === "accettato" && !l.consegnatoAt && (
+                              <span className="text-xs text-muted-foreground">ancora da noi</span>
+                            )}
                           </div>
                         </TableCell>
                         {mostraOverride && (
@@ -636,29 +640,13 @@ export default async function BatchPubblicazionePage({
                                 </Button>
                               </form>
                             ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "accettato" && !l.consegnatoAt ? (
-                              // Accettato, non ancora consegnato: "Annulla
-                              // accettazione" (2026-09-24, vedi commento
-                              // storico sotto) + "Consegna" (2026-09-25,
-                              // sessione 5) - sempre distanziati nel flusso
-                              // reale del cliente ("accetta e consega, sono
-                              // sempre distanziati").
-                              <div className="flex flex-wrap justify-end gap-1.5">
-                                <form action={annullaAccettazioneAction}>
-                                  <input type="hidden" name="batchLottoId" value={l.id} />
-                                  <input type="hidden" name="batchId" value={batch.id} />
-                                  <input type="hidden" name="canaleId" value={canaleId} />
-                                  {/* "Annulla accettazione" (2026-09-24, richiesta
-                                      esplicita utente): finche' non c'e' un
-                                      collegamento reale con le vendite, deve
-                                      restare possibile liberare un lotto da
-                                      "accettato" - altrimenti un errore o un
-                                      accordo saltato con la casa d'asta blocca
-                                      per sempre Elimina/Riporta in bozza sul
-                                      batch intero, senza rimedio. */}
-                                  <Button type="submit" variant="outline" size="sm">
-                                    Annulla accettazione
-                                  </Button>
-                                </form>
+                              // Accettato, non ancora consegnato: azione principale
+                              // "Consegna all'asta"; la correzione "Torna candidato"
+                              // (ex "Annulla accettazione", 2026-09-24: deve restare
+                              // possibile liberare un lotto da "accettato", altrimenti
+                              // un accordo saltato blocca Elimina/Riporta in bozza sul
+                              // batch intero) sta nel menu "Altre azioni".
+                              <div className="flex flex-wrap items-center justify-end gap-1.5">
                                 <ConsegnaLottoForm
                                   batchLottoId={l.id}
                                   batchId={batch.id}
@@ -667,22 +655,35 @@ export default async function BatchPubblicazionePage({
                                   saldi={saldiPerLottoId.get(l.id) ?? []}
                                   ubicazioniAttive={ubicazioniAttive}
                                 />
+                                <MenuAltreAzioni
+                                  voci={[
+                                    {
+                                      etichetta: "Torna candidato",
+                                      descrizione: "L'asta non lo accetta piu': il lotto torna candidato, il pezzo non si muove.",
+                                      azione: annullaAccettazioneAction,
+                                      campi: { batchLottoId: l.id, batchId: batch.id, canaleId },
+                                    },
+                                  ]}
+                                />
                               </div>
                             ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "accettato" && l.consegnatoAt ? (
-                              // Consegnato: "Annulla consegna" (deterministico,
-                              // inverte esattamente lo stesso movimento - vedi
-                              // annullaConsegnaAction) + "Rientro" (rimuove il
-                              // lotto, con dialog di conferma).
-                              <div className="flex flex-wrap justify-end gap-1.5">
-                                <form action={annullaConsegnaAction}>
-                                  <input type="hidden" name="batchLottoId" value={l.id} />
-                                  <input type="hidden" name="batchId" value={batch.id} />
-                                  <input type="hidden" name="canaleId" value={canaleId} />
-                                  <Button type="submit" variant="outline" size="sm">
-                                    Annulla consegna
-                                  </Button>
-                                </form>
+                              // Consegnato: azione principale "Rientrato" (l'asta ce lo
+                              // ha restituito: il lotto esce dal batch e la posizione
+                              // fisica torna com'era); la correzione "Consegna errata"
+                              // (ex "Annulla consegna": inverte esattamente lo stesso
+                              // movimento, il lotto resta accettato) sta nel menu.
+                              <div className="flex flex-wrap items-center justify-end gap-1.5">
                                 <RientroLottoButton batchLottoId={l.id} batchId={batch.id} canaleId={Number(canaleId)} />
+                                <MenuAltreAzioni
+                                  voci={[
+                                    {
+                                      etichetta: "Consegna errata",
+                                      descrizione: "Hai consegnato per errore: il pezzo torna da noi, il lotto resta accettato.",
+                                      azione: annullaConsegnaAction,
+                                      campi: { batchLottoId: l.id, batchId: batch.id, canaleId },
+                                    },
+                                  ]}
+                                />
                               </div>
                             ) : null}
                           </TableCell>

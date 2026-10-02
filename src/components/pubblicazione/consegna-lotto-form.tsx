@@ -89,14 +89,20 @@ export function ConsegnaLottoForm({
 
   return (
     <>
-      <Button type="button" size="sm" onClick={() => setAperto(true)} disabled={saldi.length === 0}>
-        Consegna
+      <Button
+        type="button"
+        size="sm"
+        title="Il pezzo parte verso la casa d'asta"
+        onClick={() => setAperto(true)}
+        disabled={saldi.length === 0}
+      >
+        Consegna all&apos;asta
       </Button>
 
       <Dialog open={aperto} onOpenChange={setAperto}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Consegna lotto</DialogTitle>
+            <DialogTitle>Consegna all&apos;asta</DialogTitle>
             <DialogDescription>
               Sposta la posizione fisica del pezzo: scegli da dove parte e dove arriva (di norma la casa d&apos;asta stessa).
             </DialogDescription>

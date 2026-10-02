@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { fotoSku, movimentiMagazzino, proprietari, sku, ubicazioni } from "@/db/schema";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { cercaCandidatiDuplicati } from "@/db/queries";
 import { caricaFotoSuShopify } from "@/lib/shopify";
 import type {
@@ -403,4 +403,126 @@ export async function eliminaSku(formData: FormData) {
 
   revalidatePath("/");
   redirect("/?skueliminato=1");
+}
+
+
+// --- Spostamenti fra depositi (Release 2) ---------------------------------
+// Uno spostamento e' SEMPRE una coppia di movimenti (uscita dal deposito di
+// origine + entrata in quello di destinazione, stesso proprietario): la
+// quantita' totale dello sku non cambia mai. Esiti restituiti come oggetto
+// (mai eccezioni) perche' in produzione Next maschera il testo degli errori.
+export type EsitoSpostamento = { ok: boolean; errore?: string; messaggio?: string };
+
+// Dal Magazzino: sposta TUTTI i pezzi degli sku selezionati nel deposito
+// scelto, mantenendo il proprietario. I pezzi che si trovano in una casa
+// d'asta restano dove sono (si muovono solo con Consegna/Rientro dal batch,
+// o dalla scheda sku).
+export async function spostaSkuInDeposito(skuIds: number[], destinazioneId: number): Promise<EsitoSpostamento> {
+  try {
+    if (!skuIds.length) return { ok: false, errore: "Nessuno sku selezionato" };
+    const dest = await db.query.ubicazioni.findFirst({ where: eq(ubicazioni.id, destinazioneId) });
+    if (!dest || !dest.attivo) return { ok: false, errore: "Deposito di destinazione non valido o disattivato" };
+    if (dest.tipo === "asta_fisica") {
+      return { ok: false, errore: "Per portare i pezzi a una casa d'asta usa Consegna dal batch" };
+    }
+
+    const saldi = await db
+      .select({
+        skuId: movimentiMagazzino.skuId,
+        proprietarioId: movimentiMagazzino.proprietarioId,
+        ubicazioneId: movimentiMagazzino.ubicazioneId,
+        tipoUbicazione: ubicazioni.tipo,
+        saldo: sql<number>`sum(${movimentiMagazzino.quantitaDelta})`.mapWith(Number),
+      })
+      .from(movimentiMagazzino)
+      .innerJoin(ubicazioni, eq(movimentiMagazzino.ubicazioneId, ubicazioni.id))
+      .where(inArray(movimentiMagazzino.skuId, skuIds))
+      .groupBy(
+        movimentiMagazzino.skuId,
+        movimentiMagazzino.proprietarioId,
+        movimentiMagazzino.ubicazioneId,
+        ubicazioni.tipo
+      )
+      .having(sql`sum(${movimentiMagazzino.quantitaDelta}) > 0`);
+
+    const daSpostare = saldi.filter((x) => x.ubicazioneId !== destinazioneId && x.tipoUbicazione !== "asta_fisica");
+    const pezziInAsta = saldi
+      .filter((x) => x.tipoUbicazione === "asta_fisica")
+      .reduce((tot, x) => tot + x.saldo, 0);
+
+    if (daSpostare.length > 0) {
+      await db.transaction(async (tx) => {
+        for (const x of daSpostare) {
+          const nota = `Spostamento in blocco da Magazzino verso ${dest.nome}`;
+          await tx.insert(movimentiMagazzino).values([
+            { skuId: x.skuId, proprietarioId: x.proprietarioId, ubicazioneId: x.ubicazioneId, causale: "spostamento", quantitaDelta: -x.saldo, note: nota },
+            { skuId: x.skuId, proprietarioId: x.proprietarioId, ubicazioneId: destinazioneId, causale: "spostamento", quantitaDelta: x.saldo, note: nota },
+          ]);
+        }
+      });
+    }
+
+    revalidatePath("/");
+    const skuMossi = new Set(daSpostare.map((x) => x.skuId)).size;
+    const pezziMossi = daSpostare.reduce((tot, x) => tot + x.saldo, 0);
+    let messaggio =
+      skuMossi > 0
+        ? `Spostati ${pezziMossi} pezzi di ${skuMossi} sku in "${dest.nome}".`
+        : `Nessun pezzo da spostare: erano gia' tutti in "${dest.nome}" o in una casa d'asta.`;
+    if (pezziInAsta > 0) messaggio += ` ${pezziInAsta} pezzi in case d'asta sono rimasti dove sono.`;
+    return { ok: true, messaggio };
+  } catch (e) {
+    return { ok: false, errore: `Spostamento non riuscito: ${e instanceof Error ? e.message : "errore"}` };
+  }
+}
+
+// Dalla scheda sku: sposta `quantita` pezzi di un proprietario da un deposito
+// a un altro (anche da una casa d'asta, ma mai verso una casa d'asta).
+export async function spostaGiacenza(dati: {
+  skuId: number;
+  proprietarioId: number;
+  daUbicazioneId: number;
+  aUbicazioneId: number;
+  quantita: number;
+}): Promise<EsitoSpostamento> {
+  try {
+    const { skuId, proprietarioId, daUbicazioneId, aUbicazioneId } = dati;
+    const quantita = Math.trunc(Number(dati.quantita));
+    if (!skuId || !proprietarioId || !daUbicazioneId || !aUbicazioneId) return { ok: false, errore: "Dati non validi" };
+    if (!Number.isFinite(quantita) || quantita <= 0) return { ok: false, errore: "Quantita' non valida" };
+    if (daUbicazioneId === aUbicazioneId) return { ok: false, errore: "Origine e destinazione coincidono" };
+
+    const dest = await db.query.ubicazioni.findFirst({ where: eq(ubicazioni.id, aUbicazioneId) });
+    const orig = await db.query.ubicazioni.findFirst({ where: eq(ubicazioni.id, daUbicazioneId) });
+    if (!dest || !dest.attivo || !orig) return { ok: false, errore: "Deposito non valido o disattivato" };
+    if (dest.tipo === "asta_fisica") {
+      return { ok: false, errore: "Per portare i pezzi a una casa d'asta usa Consegna dal batch" };
+    }
+
+    const [{ saldo }] = await db
+      .select({ saldo: sql<number>`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`.mapWith(Number) })
+      .from(movimentiMagazzino)
+      .where(
+        and(
+          eq(movimentiMagazzino.skuId, skuId),
+          eq(movimentiMagazzino.proprietarioId, proprietarioId),
+          eq(movimentiMagazzino.ubicazioneId, daUbicazioneId)
+        )
+      );
+    if (quantita > saldo) return { ok: false, errore: `In "${orig.nome}" ci sono solo ${saldo} pezzi` };
+
+    const nota = `Spostamento da ${orig.nome} a ${dest.nome}`;
+    await db.transaction(async (tx) => {
+      await tx.insert(movimentiMagazzino).values([
+        { skuId, proprietarioId, ubicazioneId: daUbicazioneId, causale: "spostamento", quantitaDelta: -quantita, note: nota },
+        { skuId, proprietarioId, ubicazioneId: aUbicazioneId, causale: "spostamento", quantitaDelta: quantita, note: nota },
+      ]);
+    });
+
+    revalidatePath("/");
+    revalidatePath(`/magazzino/${skuId}`);
+    return { ok: true, messaggio: `Spostati ${quantita} pezzi in "${dest.nome}".` };
+  } catch (e) {
+    return { ok: false, errore: `Spostamento non riuscito: ${e instanceof Error ? e.message : "errore"}` };
+  }
 }

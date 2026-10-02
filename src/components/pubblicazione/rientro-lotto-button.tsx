@@ -24,14 +24,20 @@ export function RientroLottoButton({
 
   return (
     <>
-      <Button type="button" variant="outline" size="sm" onClick={() => setAperto(true)}>
-        Rientro
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        title="L'asta ci ha restituito il pezzo: il lotto esce dal batch"
+        onClick={() => setAperto(true)}
+      >
+        Rientrato
       </Button>
 
       <Dialog open={aperto} onOpenChange={setAperto}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confermare il rientro di questo lotto?</DialogTitle>
+            <DialogTitle>Il pezzo e&apos; rientrato dall&apos;asta?</DialogTitle>
             <DialogDescription>
               Il lotto viene tolto dal batch e la posizione fisica torna a dov&apos;era prima della consegna. L&apos;operazione
               non e&apos; reversibile da qui.
@@ -56,7 +62,7 @@ export function RientroLottoButton({
                 setAperto(false);
               }}
             >
-              {pending ? "Rientro..." : "Conferma rientro"}
+              {pending ? "Registro…" : "Si', e' rientrato"}
             </Button>
           </DialogFooter>
         </DialogContent>

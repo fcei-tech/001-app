@@ -38,6 +38,8 @@ export type RigaMagazzino = {
   // es. un carico FP e uno CV sullo stesso sku) - stringa gia' pronta per
   // la colonna, es. "FP", "FP, CV", o "" se nessun movimento ancora.
   proprieta: string;
+  // Dove stanno i pezzi, es. "Deposito (3), Cambi (1)" - solo saldi diversi da 0.
+  depositi: string;
   numeroFoto: number;
   // Quanto di quantitaDisponibile e' gia' bloccato su un altro batch
   // CONFERMATO su un canale ESCLUSIVO (vedi impegnatoSql sotto) - disponibile
@@ -66,6 +68,7 @@ export type ColonnaOrdinabile =
   | "tipo"
   | "condizione"
   | "proprieta"
+  | "deposito"
   | "disponibile"
   | "impegnato"
   | "numeroFoto"
@@ -87,6 +90,8 @@ export type FiltriMagazzino = {
   // id del proprietario (tabella proprietari) - il nome del parametro URL
   // resta "proprieta" per non rompere link/preferenze esistenti.
   proprietarioId?: number;
+  // id del deposito (ubicazione): solo sku con almeno 1 pezzo li' dentro.
+  ubicazioneId?: number;
   bloccato?: "si" | "no";
   disponibilita?: "disponibile" | "esaurito";
   senzaFoto?: boolean;
@@ -146,6 +151,19 @@ const RANGO_CONDIZIONE = sql`case ${sku.condizione}
 // condividerne una fra tutte le esecuzioni concorrenti di getMagazzino.
 const quantitaDisponibileSql = () => sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`;
 const proprietaSql = () => sql`coalesce(string_agg(distinct ${proprietari.nome}, ', '), '')`;
+// Elenco "Nome (qtà)" dei depositi dove sta lo sku (solo saldi != 0). Stringa
+// letterale "sku"."id" per lo stesso motivo spiegato su impegnatoSql.
+const depositiSql = () => sql<string>`coalesce((
+  select string_agg(u.nome || ' (' || s.q || ')', ', ' order by u.nome)
+  from (
+    select m.ubicazione_id, sum(m.quantita_delta) as q
+    from movimenti_magazzino m
+    where m.sku_id = "sku"."id"
+    group by m.ubicazione_id
+    having sum(m.quantita_delta) <> 0
+  ) s
+  inner join ubicazioni u on u.id = s.ubicazione_id
+), '')`;
 const numeroFotoSql = () => sql`(select count(*) from foto_sku fs where fs.sku_id = ${sku.id})`;
 
 // Conteggio campi mancanti (2026-09-29) - stessa identica logica di
@@ -233,6 +251,18 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
       )
     );
   }
+  if (filtri.ubicazioneId) {
+    condizioniWhere.push(
+      exists(
+        db
+          .select({ uno: sql`1` })
+          .from(movimentiMagazzino)
+          .where(and(eq(movimentiMagazzino.skuId, sku.id), eq(movimentiMagazzino.ubicazioneId, filtri.ubicazioneId!)))
+          .groupBy(movimentiMagazzino.skuId)
+          .having(sql`sum(${movimentiMagazzino.quantitaDelta}) > 0`)
+      )
+    );
+  }
   if (filtri.senzaFoto) {
     condizioniWhere.push(
       notExists(db.select({ uno: sql`1` }).from(fotoSku).where(eq(fotoSku.skuId, sku.id)))
@@ -276,6 +306,7 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
     tipo: tipiOggetto.nome,
     condizione: RANGO_CONDIZIONE,
     proprieta: proprietaSql(),
+    deposito: depositiSql(),
     disponibile: quantitaDisponibileSql(),
     impegnato: impegnatoSql(),
     numeroFoto: numeroFotoSql(),
@@ -317,6 +348,7 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
       // string_agg ignora da solo i NULL (righe senza movimenti per via del
       // left join) - nessun gate esplicito necessario.
       proprieta: proprietaSql().mapWith(String),
+      depositi: depositiSql().mapWith(String),
       // Subquery correlata (non un altro left join): un secondo left join a
       // foto_sku qui creerebbe un fan-out incrociato con i movimenti gia'
       // joinati, gonfiando quantitaDisponibile. Stesso pattern gia' in uso
@@ -538,6 +570,7 @@ export async function getSaldiSkuPerUbicazione(skuId: number) {
     .select({
       ubicazioneId: movimentiMagazzino.ubicazioneId,
       ubicazioneNome: ubicazioni.nome,
+      ubicazioneTipo: ubicazioni.tipo,
       proprietarioId: movimentiMagazzino.proprietarioId,
       proprietarioNome: proprietari.nome,
       saldo: sql<number>`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`.mapWith(Number),
@@ -546,7 +579,7 @@ export async function getSaldiSkuPerUbicazione(skuId: number) {
     .innerJoin(ubicazioni, eq(movimentiMagazzino.ubicazioneId, ubicazioni.id))
     .innerJoin(proprietari, eq(movimentiMagazzino.proprietarioId, proprietari.id))
     .where(eq(movimentiMagazzino.skuId, skuId))
-    .groupBy(movimentiMagazzino.ubicazioneId, ubicazioni.nome, movimentiMagazzino.proprietarioId, proprietari.nome)
+    .groupBy(movimentiMagazzino.ubicazioneId, ubicazioni.nome, ubicazioni.tipo, movimentiMagazzino.proprietarioId, proprietari.nome)
     .having(sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0) > 0`)
     .orderBy(asc(ubicazioni.nome));
 }

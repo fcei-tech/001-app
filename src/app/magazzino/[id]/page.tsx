@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { getSkuById, getTipiOggetto, getUbicazioniAttive, getProprietariAttivi, getMovimentiSku, getFotoSku } from "@/db/queries";
+import { getSkuById, getTipiOggetto, getUbicazioniAttive, getProprietariAttivi, getMovimentiSku, getSaldiSkuPerUbicazione, getFotoSku } from "@/db/queries";
 import { eliminaFotoSku, spostaFotoSku } from "@/app/magazzino/actions";
 import { MovimentoForm } from "./movimento-form";
+import { GiacenzaSku } from "./giacenza-sku";
 import { FotoForm } from "./foto-form";
 import { SchedaSkuForm } from "./scheda-form";
 
@@ -41,13 +42,14 @@ export default async function ModificaSkuPage({
               ? "fotoeliminata"
               : undefined;
 
-  const [item, tipi, ubicazioni, proprietari, movimenti, foto] = await Promise.all([
+  const [item, tipi, ubicazioni, proprietari, movimenti, foto, giacenza] = await Promise.all([
     getSkuById(skuId),
     getTipiOggetto(),
     getUbicazioniAttive(),
     getProprietariAttivi(),
     getMovimentiSku(skuId),
     getFotoSku(skuId),
+    getSaldiSkuPerUbicazione(skuId),
   ]);
 
   if (!item) notFound();
@@ -59,6 +61,20 @@ export default async function ModificaSkuPage({
       <Header />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
         <SchedaSkuForm item={item} tipi={tipi} disponibile={disponibile} esito={esito} />
+
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Giacenza</CardTitle>
+            <CardDescription>Dove si trovano i pezzi adesso, per deposito e proprietario.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <GiacenzaSku
+              skuId={item.id}
+              righe={giacenza}
+              destinazioni={ubicazioni.filter((u) => u.tipo !== "asta_fisica").map((u) => ({ id: u.id, nome: u.nome }))}
+            />
+          </CardContent>
+        </Card>
 
         <Card className="mb-6">
           <CardHeader>
@@ -107,10 +123,14 @@ export default async function ModificaSkuPage({
         </Card>
 
         <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Movimenti</CardTitle>
-            <CardDescription>La quantita&apos; disponibile e&apos; sempre calcolata dalla somma di questi movimenti.</CardDescription>
-          </CardHeader>
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 [&::-webkit-details-marker]:hidden">
+              <CardHeader className="flex-1">
+                <CardTitle>Movimenti ({movimenti.length})</CardTitle>
+                <CardDescription>La quantita&apos; disponibile e&apos; sempre calcolata dalla somma di questi movimenti.</CardDescription>
+              </CardHeader>
+              <ChevronDown className="mr-6 size-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
           <CardContent className="flex flex-col gap-4">
             <MovimentoForm skuId={item.id} ubicazioni={ubicazioni} proprietari={proprietari} />
             <div className="rounded-lg border">
@@ -146,6 +166,7 @@ export default async function ModificaSkuPage({
               )}
             </div>
           </CardContent>
+          </details>
         </Card>
       </main>
     </div>

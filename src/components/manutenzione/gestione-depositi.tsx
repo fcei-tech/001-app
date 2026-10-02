@@ -34,7 +34,8 @@ const TIPI = [
 
 const ETICHETTA_ASTA = "Casa d'asta";
 
-function RigaDeposito({ d, altriNomi }: { d: Deposito; altriNomi: string[] }) {
+function RigaDeposito({ d, altriNomi, onDisattivato }: { d: Deposito; altriNomi: string[]; onDisattivato: (id: number) => void }) {
+  const [chiediConferma, setChiediConferma] = React.useState(false);
   const asta = d.tipo === "asta_fisica";
   const [nome, setNome] = React.useState(d.nome);
   const [tipo, setTipo] = React.useState(d.tipo);
@@ -69,12 +70,18 @@ function RigaDeposito({ d, altriNomi }: { d: Deposito; altriNomi: string[] }) {
     startTransition(async () => {
       const esito = await aggiornaDeposito(d.id, dati);
       if (!esito.ok) setMessaggio({ testo: esito.errore ?? "Errore", errore: true });
-      else setMessaggio({ testo: esito.avviso ?? "Salvato", errore: false });
+      else {
+        setMessaggio({ testo: esito.avviso ?? "Salvato", errore: false });
+        if (!dati.attivo) onDisattivato(d.id);
+      }
     });
   }
 
+  // Conferma "in riga" (due click) invece di window.confirm: nella finestra
+  // dell'app desktop il popup del browser non compare e il tasto sembrava
+  // non fare nulla.
   function elimina() {
-    if (!window.confirm(`Eliminare il deposito "${d.nome}"?`)) return;
+    setChiediConferma(false);
     startTransition(async () => {
       const esito = await eliminaDeposito(d.id);
       if (!esito.ok) setMessaggio({ testo: esito.errore ?? "Errore", errore: true });
@@ -177,9 +184,20 @@ function RigaDeposito({ d, altriNomi }: { d: Deposito; altriNomi: string[] }) {
         {asta ? (
           <span className="text-xs text-muted-foreground">legato al canale</span>
         ) : d.movimenti === 0 ? (
-          <Button type="button" variant="ghost" size="sm" onClick={elimina} disabled={inCorso}>
-            Elimina
-          </Button>
+          chiediConferma ? (
+            <span className="flex items-center gap-1 whitespace-nowrap">
+              <Button type="button" variant="destructive" size="sm" onClick={elimina} disabled={inCorso}>
+                Sì, elimina
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setChiediConferma(false)}>
+                No
+              </Button>
+            </span>
+          ) : (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setChiediConferma(true)} disabled={inCorso}>
+              Elimina
+            </Button>
+          )
         ) : (
           <span className="text-xs text-muted-foreground">in uso</span>
         )}
@@ -196,6 +214,12 @@ export function GestioneDepositi({ depositi }: { depositi: Deposito[] }) {
   const [referente, setReferente] = React.useState("");
   const [esito, setEsito] = React.useState<EsitoManutenzione | null>(null);
   const [inCorso, startTransition] = React.useTransition();
+  const [mostraDisattivati, setMostraDisattivati] = React.useState(false);
+  // Righe appena disattivate: restano visibili finche' non si lascia la
+  // pagina, cosi' si vede l'esito/avviso del salvataggio.
+  const [toccati, setToccati] = React.useState<Set<number>>(new Set());
+  const nDisattivati = depositi.filter((d) => !d.attivo).length;
+  const visibili = depositi.filter((d) => d.attivo || mostraDisattivati || toccati.has(d.id));
 
   const doppio = depositi.some((d) => d.nome.trim().toLowerCase() === nome.trim().toLowerCase());
 
@@ -241,16 +265,23 @@ export function GestioneDepositi({ depositi }: { depositi: Deposito[] }) {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {depositi.map((d) => (
+            {visibili.map((d) => (
               <RigaDeposito
                 key={d.id}
                 d={d}
+                onDisattivato={(id) => setToccati((t) => new Set(t).add(id))}
                 altriNomi={depositi.filter((x) => x.id !== d.id).map((x) => x.nome)}
               />
             ))}
           </tbody>
         </table>
       </div>
+      {nDisattivati > 0 && (
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <input type="checkbox" className="size-4" checked={mostraDisattivati} onChange={(e) => setMostraDisattivati(e.target.checked)} />
+          Mostra anche i disattivati ({nDisattivati})
+        </label>
+      )}
       <form onSubmit={aggiungi} className="flex flex-wrap items-end gap-3 rounded-lg border border-dashed p-3">
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground" htmlFor="nuovo-dep-nome">

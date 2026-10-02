@@ -22,7 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TableEmpty } from "@/components/ui/table-empty";
 import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
-import { aggiornaCampiSkuInline } from "@/app/magazzino/actions";
+import { aggiornaCampiSkuInline, spostaSkuInDeposito } from "@/app/magazzino/actions";
 import { useSelezioneMultipla } from "@/lib/selezione-multipla";
 import {
   CAMPI_EDITABILI_INLINE,
@@ -49,6 +49,7 @@ type ColonnaId =
   | "tipo"
   | "condizione"
   | "proprieta"
+  | "deposito"
   | "disponibile"
   | "numeroFoto"
   | "valoreCarico"
@@ -136,6 +137,7 @@ const MAPPA_ORDINABILI: Record<ColonnaId, ColonnaOrdinabile> = {
   tipo: "tipo",
   condizione: "condizione",
   proprieta: "proprieta",
+  deposito: "deposito",
   disponibile: "disponibile",
   numeroFoto: "numeroFoto",
   valoreCarico: "valoreCarico",
@@ -233,6 +235,7 @@ const COLONNE: DefinizioneColonna[] = [
     ),
   },
   { id: "proprieta", etichetta: "Proprietario", defaultVisibile: false, render: (r) => r.proprieta || "—" },
+  { id: "deposito", etichetta: "Deposito", defaultVisibile: true, render: (r) => r.depositi || "—" },
   { id: "disponibile", etichetta: "Disponibile", defaultVisibile: true, allineaDestra: true, render: (r) => r.quantitaDisponibile },
   { id: "numeroFoto", etichetta: "N. foto", defaultVisibile: true, allineaDestra: true, render: (r) => r.numeroFoto },
   {
@@ -379,6 +382,7 @@ export type FiltriIniziali = {
   tipo: string;
   condizione: string;
   proprieta: string;
+  deposito: string;
   bloccato: string;
   disponibilita: string;
   senzafoto: string;
@@ -390,6 +394,7 @@ export function VistaMagazzino({
   righe,
   tipi,
   proprietari,
+  ubicazioni,
   filtriIniziali,
   filtriAttivi,
   ordinaAttuale,
@@ -398,6 +403,7 @@ export function VistaMagazzino({
   righe: RigaMagazzino[];
   tipi: { id: number; nome: string }[];
   proprietari: { id: number; nome: string }[];
+  ubicazioni: { id: number; nome: string; tipo: string }[];
   filtriIniziali: FiltriIniziali;
   filtriAttivi: boolean;
   ordinaAttuale?: ColonnaOrdinabile;
@@ -442,6 +448,11 @@ export function VistaMagazzino({
   const [campoBulk, setCampoBulk] = useState<CampoEditabileInline | "">("");
   const [valoreBulk, setValoreBulk] = useState<ValoreCampoInline>("");
   const [dialogBulkAperto, setDialogBulkAperto] = useState(false);
+  // Sposta selezionati in un deposito (Release 2)
+  const [depositoBulk, setDepositoBulk] = useState("");
+  const [dialogSpostaAperto, setDialogSpostaAperto] = useState(false);
+  const [spostaInCorso, setSpostaInCorso] = useState(false);
+  const [infoOk, setInfoOk] = useState<string | null>(null);
 
   async function salvaCampi(voci: VoceModificaInline[], descrizioneUndo: string) {
     setErrore(null);
@@ -519,6 +530,7 @@ export function VistaMagazzino({
     if (f.tipo !== "tutti") params.set("tipo", f.tipo);
     if (f.condizione !== "tutti") params.set("condizione", f.condizione);
     if (f.proprieta !== "tutti") params.set("proprieta", f.proprieta);
+    if (f.deposito !== "tutti") params.set("deposito", f.deposito);
     if (f.bloccato !== "tutti") params.set("bloccato", f.bloccato);
     if (f.disponibilita !== "tutti") params.set("disponibilita", f.disponibilita);
     if (f.senzafoto === "si") params.set("senzafoto", "si");
@@ -542,7 +554,7 @@ export function VistaMagazzino({
   // solo i filtri e non compariva nemmeno se era attivo solo un ordinamento,
   // costringendo a ricliccare la colonna piu' volte per tornare al default.
   function azzeraFiltri() {
-    const vuoti: typeof filtri = { q: "", tipo: "tutti", condizione: "tutti", proprieta: "tutti", bloccato: "tutti", disponibilita: "tutti", senzafoto: "no", mancanti: "no" };
+    const vuoti: typeof filtri = { q: "", tipo: "tutti", condizione: "tutti", proprieta: "tutti", deposito: "tutti", bloccato: "tutti", disponibilita: "tutti", senzafoto: "no", mancanti: "no" };
     setFiltri(vuoti);
     applicaFiltri(vuoti, undefined, undefined, true);
   }
@@ -571,6 +583,27 @@ export function VistaMagazzino({
     if (campoBulk === "bloccatoVendita") return valoreBulk ? "Sì" : "No";
     const s = (valoreBulk ?? "").toString().trim();
     return s.length ? s : "(vuoto)";
+  }
+
+  const depositiDestinazione = ubicazioni.filter((u) => u.tipo !== "asta_fisica");
+  const nomeDepositoBulk = depositiDestinazione.find((u) => String(u.id) === depositoBulk)?.nome ?? "";
+
+  async function confermaSposta() {
+    const ids = Array.from(selezionati);
+    setDialogSpostaAperto(false);
+    setSpostaInCorso(true);
+    setErrore(null);
+    setInfoOk(null);
+    const esito = await spostaSkuInDeposito(ids, Number(depositoBulk));
+    setSpostaInCorso(false);
+    if (esito.ok) {
+      setInfoOk(esito.messaggio ?? "Spostamento eseguito.");
+      setSelezionati(new Set());
+      setDepositoBulk("");
+    } else {
+      setErrore(esito.errore ?? "Spostamento non riuscito");
+    }
+    router.refresh();
   }
 
   const bulkPronto = (() => {
@@ -637,6 +670,14 @@ export function VistaMagazzino({
             <SelectContent>
               <SelectItem value="tutti">Tutti i proprietari</SelectItem>
               {proprietari.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.nome}</SelectItem>)}
+            </SelectContent>
+          </Select>
+
+          <Select value={filtri.deposito} onValueChange={(v) => setFiltri((f) => ({ ...f, deposito: v }))}>
+            <SelectTrigger className="w-40" aria-label="Deposito"><SelectValue placeholder="Deposito" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="tutti">Tutti i depositi</SelectItem>
+              {ubicazioni.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.nome}</SelectItem>)}
             </SelectContent>
           </Select>
 
@@ -718,6 +759,13 @@ export function VistaMagazzino({
         </div>
       )}
 
+      {infoOk && (
+        <div className="mb-4 flex items-center justify-between rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm">
+          <span>{infoOk}</span>
+          <button type="button" onClick={() => setInfoOk(null)} className="opacity-70 hover:opacity-100"><X className="size-4" /></button>
+        </div>
+      )}
+
       {selezionati.size > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
           <span className="text-sm font-medium">{selezionati.size} selezionati</span>
@@ -765,6 +813,20 @@ export function VistaMagazzino({
           {campoBulk !== "" && (
             <Button type="button" size="sm" disabled={!bulkPronto} onClick={() => setDialogBulkAperto(true)}>
               Applica a {selezionati.size} sku
+            </Button>
+          )}
+
+          <span className="mx-1 h-5 w-px bg-border" />
+
+          <Select value={depositoBulk} onValueChange={setDepositoBulk}>
+            <SelectTrigger className="h-8 w-52" aria-label="Deposito di destinazione"><SelectValue placeholder="Sposta nel deposito..." /></SelectTrigger>
+            <SelectContent>
+              {depositiDestinazione.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.nome}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {depositoBulk !== "" && (
+            <Button type="button" size="sm" disabled={spostaInCorso} onClick={() => setDialogSpostaAperto(true)}>
+              {spostaInCorso ? "Sposto…" : `Sposta ${selezionati.size} sku`}
             </Button>
           )}
         </div>
@@ -828,6 +890,22 @@ export function VistaMagazzino({
           </Table>
         )}
       </div>
+
+      <Dialog open={dialogSpostaAperto} onOpenChange={setDialogSpostaAperto}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sposta in un deposito</DialogTitle>
+            <DialogDescription>
+              Sposti <strong>tutti i pezzi</strong> di {selezionati.size} sku nel deposito <strong>{nomeDepositoBulk}</strong>, mantenendo il proprietario.
+              I pezzi che si trovano in una casa d&apos;asta restano dove sono. Confermi?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDialogSpostaAperto(false)}>Annulla</Button>
+            <Button type="button" onClick={confermaSposta}>Conferma spostamento</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialogBulkAperto} onOpenChange={setDialogBulkAperto}>
         <DialogContent>

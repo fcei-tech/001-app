@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
-import { getMagazzino, getProprietariAttivi, getTipiOggetto, type ColonnaOrdinabile } from "@/db/queries";
+import { getMagazzino, getProprietariAttivi, getTipiOggetto, getUbicazioniAttive, type ColonnaOrdinabile } from "@/db/queries";
 import { Plus, FileSpreadsheet, Images } from "lucide-react";
 import { VistaMagazzino } from "@/components/magazzino/vista-magazzino";
 
@@ -11,7 +11,7 @@ import { VistaMagazzino } from "@/components/magazzino/vista-magazzino";
 // restare allineate a questa lista).
 const COLONNE_ORDINABILI: ColonnaOrdinabile[] = [
   "skuCode", "artista", "opera", "larghezza", "supporto", "anno", "tipo", "condizione",
-  "proprieta", "disponibile", "numeroFoto", "valoreCarico", "prezzoEbay", "prezzoCatawiki",
+  "proprieta", "deposito", "disponibile", "numeroFoto", "valoreCarico", "prezzoEbay", "prezzoCatawiki",
   "riservaCatawiki", "tag", "note", "stato", "creato", "aggiornato", "datiMancanti",
 ];
 
@@ -20,6 +20,7 @@ type SearchParams = {
   tipo?: string;
   condizione?: string;
   proprieta?: string;
+  deposito?: string;
   bloccato?: string;
   disponibilita?: string;
   senzafoto?: string;
@@ -41,6 +42,7 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
   const tipoId = sp.tipo && sp.tipo !== "tutti" ? Number(sp.tipo) : undefined;
   const condizione = sp.condizione && sp.condizione !== "tutti" ? sp.condizione : undefined;
   const proprietarioId = sp.proprieta && Number.isInteger(Number(sp.proprieta)) && Number(sp.proprieta) > 0 ? Number(sp.proprieta) : undefined;
+  const ubicazioneId = sp.deposito && Number.isInteger(Number(sp.deposito)) && Number(sp.deposito) > 0 ? Number(sp.deposito) : undefined;
   const bloccato = sp.bloccato === "si" || sp.bloccato === "no" ? sp.bloccato : undefined;
   const disponibilita = sp.disponibilita === "disponibile" || sp.disponibilita === "esaurito" ? sp.disponibilita : undefined;
   const senzaFoto = sp.senzafoto === "si";
@@ -48,12 +50,13 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
   const ordina = sp.ordina && (COLONNE_ORDINABILI as string[]).includes(sp.ordina) ? (sp.ordina as ColonnaOrdinabile) : undefined;
   const direzione = sp.direzione === "desc" ? "desc" : sp.direzione === "asc" ? "asc" : undefined;
 
-  const filtriAttivi = Boolean(q || tipoId || condizione || proprietarioId || bloccato || disponibilita || senzaFoto || soloDatiMancanti);
+  const filtriAttivi = Boolean(q || tipoId || condizione || proprietarioId || ubicazioneId || bloccato || disponibilita || senzaFoto || soloDatiMancanti);
 
-  const [righe, tipi, proprietari] = await Promise.all([
-    getMagazzino({ ricerca: q, tipoId, condizione, proprietarioId, bloccato, disponibilita, senzaFoto, soloDatiMancanti, ordina, direzione }),
+  const [righe, tipi, proprietari, ubicazioni] = await Promise.all([
+    getMagazzino({ ricerca: q, tipoId, condizione, proprietarioId, ubicazioneId, bloccato, disponibilita, senzaFoto, soloDatiMancanti, ordina, direzione }),
     getTipiOggetto(),
     getProprietariAttivi(),
+    getUbicazioniAttive(),
   ]);
 
   return (
@@ -79,12 +82,14 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
           righe={righe}
           tipi={tipi}
           proprietari={proprietari}
+          ubicazioni={ubicazioni}
           filtriAttivi={filtriAttivi}
           filtriIniziali={{
             q: q ?? "",
             tipo: tipoId ? String(tipoId) : "tutti",
             condizione: condizione ?? "tutti",
             proprieta: proprietarioId ? String(proprietarioId) : "tutti",
+            deposito: ubicazioneId ? String(ubicazioneId) : "tutti",
             bloccato: bloccato ?? "tutti",
             disponibilita: disponibilita ?? "tutti",
             senzafoto: senzaFoto ? "si" : "no",
