@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790004292530,
+      "tag": "0000_iniziale",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790004303174,
+      "tag": "0001_vocabolari_iniziali",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790170065940,
+      "tag": "0002_chemical_white_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790342381919,
+      "tag": "0003_nice_stark_industries",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790615806972,
+      "tag": "0004_even_red_hulk",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790841557478,
+      "tag": "0005_proprietari_depositi",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791371527011,
+      "tag": "0006_esposto_portali_statici",
+      "breakpoints": true
+    }
+  ]
+}
