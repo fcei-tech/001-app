@@ -43,6 +43,13 @@
       "when": 1790841557478,
       "tag": "0005_proprietari_depositi",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791371527011,
+      "tag": "0006_esposto_portali_statici",
+      "breakpoints": true
     }
   ]
 }
