@@ -82,7 +82,7 @@ export default function ErroreMagazzino({
               <Button onClick={() => reset()}>Riprova</Button>
               {problemaDatabase ? (
                 <Button variant="secondary" asChild>
-                  <Link href="/impostazioni">Vai a Impostazioni</Link>
+                  <Link href="/sistema/collegamenti">Vai a Collegamenti</Link>
                 </Button>
               ) : (
                 <Button variant="secondary" asChild>

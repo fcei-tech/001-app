@@ -22,7 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TableEmpty } from "@/components/ui/table-empty";
 import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
-import { aggiornaCampiSkuInline, spostaSkuInDeposito, correggiQuantita, annullaMovimenti, togliDalRegistro } from "@/app/magazzino/actions";
+import { aggiornaCampiSkuInline, spostaSkuInDeposito, correggiQuantita, annullaMovimenti, annullaMovimentiMultipli, togliDalRegistro } from "@/app/magazzino/actions";
 import { CasellaRegistro } from "@/components/magazzino/casella-registro";
 import { GiacenzaSku } from "@/app/magazzino/[id]/giacenza-sku";
 import { CellaQuantita } from "@/components/magazzino/cella-quantita";
@@ -34,6 +34,8 @@ import {
   type ValoreCampoInline,
   type VoceModificaInline,
 } from "@/lib/campi-inline";
+import { impostaBloccoPortaleAction } from "@/app/pubblicazione/esposizione-actions";
+import type { DaSistemare } from "@/db/esposizione-queries";
 import { CellTesto, CellSelect, CellMisura } from "@/components/magazzino/editable-cell";
 import { campiMancanti, ETICHETTA_CAMPO_MANCANTE, SPIEGAZIONE_CAMPO_MANCANTE } from "@/lib/campi-mancanti-pubblicazione";
 
@@ -419,7 +421,11 @@ export function VistaMagazzino({
   filtriAttivi,
   ordinaAttuale,
   direzioneAttuale,
+  daSistemare,
+  canaliStatici,
 }: {
+  daSistemare: Record<number, DaSistemare[]>;
+  canaliStatici: { id: number; nome: string }[];
   righe: RigaMagazzino[];
   tipi: { id: number; nome: string }[];
   proprietari: { id: number; nome: string }[];
@@ -455,13 +461,25 @@ export function VistaMagazzino({
     setRigheLocal(righe);
   }
 
+  // Filtro locale "Da sistemare su un portale" (portali statici): non
+  // tocca l'URL, filtra solo le righe gia' caricate.
+  const [soloDaSistemare, setSoloDaSistemare] = useState(false);
+  const nDaSistemare = useMemo(() => righeLocal.filter((r) => daSistemare[r.id]?.length).length, [righeLocal, daSistemare]);
+  const righeMostrate = useMemo(
+    () => (soloDaSistemare ? righeLocal.filter((r) => daSistemare[r.id]?.length) : righeLocal),
+    [soloDaSistemare, righeLocal, daSistemare]
+  );
+  // Blocco su portale in blocco (Altre azioni)
+  const [dialogBloccoAperto, setDialogBloccoAperto] = useState<"blocca" | "sblocca" | null>(null);
+  const [canaleBlocco, setCanaleBlocco] = useState("");
+
   const tipiMap = useMemo(() => new Map(tipi.map((t) => [t.id, t.nome])), [tipi]);
 
   // Selezione multipla stile file-manager (shift+click estende a un
   // intervallo) - 2026-09-25, punto 3 del backlog UX FINALIZZATO, vedi
   // src/lib/selezione-multipla.ts.
   const { selezionati, setSelezionati, gestisciSeleziona, segnalaShift, selezionaTutti } =
-    useSelezioneMultipla<number>(righeLocal.map((r) => r.id));
+    useSelezioneMultipla<number>(righeMostrate.map((r) => r.id));
   const [errore, setErrore] = useState<string | null>(null);
   const [undoSlot, setUndoSlot] = useState<UndoSlot | null>(null);
 
@@ -649,8 +667,8 @@ export function VistaMagazzino({
     applicaFiltri(filtri, chiave, prossimaDirezione);
   }
 
-  const tuttiSelezionati = righeLocal.length > 0 && righeLocal.every((r) => selezionati.has(r.id));
-  const alcuniSelezionati = !tuttiSelezionati && righeLocal.some((r) => selezionati.has(r.id));
+  const tuttiSelezionati = righeMostrate.length > 0 && righeMostrate.every((r) => selezionati.has(r.id));
+  const alcuniSelezionati = !tuttiSelezionati && righeMostrate.some((r) => selezionati.has(r.id));
 
   function etichettaValoreBulk(): string {
     if (!campoBulk) return "";
@@ -673,12 +691,43 @@ export function VistaMagazzino({
     setSpostaInCorso(false);
     if (esito.ok) {
       setInfoOk(esito.messaggio ?? "Spostamento eseguito.");
+      const gruppi = esito.movimentiPerSku ?? [];
+      if (gruppi.length > 0) {
+        setUndoSlot({
+          descrizione: `${gruppi.length} sku spostati in ${nomeDepositoBulk}`,
+          ripristina: async () => {
+            const e = await annullaMovimentiMultipli(gruppi);
+            if (!e.ok) setErrore(e.errore ?? "Annulla non riuscito");
+            else setInfoOk(null);
+            setUndoSlot(null);
+            router.refresh();
+          },
+        });
+      }
       setSelezionati(new Set());
       setDepositoBulk("");
       setRegistroBulk(true);
     } else {
       setErrore(esito.errore ?? "Spostamento non riuscito");
     }
+    router.refresh();
+  }
+
+  async function confermaBlocco() {
+    if (!dialogBloccoAperto || !canaleBlocco) return;
+    const ids = Array.from(selezionati);
+    const bloccare = dialogBloccoAperto === "blocca";
+    setDialogBloccoAperto(null);
+    setErrore(null);
+    setInfoOk(null);
+    const esito = await impostaBloccoPortaleAction(ids, Number(canaleBlocco), bloccare);
+    if (esito.ok) {
+      setInfoOk(esito.messaggio ?? "Fatto.");
+      setSelezionati(new Set());
+    } else {
+      setErrore(esito.errore ?? "Operazione non riuscita");
+    }
+    setCanaleBlocco("");
     router.refresh();
   }
 
@@ -793,6 +842,17 @@ export function VistaMagazzino({
             </SelectContent>
           </Select>
 
+          {canaliStatici.length > 0 && (nDaSistemare > 0 || soloDaSistemare) && (
+            <Button
+              type="button"
+              variant={soloDaSistemare ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSoloDaSistemare((v) => !v)}
+              title="Sku da caricare, togliere o abbassare su un portale statico"
+            >
+              Da sistemare su un portale ({nDaSistemare})
+            </Button>
+          )}
           <Button type="submit" variant="secondary">Applica filtri</Button>
           {(filtriAttivi || ordinamentoAttivo) && (
             <Button type="button" variant="ghost" size="sm" onClick={azzeraFiltri}>
@@ -912,11 +972,32 @@ export function VistaMagazzino({
               {spostaInCorso ? "Sposto…" : `Sposta ${selezionati.size} sku`}
             </Button>
           )}
+
+          {canaliStatici.length > 0 && (
+            <>
+              <span className="mx-1 h-5 w-px bg-border" />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="ghost" size="sm">Altre azioni</Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-72">
+                  <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => setDialogBloccoAperto("blocca")}>
+                    <span className="font-medium">Blocca su portale…</span>
+                    <span className="text-xs text-muted-foreground">Questi sku non vanno pubblicati sul portale scelto.</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => setDialogBloccoAperto("sblocca")}>
+                    <span className="font-medium">Sblocca su portale…</span>
+                    <span className="text-xs text-muted-foreground">Torna a prendere questi sku sul portale scelto.</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
         </div>
       )}
 
       <div className="rounded-xl border overflow-x-auto">
-        {righeLocal.length === 0 ? (
+        {righeMostrate.length === 0 ? (
           <TableEmpty><p className="font-medium text-foreground">Nessuno sku trovato</p><p>Prova a modificare la ricerca o i filtri.</p></TableEmpty>
         ) : (
           <Table>
@@ -956,12 +1037,19 @@ export function VistaMagazzino({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {righeLocal.map((r) => (
+              {righeMostrate.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell onClickCapture={segnalaShift}>
                     <Checkbox checked={selezionati.has(r.id)} onCheckedChange={(v) => gestisciSeleziona(r.id, v === true)} aria-label={`Seleziona ${r.skuCode}`} />
                   </TableCell>
-                  <TableCell className="p-0"><Link href={`/magazzino/${r.id}`} className="block font-mono text-xs p-3">{r.skuCode}</Link></TableCell>
+                  <TableCell className="p-0"><Link href={`/magazzino/${r.id}`} className="block font-mono text-xs p-3">
+                      {r.skuCode}
+                      {daSistemare[r.id]?.length ? (
+                        <Badge variant="warning" className="ml-2 align-middle" title={daSistemare[r.id].map((d) => `${d.portale}: ${d.tipo}`).join(" · ")}>
+                          {Array.from(new Set(daSistemare[r.id].map((d) => d.portale))).join(", ")}
+                        </Badge>
+                      ) : null}
+                    </Link></TableCell>
                   {colonneVisibili.map((c) => (
                     <TableCell key={c.id} className={c.allineaDestra ? "text-right tabular-nums" : undefined}>
                       {c.render(r, ctx)}
@@ -1011,6 +1099,29 @@ export function VistaMagazzino({
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDialogSpostaAperto(false)}>Annulla</Button>
             <Button type="button" onClick={confermaSposta}>Conferma spostamento</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialogBloccoAperto !== null} onOpenChange={(a) => { if (!a) { setDialogBloccoAperto(null); setCanaleBlocco(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{dialogBloccoAperto === "blocca" ? "Blocca su portale" : "Sblocca su portale"}</DialogTitle>
+            <DialogDescription>
+              {dialogBloccoAperto === "blocca"
+                ? `${selezionati.size} sku non verranno più pubblicati sul portale scelto (e se già caricati finiranno nella lista "Da togliere").`
+                : `${selezionati.size} sku torneranno a essere pubblicati sul portale scelto.`}
+            </DialogDescription>
+          </DialogHeader>
+          <Select value={canaleBlocco} onValueChange={setCanaleBlocco}>
+            <SelectTrigger aria-label="Portale"><SelectValue placeholder="Scegli il portale…" /></SelectTrigger>
+            <SelectContent>
+              {canaliStatici.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.nome}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDialogBloccoAperto(null)}>Annulla</Button>
+            <Button type="button" disabled={!canaleBlocco} onClick={confermaBlocco}>Conferma</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

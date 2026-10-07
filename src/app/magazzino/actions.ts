@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { fotoSku, movimentiMagazzino, proprietari, sku, ubicazioni } from "@/db/schema";
+import { bloccoSkuCanale, esposizioneCanale, fotoSku, movimentiMagazzino, proprietari, sku, ubicazioni } from "@/db/schema";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { cercaCandidatiDuplicati, getDisponibileSku, getImpegnatoPerSku } from "@/db/queries";
 import { CAUSALE_CORREZIONE, CAUSALE_MODIFICA } from "@/lib/giacenza";
@@ -401,6 +401,8 @@ export async function eliminaSku(formData: FormData) {
 
   await db.transaction(async (tx) => {
     await tx.delete(fotoSku).where(eq(fotoSku.skuId, id));
+    await tx.delete(esposizioneCanale).where(eq(esposizioneCanale.skuId, id));
+    await tx.delete(bloccoSkuCanale).where(eq(bloccoSkuCanale.skuId, id));
     await tx.delete(movimentiMagazzino).where(eq(movimentiMagazzino.skuId, id));
     await tx.delete(sku).where(eq(sku.id, id));
   });
@@ -422,6 +424,8 @@ export type EsitoSpostamento = {
   avviso?: string;
   // Movimenti scritti: servono ad "Annulla" per cancellarli.
   movimentoIds?: number[];
+  // Solo spostamento in blocco: movimenti scritti per ogni sku.
+  movimentiPerSku?: { skuId: number; ids: number[] }[];
 };
 
 // Dal Magazzino: sposta TUTTI i pezzi degli sku selezionati nel deposito
@@ -465,15 +469,20 @@ export async function spostaSkuInDeposito(
       .filter((x) => x.tipoUbicazione === "asta_fisica")
       .reduce((tot, x) => tot + x.saldo, 0);
 
+    const movimentiPerSku = new Map<number, number[]>();
     if (daSpostare.length > 0) {
       await db.transaction(async (tx) => {
         for (const x of daSpostare) {
           const nota = `Spostamento in blocco da Magazzino verso ${dest.nome}`;
           const causale = inRegistro ? "spostamento" : CAUSALE_CORREZIONE;
-          await tx.insert(movimentiMagazzino).values([
-            { skuId: x.skuId, proprietarioId: x.proprietarioId, ubicazioneId: x.ubicazioneId, causale, quantitaDelta: -x.saldo, note: nota },
-            { skuId: x.skuId, proprietarioId: x.proprietarioId, ubicazioneId: destinazioneId, causale, quantitaDelta: x.saldo, note: nota },
-          ]);
+          const scritti = await tx
+            .insert(movimentiMagazzino)
+            .values([
+              { skuId: x.skuId, proprietarioId: x.proprietarioId, ubicazioneId: x.ubicazioneId, causale, quantitaDelta: -x.saldo, note: nota },
+              { skuId: x.skuId, proprietarioId: x.proprietarioId, ubicazioneId: destinazioneId, causale, quantitaDelta: x.saldo, note: nota },
+            ])
+            .returning();
+          movimentiPerSku.set(x.skuId, [...(movimentiPerSku.get(x.skuId) ?? []), ...scritti.map((m) => m.id)]);
         }
       });
     }
@@ -486,7 +495,11 @@ export async function spostaSkuInDeposito(
         ? `Spostati ${pezziMossi} pezzi di ${skuMossi} sku in "${dest.nome}".`
         : `Nessun pezzo da spostare: erano gia' tutti in "${dest.nome}" o in una casa d'asta.`;
     if (pezziInAsta > 0) messaggio += ` ${pezziInAsta} pezzi in case d'asta sono rimasti dove sono.`;
-    return { ok: true, messaggio };
+    return {
+      ok: true,
+      messaggio,
+      movimentiPerSku: Array.from(movimentiPerSku, ([skuId, ids]) => ({ skuId, ids })),
+    };
   } catch (e) {
     return { ok: false, errore: `Spostamento non riuscito: ${e instanceof Error ? e.message : "errore"}` };
   }
@@ -676,5 +689,35 @@ export async function togliDalRegistro(skuId: number, ids: number[]): Promise<{ 
     return { ok: true };
   } catch (e) {
     return { ok: false, errore: `Operazione non riuscita: ${e instanceof Error ? e.message : "errore"}` };
+  }
+}
+
+// Annulla di uno spostamento in blocco: cancella i movimenti scritti su tutti
+// gli sku coinvolti, ma solo se per nessuno e' arrivato nel frattempo un altro
+// movimento. Tutto o niente.
+export async function annullaMovimentiMultipli(
+  gruppi: { skuId: number; ids: number[] }[]
+): Promise<{ ok: boolean; errore?: string }> {
+  try {
+    if (!gruppi.length) return { ok: false, errore: "Niente da annullare" };
+    const esito = await db.transaction(async (tx) => {
+      for (const g of gruppi) {
+        const [{ maxId }] = await tx
+          .select({ maxId: sql<number>`coalesce(max(${movimentiMagazzino.id}), 0)`.mapWith(Number) })
+          .from(movimentiMagazzino)
+          .where(eq(movimentiMagazzino.skuId, g.skuId));
+        if (maxId > Math.max(...g.ids)) {
+          return { ok: false as const, errore: "Su almeno uno sku e' arrivato un altro movimento dopo lo spostamento: non si puo' piu' annullare." };
+        }
+      }
+      for (const g of gruppi) {
+        await tx.delete(movimentiMagazzino).where(and(eq(movimentiMagazzino.skuId, g.skuId), inArray(movimentiMagazzino.id, g.ids)));
+      }
+      return { ok: true as const };
+    });
+    if (esito.ok) revalidatePath("/");
+    return esito;
+  } catch (e) {
+    return { ok: false, errore: `Annulla non riuscito: ${e instanceof Error ? e.message : "errore"}` };
   }
 }

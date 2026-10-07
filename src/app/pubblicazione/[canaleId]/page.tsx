@@ -5,6 +5,8 @@ import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { TableEmpty } from "@/components/ui/table-empty";
 import { getCanaleById, getBatchPerCanale } from "@/db/pubblicazione-queries";
+import { getDaFareCanale } from "@/db/esposizione-queries";
+import { DaFarePortale } from "@/components/pubblicazione/da-fare-portale";
 import { creaBatch } from "../actions";
 import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
 import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
@@ -30,6 +32,10 @@ export default async function CanalePubblicazionePage({
   const [canale, batch] = await Promise.all([getCanaleById(id), getBatchPerCanale(id)]);
 
   if (!canale) notFound();
+
+  // Portali statici: cosa e' da aggiungere / togliere / abbassare (registro
+  // "esposto", 2026-10-07). Per le aste non esiste questo registro.
+  const daFare = canale.tipo === "statico" ? await getDaFareCanale(canale.id) : [];
 
   const colore = coloreCanale(canale.nome);
   const fasce = fasceCanale(canale.nome);
@@ -87,6 +93,8 @@ export default async function CanalePubblicazionePage({
             <Button type="submit">Nuovo batch</Button>
           </form>
         </div>
+
+        {canale.tipo === "statico" && <DaFarePortale canaleId={canale.id} nomePortale={canale.nome} righe={daFare} />}
 
         {righe.length === 0 ? (
           <div className="rounded-lg border">

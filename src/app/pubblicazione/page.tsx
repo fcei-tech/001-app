@@ -3,6 +3,7 @@ import { Header } from "@/components/header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { getCanaliConConteggio } from "@/db/pubblicazione-queries";
+import { calcolaDaFare } from "@/db/esposizione-queries";
 import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
 import { BarraCanale } from "@/components/pubblicazione/barra-canale";
 
@@ -15,7 +16,7 @@ const ETICHETTE_TIPO: Record<string, string> = {
 export const dynamic = "force-dynamic";
 
 export default async function PubblicazionePage() {
-  const canali = await getCanaliConConteggio();
+  const [canali, { righe: daFareMap }] = await Promise.all([getCanaliConConteggio(), calcolaDaFare()]);
 
   return (
     <div className="min-h-full flex flex-col">
@@ -36,13 +37,15 @@ export default async function PubblicazionePage() {
           </Link>
         </div>
 
-        {canali.length === 0 ? (
+        {canali.filter((c) => c.attivo).length === 0 ? (
           <p className="text-sm text-muted-foreground">Nessun canale trovato.</p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {canali.map((c) => {
+            {canali.filter((c) => c.attivo).map((c) => {
               const colore = coloreCanale(c.nome);
               const fasce = fasceCanale(c.nome);
+              // Portali statici: quante cose da sistemare (registro esposto).
+              const nDaFare = daFareMap.get(c.id)?.length ?? 0;
               return (
               <Link key={c.id} href={`/pubblicazione/${c.id}`}>
                 {/* Accento colore brand/canale (2026-09-25, richiesta esplicita
@@ -72,6 +75,7 @@ export default async function PubblicazionePage() {
                       </div>
                     </div>
                     {c.esclusivo && <Badge variant="warning">Esclusivo</Badge>}
+                    {nDaFare > 0 && <Badge variant="warning">{nDaFare} da fare</Badge>}
                   </CardHeader>
                   <CardContent className="text-sm text-muted-foreground">
                     {c.batchTotali === 0 ? (

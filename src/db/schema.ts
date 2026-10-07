@@ -10,6 +10,7 @@ import {
   timestamp,
   index,
   jsonb,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 
 // --- Vocabolari chiusi -------------------------------------------------
@@ -338,6 +339,47 @@ export const silenziamentiErroreRelations = relations(silenziamentiErrore, ({ on
   sku: one(sku, { fields: [silenziamentiErrore.skuId], references: [sku.id] }),
   canale: one(canali, { fields: [silenziamentiErrore.canaleId], references: [canali.id] }),
 }));
+
+// --- Registro "esposto" dei portali statici (2026-10-07) -----------------
+// Cosa e' realmente caricato su ogni portale statico (Shopify/eBay/Subito/
+// Etsy), indipendente dai batch (i batch statici restano usa-e-getta: vedi
+// meccanismo_caricato in knowledge). Una riga per sku+canale:
+// - quantitaCaricata > 0: lo sku e' online con quel numero di pezzi
+// - quantitaCaricata = 0: lo sku era online ed e' stato rimosso (la riga
+//   resta per distinguere "mai caricato" da "tornato disponibile")
+// Nessuna riga = mai caricato su quel portale.
+export const esposizioneCanale = pgTable(
+  "esposizione_canale",
+  {
+    skuId: integer("sku_id")
+      .notNull()
+      .references(() => sku.id),
+    canaleId: integer("canale_id")
+      .notNull()
+      .references(() => canali.id),
+    quantitaCaricata: integer("quantita_caricata").notNull().default(0),
+    aggiornatoAt: timestamp("aggiornato_at").notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.skuId, table.canaleId] })]
+);
+
+// Blocco per sku+portale: lo sku NON va pubblicato su quel portale (non
+// compare mai in "Da aggiungere"; se era gia' caricato va in "Da togliere").
+// Si imposta dalla scheda sku o in blocco dal Magazzino. All'avvio si
+// importano gli 0 delle colonne PUB_* del Master.
+export const bloccoSkuCanale = pgTable(
+  "blocco_sku_canale",
+  {
+    skuId: integer("sku_id")
+      .notNull()
+      .references(() => sku.id),
+    canaleId: integer("canale_id")
+      .notNull()
+      .references(() => canali.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.skuId, table.canaleId] })]
+);
 
 // --- Relazioni (per db.query.*.findFirst/findMany con `with`) ----------
 export const skuRelations = relations(sku, ({ one, many }) => ({

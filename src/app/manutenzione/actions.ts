@@ -14,7 +14,7 @@ const TIPI_PROPRIETARIO = ["azienda", "soci", "terzo"] as const;
 const TIPI_DEPOSITO = ["deposito", "presso_proprietario", "esposizione"] as const;
 
 function aggiornaViste() {
-  revalidatePath("/manutenzione");
+  revalidatePath("/archivi", "layout");
   revalidatePath("/");
   revalidatePath("/magazzino/nuovo");
   revalidatePath("/pubblicazione");

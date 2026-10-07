@@ -3,6 +3,7 @@ import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { getMagazzino, getProprietariAttivi, getTipiOggetto, getUbicazioniAttive, type ColonnaOrdinabile } from "@/db/queries";
 import { Plus, FileSpreadsheet, Images } from "lucide-react";
+import { getCanaliStatici, getDaSistemarePerSku } from "@/db/esposizione-queries";
 import { VistaMagazzino } from "@/components/magazzino/vista-magazzino";
 
 // Whitelist di validazione del parametro URL ?ordina= (2026-09-23, estesa a
@@ -52,11 +53,13 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
 
   const filtriAttivi = Boolean(q || tipoId || condizione || proprietarioId || ubicazioneId || bloccato || disponibilita || senzaFoto || soloDatiMancanti);
 
-  const [righe, tipi, proprietari, ubicazioni] = await Promise.all([
+  const [righe, tipi, proprietari, ubicazioni, daSistemare, canaliStatici] = await Promise.all([
     getMagazzino({ ricerca: q, tipoId, condizione, proprietarioId, ubicazioneId, bloccato, disponibilita, senzaFoto, soloDatiMancanti, ordina, direzione }),
     getTipiOggetto(),
     getProprietariAttivi(),
     getUbicazioniAttive(),
+    getDaSistemarePerSku(),
+    getCanaliStatici(),
   ]);
 
   return (
@@ -80,6 +83,8 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
 
         <VistaMagazzino
           righe={righe}
+          daSistemare={daSistemare}
+          canaliStatici={canaliStatici.map((c) => ({ id: c.id, nome: c.nome }))}
           tipi={tipi}
           proprietari={proprietari}
           ubicazioni={ubicazioni}

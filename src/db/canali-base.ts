@@ -14,8 +14,11 @@ import { canali } from "./schema";
 export const CANALI_INIZIALI: (typeof canali.$inferInsert)[] = [
   { nome: "Shopify", tipo: "statico", esclusivo: false },
   { nome: "eBay", tipo: "statico", esclusivo: false },
-  { nome: "Etsy", tipo: "statico", esclusivo: false },
-  { nome: "Subito", tipo: "statico", esclusivo: false },
+  // Etsy non e' usato ne' studiato (2026-10-07): nasce non attivo, si riattiva
+  // da Archivi > Portali.
+  { nome: "Etsy", tipo: "statico", esclusivo: false, attivo: false },
+  // Subito: sempre 1 pezzo, qualunque sia il disponibile (2026-10-07).
+  { nome: "Subito", tipo: "statico", esclusivo: false, impostazioni: { quantitaFissa: 1 } },
   { nome: "Catawiki", tipo: "asta_online", esclusivo: true },
   { nome: "Bidspirit", tipo: "asta_online", esclusivo: true },
   { nome: "eBay Asta", tipo: "asta_online", esclusivo: true },

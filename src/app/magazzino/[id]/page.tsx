@@ -12,6 +12,9 @@ import { GiacenzaSku } from "./giacenza-sku";
 import { etichettaCausale } from "@/lib/giacenza";
 import { FotoForm } from "./foto-form";
 import { SchedaSkuForm } from "./scheda-form";
+import { PortaliSku } from "./portali-sku";
+import { Consolida } from "@/components/sistema/consolida";
+import { getStatoPortaliSku } from "@/db/esposizione-queries";
 
 function formatData(d: Date) {
   return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
@@ -43,7 +46,7 @@ export default async function ModificaSkuPage({
               ? "fotoeliminata"
               : undefined;
 
-  const [item, tipi, ubicazioni, proprietari, movimenti, foto, giacenza, disponibile, impegnato] = await Promise.all([
+  const [item, tipi, ubicazioni, proprietari, movimenti, foto, giacenza, disponibile, impegnato, statoPortali] = await Promise.all([
     getSkuById(skuId),
     getTipiOggetto(),
     getUbicazioniAttive(),
@@ -53,6 +56,7 @@ export default async function ModificaSkuPage({
     getSaldiSkuPerUbicazione(skuId),
     getDisponibileSku(skuId),
     getImpegnatoPerSku(skuId),
+    getStatoPortaliSku(skuId),
   ]);
 
   if (!item) notFound();
@@ -77,6 +81,16 @@ export default async function ModificaSkuPage({
               proprietari={proprietari.map((p) => ({ id: p.id, nome: p.nome }))}
               impegnato={impegnato}
             />
+          </CardContent>
+        </Card>
+
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Portali</CardTitle>
+            <CardDescription>Situazione sui portali statici. &quot;Non pubblicare qui&quot; esclude questo sku dal portale.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PortaliSku skuId={item.id} stato={statoPortali} />
           </CardContent>
         </Card>
 
@@ -136,6 +150,7 @@ export default async function ModificaSkuPage({
               <ChevronDown className="mr-6 size-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
             </summary>
           <CardContent className="flex flex-col gap-4">
+            <div className="flex justify-end"><Consolida skuId={item.id} compatto /></div>
             <MovimentoForm skuId={item.id} ubicazioni={ubicazioni} proprietari={proprietari} />
             <div className="rounded-lg border">
               {movimenti.length === 0 ? (
