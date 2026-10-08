@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { movimentiMagazzino, proprietari, ubicazioni } from "@/db/schema";
 
@@ -192,14 +192,32 @@ export async function eliminaDeposito(id: number): Promise<EsitoManutenzione> {
     if (attuale.tipo === "asta_fisica") {
       return { ok: false, errore: "I depositi delle case d'asta nascono con il canale e non si eliminano da qui." };
     }
-    const [{ n }] = await db
-      .select({ n: sql<number>`count(*)`.mapWith(Number) })
+    // Regola (2026-10-08): si elimina solo se e' VUOTO (nessun pezzo, per
+    // nessuno sku/proprietario). Lo storico dei suoi movimenti viene
+    // cancellato con lui: sommati danno zero per ogni sku, quindi nessuna
+    // quantita' cambia.
+    const nonVuoti = await db
+      .select({ skuId: movimentiMagazzino.skuId })
       .from(movimentiMagazzino)
-      .where(eq(movimentiMagazzino.ubicazioneId, id));
-    if (n > 0) {
-      return { ok: false, errore: "Ha gia' dei movimenti: non si puo' eliminare, solo disattivare." };
+      .where(eq(movimentiMagazzino.ubicazioneId, id))
+      .groupBy(movimentiMagazzino.skuId, movimentiMagazzino.proprietarioId)
+      .having(sql`sum(${movimentiMagazzino.quantitaDelta}) <> 0`);
+    if (nonVuoti.length > 0) {
+      return { ok: false, errore: "Contiene ancora dei pezzi: spostali altrove, poi potrai eliminarlo (oppure disattivalo)." };
     }
-    await db.delete(ubicazioni).where(eq(ubicazioni.id, id));
+    if (attuale.attivo && attuale.tipo === "deposito") {
+      const altri = await db
+        .select({ id: ubicazioni.id })
+        .from(ubicazioni)
+        .where(and(eq(ubicazioni.tipo, "deposito"), eq(ubicazioni.attivo, true), ne(ubicazioni.id, id)));
+      if (altri.length === 0) {
+        return { ok: false, errore: "E' l'unico deposito aziendale attivo: serve per i nuovi carichi, non si puo' eliminare." };
+      }
+    }
+    await db.transaction(async (tx) => {
+      await tx.delete(movimentiMagazzino).where(eq(movimentiMagazzino.ubicazioneId, id));
+      await tx.delete(ubicazioni).where(eq(ubicazioni.id, id));
+    });
     aggiornaViste();
     return { ok: true };
   } catch (e) {

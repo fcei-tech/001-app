@@ -183,15 +183,22 @@ function RigaDeposito({ d, altriNomi, onDisattivato }: { d: Deposito; altriNomi:
       <td className="p-2">
         {asta ? (
           <span className="text-xs text-muted-foreground">legato al canale</span>
-        ) : d.movimenti === 0 ? (
+        ) : d.pezzi === 0 ? (
           chiediConferma ? (
-            <span className="flex items-center gap-1 whitespace-nowrap">
-              <Button type="button" variant="destructive" size="sm" onClick={elimina} disabled={inCorso}>
-                Sì, elimina
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setChiediConferma(false)}>
-                No
-              </Button>
+            <span className="flex flex-col items-start gap-1">
+              {d.movimenti > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  Verranno cancellati anche i suoi {d.movimenti} movimenti storici (nessuna quantità cambia).
+                </span>
+              )}
+              <span className="flex items-center gap-1 whitespace-nowrap">
+                <Button type="button" variant="destructive" size="sm" onClick={elimina} disabled={inCorso}>
+                  Sì, elimina
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setChiediConferma(false)}>
+                  No
+                </Button>
+              </span>
             </span>
           ) : (
             <Button type="button" variant="ghost" size="sm" onClick={() => setChiediConferma(true)} disabled={inCorso}>
@@ -199,7 +206,7 @@ function RigaDeposito({ d, altriNomi, onDisattivato }: { d: Deposito; altriNomi:
             </Button>
           )
         ) : (
-          <span className="text-xs text-muted-foreground">in uso</span>
+          <span className="text-xs text-muted-foreground" title="Sposta prima i pezzi altrove, oppure disattiva">contiene pezzi</span>
         )}
       </td>
     </tr>

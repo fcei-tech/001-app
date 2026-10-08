@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { confermaDaFareAction } from "@/app/pubblicazione/esposizione-actions";
+import { annullaEsposizioneAction, confermaDaFareAction } from "@/app/pubblicazione/esposizione-actions";
 import { useSelezioneMultipla } from "@/lib/selezione-multipla";
-import { ETICHETTA_MOTIVO, type RigaDaFare, type TipoDaFare } from "@/lib/esposizione";
+import { ETICHETTA_MOTIVO, type Annullabile, type RigaDaFare, type TipoDaFare } from "@/lib/esposizione";
 
 // Riquadro "Da fare su <portale>" (2026-10-07, design approvato dal cliente
 // con l'anteprima cliccabile): visibile SOLO se c'e' qualcosa da fare. Tre
@@ -59,7 +59,7 @@ function Gruppo({
   canaleId: number;
   gruppo: (typeof GRUPPI)[number];
   righe: RigaDaFare[];
-  onEsito: (m: { ok: boolean; testo: string }) => void;
+  onEsito: (m: { ok: boolean; testo: string; annullabile?: Annullabile }) => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -73,7 +73,7 @@ function Gruppo({
     const ids = righe.filter((r) => selezionati.has(r.skuId)).map((r) => r.skuId);
     startTransition(async () => {
       const esito = await confermaDaFareAction(canaleId, gruppo.tipo, ids);
-      onEsito({ ok: esito.ok, testo: esito.ok ? (esito.messaggio ?? "Fatto.") : (esito.errore ?? "Errore.") });
+      onEsito({ ok: esito.ok, testo: esito.ok ? (esito.messaggio ?? "Fatto.") : (esito.errore ?? "Errore."), annullabile: esito.annullabile });
       setSelezionati(new Set());
       router.refresh();
     });
@@ -136,7 +136,19 @@ export function DaFarePortale({
   nomePortale: string;
   righe: RigaDaFare[];
 }) {
-  const [esito, setEsito] = useState<{ ok: boolean; testo: string } | null>(null);
+  const router = useRouter();
+  const [esito, setEsito] = useState<{ ok: boolean; testo: string; annullabile?: Annullabile } | null>(null);
+  const [annullando, startAnnulla] = useTransition();
+
+  function annulla() {
+    const a = esito?.annullabile;
+    if (!a) return;
+    startAnnulla(async () => {
+      const r = await annullaEsposizioneAction(a);
+      setEsito({ ok: r.ok, testo: r.ok ? "Operazione annullata: gli sku sono tornati com'erano." : (r.errore ?? "Annulla non riuscito.") });
+      router.refresh();
+    });
+  }
 
   if (righe.length === 0 && !esito) return null;
 
@@ -152,9 +164,16 @@ export function DaFarePortale({
           }`}
         >
           <span>{esito.testo}</span>
-          <button type="button" className="text-xs opacity-70 hover:opacity-100" onClick={() => setEsito(null)}>
-            Chiudi
-          </button>
+          <span className="flex items-center gap-3">
+            {esito.annullabile && (
+              <Button type="button" size="sm" variant="secondary" disabled={annullando} onClick={annulla}>
+                {annullando ? "…" : "Annulla"}
+              </Button>
+            )}
+            <button type="button" className="text-xs opacity-70 hover:opacity-100" onClick={() => setEsito(null)}>
+              Chiudi
+            </button>
+          </span>
         </div>
       )}
       {GRUPPI.map((g) => {

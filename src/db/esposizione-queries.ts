@@ -5,6 +5,9 @@ import { bloccoSkuCanale, canali, esposizioneCanale, movimentiMagazzino, sku } f
 import {
   disponibileLibero,
   quantitaDaCaricare,
+  type Annullabile,
+  type ModificaBlocco,
+  type ModificaEsposizione,
   type RigaDaFare,
   type TipoDaFare,
 } from "@/lib/esposizione";
@@ -124,17 +127,24 @@ export async function getDaSistemarePerSku(): Promise<Record<number, DaSistemare
 
 // Conferma: applica SOLO agli sku che sono ancora davvero in quella lista
 // (i dati possono essere cambiati dopo il caricamento della pagina).
+// Restituisce anche lo stato prima/dopo per l'Annulla.
 export async function confermaDaFare(
   canaleId: number,
   tipo: TipoDaFare,
   skuIds: number[]
-): Promise<number> {
-  if (skuIds.length === 0) return 0;
+): Promise<{ n: number; annullabile?: Annullabile }> {
+  if (skuIds.length === 0) return { n: 0 };
   const lista = (await getDaFareCanale(canaleId)).filter(
     (r) => r.tipo === tipo && skuIds.includes(r.skuId)
   );
-  if (lista.length === 0) return 0;
+  if (lista.length === 0) return { n: 0 };
+  const modifiche: ModificaEsposizione[] = [];
   await db.transaction(async (tx) => {
+    const prima = await tx
+      .select()
+      .from(esposizioneCanale)
+      .where(and(eq(esposizioneCanale.canaleId, canaleId), inArray(esposizioneCanale.skuId, lista.map((r) => r.skuId))));
+    const primaMap = new Map(prima.map((e) => [e.skuId, e.quantitaCaricata]));
     for (const r of lista) {
       const quantita = tipo === "togliere" ? 0 : r.quantitaTarget;
       await tx
@@ -144,28 +154,89 @@ export async function confermaDaFare(
           target: [esposizioneCanale.skuId, esposizioneCanale.canaleId],
           set: { quantitaCaricata: quantita, aggiornatoAt: new Date() },
         });
+      modifiche.push({ skuId: r.skuId, prima: primaMap.has(r.skuId) ? primaMap.get(r.skuId)! : null, dopo: quantita });
     }
   });
-  return lista.length;
+  return { n: lista.length, annullabile: { tipo: "esposizione", canaleId, modifiche } };
 }
 
 export async function impostaBlocco(
   skuIds: number[],
   canaleId: number,
   bloccato: boolean
-): Promise<number> {
-  if (skuIds.length === 0) return 0;
-  if (bloccato) {
-    await db
-      .insert(bloccoSkuCanale)
-      .values(skuIds.map((skuId) => ({ skuId, canaleId })))
-      .onConflictDoNothing();
-  } else {
-    await db
-      .delete(bloccoSkuCanale)
+): Promise<{ n: number; annullabile?: Annullabile }> {
+  if (skuIds.length === 0) return { n: 0 };
+  const modifiche: ModificaBlocco[] = [];
+  await db.transaction(async (tx) => {
+    const esistenti = await tx
+      .select()
+      .from(bloccoSkuCanale)
       .where(and(eq(bloccoSkuCanale.canaleId, canaleId), inArray(bloccoSkuCanale.skuId, skuIds)));
-  }
-  return skuIds.length;
+    const eraBloccato = new Set(esistenti.map((b) => b.skuId));
+    for (const id of skuIds) {
+      if (eraBloccato.has(id) !== bloccato) modifiche.push({ skuId: id, prima: eraBloccato.has(id), dopo: bloccato });
+    }
+    if (bloccato) {
+      await tx.insert(bloccoSkuCanale).values(skuIds.map((skuId) => ({ skuId, canaleId }))).onConflictDoNothing();
+    } else {
+      await tx
+        .delete(bloccoSkuCanale)
+        .where(and(eq(bloccoSkuCanale.canaleId, canaleId), inArray(bloccoSkuCanale.skuId, skuIds)));
+    }
+  });
+  return {
+    n: skuIds.length,
+    annullabile: modifiche.length ? { tipo: "blocco", canaleId, modifiche } : undefined,
+  };
+}
+
+// Annulla l'ultima operazione: tutto o niente. Rifiutato se uno degli sku
+// non e' piu' nello stato scritto dall'operazione (qualcuno l'ha cambiato).
+export async function annullaModifiche(a: Annullabile): Promise<{ ok: boolean; errore?: string }> {
+  const { canaleId } = a;
+  const ids = a.modifiche.map((m) => m.skuId);
+  if (ids.length === 0) return { ok: true };
+  let errore: string | undefined;
+  await db.transaction(async (tx) => {
+    if (a.tipo === "esposizione") {
+      const correnti = await tx
+        .select()
+        .from(esposizioneCanale)
+        .where(and(eq(esposizioneCanale.canaleId, canaleId), inArray(esposizioneCanale.skuId, ids)));
+      const mappa = new Map(correnti.map((e) => [e.skuId, e.quantitaCaricata]));
+      if (a.modifiche.some((m) => mappa.get(m.skuId) !== m.dopo)) {
+        errore = "Nel frattempo qualche sku e' stato cambiato: non annullo per non sovrascrivere.";
+        return;
+      }
+      for (const m of a.modifiche) {
+        if (m.prima === null) {
+          await tx.delete(esposizioneCanale).where(and(eq(esposizioneCanale.canaleId, canaleId), eq(esposizioneCanale.skuId, m.skuId)));
+        } else {
+          await tx
+            .update(esposizioneCanale)
+            .set({ quantitaCaricata: m.prima, aggiornatoAt: new Date() })
+            .where(and(eq(esposizioneCanale.canaleId, canaleId), eq(esposizioneCanale.skuId, m.skuId)));
+        }
+      }
+    } else {
+      const correnti = await tx
+        .select()
+        .from(bloccoSkuCanale)
+        .where(and(eq(bloccoSkuCanale.canaleId, canaleId), inArray(bloccoSkuCanale.skuId, ids)));
+      const bloccati = new Set(correnti.map((b) => b.skuId));
+      if (a.modifiche.some((m) => bloccati.has(m.skuId) !== m.dopo)) {
+        errore = "Nel frattempo qualche sku e' stato cambiato: non annullo per non sovrascrivere.";
+        return;
+      }
+      const daBloccare = a.modifiche.filter((m) => m.prima).map((m) => m.skuId);
+      const daSbloccare = a.modifiche.filter((m) => !m.prima).map((m) => m.skuId);
+      if (daBloccare.length) await tx.insert(bloccoSkuCanale).values(daBloccare.map((skuId) => ({ skuId, canaleId }))).onConflictDoNothing();
+      if (daSbloccare.length) {
+        await tx.delete(bloccoSkuCanale).where(and(eq(bloccoSkuCanale.canaleId, canaleId), inArray(bloccoSkuCanale.skuId, daSbloccare)));
+      }
+    }
+  });
+  return errore ? { ok: false, errore } : { ok: true };
 }
 
 export type StatoPortaleSku = {

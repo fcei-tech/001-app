@@ -58,3 +58,13 @@ export const ETICHETTA_MOTIVO: Record<MotivoDaFare, string> = {
   bloccato: "Bloccato su questo portale",
   abbassare: "Quantità sopra il disponibile",
 };
+
+// --- Annulla (2026-10-07) --------------------------------------------------
+// Ogni conferma / blocco in blocco restituisce lo "stato prima e dopo" degli
+// sku toccati: serve al bottone Annulla. Annulla e' tutto-o-niente e viene
+// rifiutato se nel frattempo uno di quegli sku e' stato cambiato da altri.
+export type ModificaEsposizione = { skuId: number; prima: number | null; dopo: number }; // prima null = nessuna riga
+export type ModificaBlocco = { skuId: number; prima: boolean; dopo: boolean };
+export type Annullabile =
+  | { tipo: "esposizione"; canaleId: number; modifiche: ModificaEsposizione[] }
+  | { tipo: "blocco"; canaleId: number; modifiche: ModificaBlocco[] };

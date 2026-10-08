@@ -34,7 +34,7 @@ import {
   type ValoreCampoInline,
   type VoceModificaInline,
 } from "@/lib/campi-inline";
-import { impostaBloccoPortaleAction } from "@/app/pubblicazione/esposizione-actions";
+import { annullaEsposizioneAction, impostaBloccoPortaleAction } from "@/app/pubblicazione/esposizione-actions";
 import type { DaSistemare } from "@/db/esposizione-queries";
 import { CellTesto, CellSelect, CellMisura } from "@/components/magazzino/editable-cell";
 import { campiMancanti, ETICHETTA_CAMPO_MANCANTE, SPIEGAZIONE_CAMPO_MANCANTE } from "@/lib/campi-mancanti-pubblicazione";
@@ -723,6 +723,19 @@ export function VistaMagazzino({
     const esito = await impostaBloccoPortaleAction(ids, Number(canaleBlocco), bloccare);
     if (esito.ok) {
       setInfoOk(esito.messaggio ?? "Fatto.");
+      const a = esito.annullabile;
+      if (a) {
+        setUndoSlot({
+          descrizione: `${ids.length} sku ${bloccare ? "bloccati" : "sbloccati"} su ${canaliStatici.find((c) => c.id === Number(canaleBlocco))?.nome ?? "portale"}`,
+          ripristina: async () => {
+            const e = await annullaEsposizioneAction(a);
+            if (!e.ok) setErrore(e.errore ?? "Annulla non riuscito");
+            else setInfoOk(null);
+            setUndoSlot(null);
+            router.refresh();
+          },
+        });
+      }
       setSelezionati(new Set());
     } else {
       setErrore(esito.errore ?? "Operazione non riuscita");
