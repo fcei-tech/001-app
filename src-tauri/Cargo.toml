@@ -19,3 +19,9 @@ serde_json = "1"
 [[bin]]
 name = "posterclub-app"
 path = "src/main.rs"
+
+# zip: tutte le versioni su crates.io (tranne la 9.x, incompatibile con
+# tauri-plugin-updater) sono state ritirate ("yanked") nell'ottobre 2026.
+# Si usa lo stesso codice direttamente dal repository ufficiale.
+[patch.crates-io]
+zip = { git = "https://github.com/zip-rs/zip2", tag = "v4.6.1" }
