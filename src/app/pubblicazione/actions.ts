@@ -313,7 +313,7 @@ export async function aggiornaCampoOverrideLottoAction(input: {
   batchLottoId: number;
   batchId: number;
   canaleId: number;
-  campo: "prezzo" | "riserva" | "condizione";
+  campo: "prezzo" | "riserva" | "condizione" | "descrizione";
   valore: string;
 }) {
   const { batchLottoId, batchId, canaleId, campo, valore } = input;
@@ -329,6 +329,10 @@ export async function aggiornaCampoOverrideLottoAction(input: {
   }
   if (campo === "condizione" && valore.trim() && !CONDIZIONI_VALIDE.includes(valore.trim() as (typeof CONDIZIONI_VALIDE)[number])) {
     throw new Error("Condizione non valida");
+  }
+
+  if (campo === "descrizione" && valore.length > 5000) {
+    throw new Error("Descrizione troppo lunga (massimo 5000 caratteri)");
   }
 
   await aggiornaCampoOverrideLottoQuery(batchLottoId, campo as keyof OverrideLotto, valore);

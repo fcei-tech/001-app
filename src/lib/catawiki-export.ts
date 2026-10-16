@@ -146,7 +146,7 @@ function capitalizzaPrimaLettera(s: string): string {
 // che aveva originato l'avviso Catawiki in primo luogo - qui l'aumento di
 // maiuscole nel blocco e' minimo (una lettera per riga, 7 righe), il resto
 // (nomi propri, "UE", ecc.) resta minuscolo esattamente come prima.
-function buildDescription(sku: SkuDettagliCatawiki): string {
+export function buildDescription(sku: SkuDettagliCatawiki): string {
   const misure = `${formatNumero(Number(sku.larghezza ?? 0))}x${formatNumero(Number(sku.altezza ?? 0))}`;
   const telatura = sku.supporto === "T" ? FRASE_TELATURA : "";
   const righe = [
@@ -188,7 +188,7 @@ export function generaRigaCatawiki(
   colonne[2] = CATAWIKI_AUCTION_TYPE; // C: Auction Type
   colonne[3] = CATAWIKI_OBJECT_TYPE; // D: Object type
   colonne[4] = CATAWIKI_LANGUAGE; // E: Language
-  colonne[5] = buildDescription(sku); // F: Description
+  colonne[5] = riga.descrizioneOverride ?? buildDescription(sku); // F: Description (testo del lotto se modificato)
   colonne[6] = calcolaEra(sku.anno); // G: D:Era
   colonne[7] = sku.opera; // H: D:Poster title (case originale, vedi nota buildDescription)
   colonne[9] = condizioneTesto; // J: D:Condition

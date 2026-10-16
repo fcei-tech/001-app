@@ -37,11 +37,13 @@ import {
   CellaPrezzoCatawiki,
   CellaRiservaCatawiki,
   CellaCondizioneCatawiki,
+  CellaDescrizioneCatawiki,
   SilenziaErroreButton,
 } from "@/components/pubblicazione/celle-override-catawiki";
 import { ImpostazioniBatchCatawikiForm } from "@/components/pubblicazione/impostazioni-batch-catawiki-form";
 import { GeneraFileCatawikiButton } from "@/components/pubblicazione/genera-file-catawiki-button";
 import { GeneraFileAstaFisicaButton } from "@/components/pubblicazione/genera-file-asta-fisica-button";
+import { buildDescription } from "@/lib/catawiki-export";
 import { SelettoreColonneLotti, type ColonnaLottiBatch } from "@/components/pubblicazione/selettore-colonne-lotti";
 import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
 import { BarraCanale } from "@/components/pubblicazione/barra-canale";
@@ -222,6 +224,7 @@ export default async function BatchPubblicazionePage({
           { id: "prezzo", etichetta: "Prezzo", defaultVisibile: true },
           { id: "riserva", etichetta: "Riserva", defaultVisibile: true },
           { id: "condizione", etichetta: "Condizione", defaultVisibile: true },
+          { id: "descrizione", etichetta: "Descrizione", defaultVisibile: true },
           { id: "statoExport", etichetta: "Stato export", defaultVisibile: true },
         ]
       : []),
@@ -493,6 +496,7 @@ export default async function BatchPubblicazionePage({
                         <TableHead data-col="prezzo" className="text-right">Prezzo</TableHead>
                         <TableHead data-col="riserva" className="text-right">Riserva</TableHead>
                         <TableHead data-col="condizione">Condizione</TableHead>
+                        <TableHead data-col="descrizione">Descrizione</TableHead>
                         <TableHead data-col="statoExport">Stato export</TableHead>
                       </>
                     )}
@@ -586,6 +590,28 @@ export default async function BatchPubblicazionePage({
                                     />
                                   ) : (
                                     <Badge variant="outline">{override?.condizione ?? l.sku.condizione}</Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell data-col="descrizione">
+                                  {catawikiModificabile ? (
+                                    <CellaDescrizioneCatawiki
+                                      batchLottoId={l.id}
+                                      batchId={batch.id}
+                                      canaleId={Number(canaleId)}
+                                      valore={override?.descrizione ?? null}
+                                      generata={buildDescription({
+                                        artista: l.sku.artista,
+                                        opera: l.sku.opera,
+                                        larghezza: l.sku.larghezza,
+                                        altezza: l.sku.altezza,
+                                        supporto: l.sku.supporto,
+                                        anno: (l.sku.anno ?? "").trim(),
+                                      })}
+                                    />
+                                  ) : override?.descrizione ? (
+                                    <Badge variant="warning">modificata</Badge>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">automatica</span>
                                   )}
                                 </TableCell>
                                 <TableCell data-col="statoExport">

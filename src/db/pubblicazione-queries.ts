@@ -192,6 +192,10 @@ export type OverrideLotto = {
   prezzo?: string;
   riserva?: string;
   condizione?: string;
+  // Descrizione modificata solo per questo lotto (2026-10-16): se presente
+  // sostituisce la descrizione generata dallo sku nell'output del portale;
+  // mai scritta sullo sku. Per ora usata solo da Catawiki.
+  descrizione?: string;
 };
 
 // Scrive/azzera l'override di un singolo lotto nel batch. Ogni campo vuoto
@@ -206,6 +210,14 @@ export async function aggiornaOverrideLotto(batchLottoId: number, valori: Overri
   if (valori.prezzo?.trim()) pulito.prezzo = valori.prezzo.trim();
   if (valori.riserva?.trim()) pulito.riserva = valori.riserva.trim();
   if (valori.condizione?.trim()) pulito.condizione = valori.condizione.trim();
+  // Questa funzione sostituisce l'intero override: la descrizione per lotto
+  // (gestita da un'altra cella) va preservata, non azzerata dal form
+  // Prezzo/Riserva.
+  const esistente = await db.query.batchLotti.findFirst({
+    where: (l, { eq }) => eq(l.id, batchLottoId),
+  });
+  const descrizione = valori.descrizione?.trim() || (esistente?.override as OverrideLotto | null)?.descrizione;
+  if (descrizione) pulito.descrizione = descrizione;
   await db
     .update(batchLotti)
     .set({ override: Object.keys(pulito).length > 0 ? pulito : null })

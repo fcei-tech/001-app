@@ -64,6 +64,7 @@ export type OverrideLottoCatawiki = {
   prezzo?: string;
   riserva?: string;
   condizione?: string;
+  descrizione?: string;
 };
 
 export type LottoPerRisoluzioneCatawiki = {
@@ -85,6 +86,8 @@ export type RigaCatawikiRisolta = {
   stimaLotto: number | null;
   riservaFinale: number | null;
   condizioneCodice: string;
+  // Descrizione scritta a mano per questo lotto (null = usa quella generata)
+  descrizioneOverride: string | null;
   errori: TipoErroreValidazione[];
   valido: boolean;
 };
@@ -164,6 +167,7 @@ export function risolviLottoCatawiki(
     stimaLotto,
     riservaFinale,
     condizioneCodice,
+    descrizioneOverride: lotto.override?.descrizione?.trim() || null,
     errori,
     valido: errori.length === 0,
   };

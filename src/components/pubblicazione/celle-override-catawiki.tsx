@@ -8,8 +8,18 @@
 // ancora in uso per Riserva proposta/asta_fisica. Ogni cella salva UN SOLO
 // campo alla volta tramite aggiornaCampoOverrideLottoAction, che si occupa
 // di preservare gli altri campi dell'override gia' presenti.
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { CellTesto, CellSelect } from "@/components/magazzino/editable-cell";
 import { aggiornaCampoOverrideLottoAction, silenziaErroreAction } from "@/app/pubblicazione/actions";
 import type { TipoErroreValidazione } from "@/lib/catawiki-resolver";
@@ -106,6 +116,78 @@ export function CellaCondizioneCatawiki({
         aggiornaCampoOverrideLottoAction({ batchLottoId, batchId, canaleId, campo: "condizione", valore: v })
       }
     />
+  );
+}
+
+// Descrizione per lotto (2026-10-16): la finestra si apre con il testo che
+// uscirebbe nel file (quello gia' modificato, altrimenti quello generato
+// dallo sku) cosi' basta ritoccarlo. "Ripristina automatica" svuota
+// l'override e il lotto torna alla descrizione generata. Mai scritta sullo
+// sku, vale solo per questo lotto di questo batch.
+export function CellaDescrizioneCatawiki({
+  batchLottoId,
+  batchId,
+  canaleId,
+  valore,
+  generata,
+}: Props & { valore: string | null; generata: string }) {
+  const [aperta, setAperta] = useState(false);
+  const [bozza, setBozza] = useState(valore ?? generata);
+  const [errore, setErrore] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function apri() {
+    setBozza(valore ?? generata);
+    setErrore(null);
+    setAperta(true);
+  }
+
+  function salva(nuovo: string) {
+    setErrore(null);
+    startTransition(async () => {
+      try {
+        await aggiornaCampoOverrideLottoAction({ batchLottoId, batchId, canaleId, campo: "descrizione", valore: nuovo });
+        setAperta(false);
+      } catch (e) {
+        setErrore(e instanceof Error ? e.message : "Salvataggio non riuscito");
+      }
+    });
+  }
+
+  // Se il testo coincide con quello generato non c'e' niente da sovrascrivere.
+  const daSalvare = bozza.trim() === generata.trim() ? "" : bozza;
+
+  return (
+    <>
+      <button type="button" onClick={apri} className="rounded text-left hover:opacity-75">
+        {valore ? <Badge variant="warning">modificata</Badge> : <span className="text-xs text-muted-foreground">automatica</span>}
+      </button>
+      <Dialog open={aperta} onOpenChange={setAperta}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Descrizione del lotto</DialogTitle>
+            <DialogDescription>
+              Vale solo per questo lotto in questo batch. Lo sku in Magazzino non cambia.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea value={bozza} onChange={(e) => setBozza(e.target.value)} rows={14} className="font-mono text-xs" />
+          {errore && <p className="text-sm text-destructive">{errore}</p>}
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button type="button" variant="ghost" disabled={pending || !valore} onClick={() => salva("")}>
+              Ripristina automatica
+            </Button>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" disabled={pending} onClick={() => setAperta(false)}>
+                Annulla
+              </Button>
+              <Button type="button" disabled={pending} onClick={() => salva(daSalvare)}>
+                {pending ? "Salvo…" : "Salva"}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
