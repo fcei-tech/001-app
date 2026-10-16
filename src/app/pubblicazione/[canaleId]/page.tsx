@@ -45,6 +45,8 @@ export default async function CanalePubblicazionePage({
     stato: b.stato,
     numeroLotti: b.lotti.length,
     numeroLottiConPrenotazione: contaLottiConPrenotazione(b, canale),
+    numeroLottiConsegnati: b.lotti.filter((l) => l.consegnatoAt !== null).length,
+    avvisoRegistroPortale: canale.tipo === "statico" && b.stato !== "bozza",
   }));
 
   return (

@@ -83,7 +83,7 @@ export async function getBatchPerCanale(canaleId: number) {
     // contaLottiConPrenotazione in src/lib/prenotazione-batch.ts, usato dai
     // controlli esterni cancella/cambia-stato) - dettaglio completo del
     // lotto (sku, override) resta in getBatch()
-    with: { lotti: { columns: { id: true, statoRiga: true } } },
+    with: { lotti: { columns: { id: true, statoRiga: true, consegnatoAt: true } } },
   });
 }
 

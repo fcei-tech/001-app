@@ -3,7 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
+import { contatoriMenuAction } from "@/app/menu-actions";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 
@@ -18,6 +19,20 @@ const VOCI = [
 
 export function Header() {
   const pathname = usePathname();
+  // Numero di cose da fare su Pubblicazione (registro dei portali statici):
+  // si ricalcola a ogni cambio pagina.
+  const [daFare, setDaFare] = useState<number | null>(null);
+  useEffect(() => {
+    let attivo = true;
+    contatoriMenuAction()
+      .then((c) => {
+        if (attivo && c) setDaFare(c.pubblicazione);
+      })
+      .catch(() => {});
+    return () => {
+      attivo = false;
+    };
+  }, [pathname]);
   // CORREZIONE 2026-09-23: prima questi Link navigavano senza controllo -
   // era la via con cui si aggirava (senza volerlo) l'avviso di modifiche
   // non salvate sulla scheda sku, perche' erano un percorso di uscita
@@ -64,6 +79,9 @@ export function Header() {
                 className={`rounded-md px-3 py-1.5 transition-colors ${attiva ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
               >
                 {v.etichetta}
+                {v.href === "/pubblicazione" && daFare !== null && daFare > 0 && (
+                  <span className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium tabular-nums text-foreground">{daFare}</span>
+                )}
               </Link>
             );
           })}

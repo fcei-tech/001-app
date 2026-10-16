@@ -36,6 +36,8 @@ export type RigaBatch = {
   stato: "bozza" | "confermato" | "pubblicato";
   numeroLotti: number;
   numeroLottiConPrenotazione: number;
+  numeroLottiConsegnati: number;
+  avvisoRegistroPortale: boolean;
 };
 
 export function ListaBatchCanale({
@@ -57,6 +59,8 @@ export function ListaBatchCanale({
   const righeSelezionate = righe.filter((r) => selezionati.has(r.id));
   const totaleLottiConPrenotazione = righeSelezionate.reduce((s, r) => s + r.numeroLottiConPrenotazione, 0);
   const batchConPrenotazione = righeSelezionate.filter((r) => r.numeroLottiConPrenotazione > 0).length;
+  const lottiConsegnatiSelezionati = righeSelezionate.reduce((s, r) => s + r.numeroLottiConsegnati, 0);
+  const batchRegistroPortale = righeSelezionate.filter((r) => r.avvisoRegistroPortale).length;
 
   function eliminaSelezionati() {
     const fd = new FormData();
@@ -191,6 +195,8 @@ export function ListaBatchCanale({
                       batchId={r.id}
                       canaleId={canaleId}
                       numeroLottiConPrenotazione={r.numeroLottiConPrenotazione}
+                      numeroLottiConsegnati={r.numeroLottiConsegnati}
+                      avvisoRegistroPortale={r.avvisoRegistroPortale}
                     />
                   </div>
                 </TableCell>
@@ -222,6 +228,18 @@ export function ListaBatchCanale({
               )}
             </DialogDescription>
           </DialogHeader>
+          {lottiConsegnatiSelezionati > 0 && (
+            <p className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+              Attenzione: {lottiConsegnatiSelezionati} lott{lottiConsegnatiSelezionati === 1 ? "o risulta consegnato" : "i risultano consegnati"}. La
+              consegna resta nel Magazzino, ma non potrai più annullarla o registrarne il rientro da qui.
+            </p>
+          )}
+          {batchRegistroPortale > 0 && (
+            <p className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+              Attenzione: eliminare i batch non cambia il registro di cosa è caricato sul portale. Se i pezzi erano già online restano segnati come
+              caricati.
+            </p>
+          )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDialogEliminaAperto(false)} disabled={pending}>
               Annulla

@@ -99,7 +99,7 @@ function RigaDeposito({ d, altriNomi, onDisattivato }: { d: Deposito; altriNomi:
           title={asta ? "Il nome coincide con quello del canale: non modificabile" : undefined}
           aria-label="Nome deposito"
           aria-invalid={doppio}
-          className="min-w-40"
+          className="w-full min-w-0"
         />
       </td>
       <td className="p-2">
@@ -112,7 +112,7 @@ function RigaDeposito({ d, altriNomi, onDisattivato }: { d: Deposito; altriNomi:
               setTipo(e.target.value);
               salva({ tipo: e.target.value });
             }}
-            className={CLASSE_SELECT}
+            className={`${CLASSE_SELECT} w-full`}
             aria-label="Tipo"
           >
             {TIPI.map((t) => (
@@ -123,8 +123,20 @@ function RigaDeposito({ d, altriNomi, onDisattivato }: { d: Deposito; altriNomi:
           </select>
         )}
       </td>
-      <td className="p-2 text-center">
-        <input
+      <td className="p-2">
+        <Input
+          value={referente}
+          onChange={(e) => setReferente(e.target.value)}
+          onBlur={() => referente !== (d.referente ?? "") && salva()}
+          aria-label="Referente"
+          placeholder="—"
+          className="w-full min-w-0"
+        />
+      </td>
+      <td className="p-2">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          <label className="flex items-center gap-1.5 whitespace-nowrap">
+            <input
           type="checkbox"
           className="size-4"
           checked={vendibile}
@@ -134,9 +146,10 @@ function RigaDeposito({ d, altriNomi, onDisattivato }: { d: Deposito; altriNomi:
           }}
           aria-label="Vendibile"
         />
-      </td>
-      <td className="p-2 text-center">
-        <input
+            Vendibile
+          </label>
+          <label className="flex items-center gap-1.5 whitespace-nowrap">
+            <input
           type="checkbox"
           className="size-4"
           checked={fiscale}
@@ -146,19 +159,10 @@ function RigaDeposito({ d, altriNomi, onDisattivato }: { d: Deposito; altriNomi:
           }}
           aria-label="Fiscale"
         />
-      </td>
-      <td className="p-2">
-        <Input
-          value={referente}
-          onChange={(e) => setReferente(e.target.value)}
-          onBlur={() => referente !== (d.referente ?? "") && salva()}
-          aria-label="Referente"
-          placeholder="—"
-          className="min-w-32"
-        />
-      </td>
-      <td className="p-2 text-center">
-        <input
+            Fiscale
+          </label>
+          <label className="flex items-center gap-1.5 whitespace-nowrap">
+            <input
           type="checkbox"
           className="size-4"
           checked={attivo}
@@ -168,19 +172,22 @@ function RigaDeposito({ d, altriNomi, onDisattivato }: { d: Deposito; altriNomi:
           }}
           aria-label="Attivo"
         />
-      </td>
-      <td className="p-2 text-sm text-muted-foreground whitespace-nowrap">
-        {d.pezzi} pz · {d.movimenti} mov.
+            Attivo
+          </label>
+        </div>
       </td>
       <td className="p-2 text-sm">
+        <div className="flex flex-col items-start gap-1">
+          <span className="whitespace-nowrap text-muted-foreground">{d.pezzi} pz · {d.movimenti} mov.</span>
+          <div>
         {inCorso ? (
           <span className="text-muted-foreground">Salvo…</span>
         ) : messaggio ? (
           <span className={messaggio.errore ? "text-destructive" : "text-muted-foreground"}>{messaggio.testo}</span>
         ) : null}
         {doppio && !messaggio && <span className="text-destructive">Nome gia&apos; usato</span>}
-      </td>
-      <td className="p-2">
+          </div>
+          <div>
         {asta ? (
           <span className="text-xs text-muted-foreground">legato al canale</span>
         ) : d.pezzi === 0 ? (
@@ -208,6 +215,8 @@ function RigaDeposito({ d, altriNomi, onDisattivato }: { d: Deposito; altriNomi:
         ) : (
           <span className="text-xs text-muted-foreground" title="Sposta prima i pezzi altrove, oppure disattiva">contiene pezzi</span>
         )}
+          </div>
+        </div>
       </td>
     </tr>
   );
@@ -252,23 +261,19 @@ export function GestioneDepositi({ depositi }: { depositi: Deposito[] }) {
         <h2 className="text-lg font-semibold">Depositi</h2>
         <p className="text-sm text-muted-foreground">
           Dove si trovano fisicamente i pezzi. &quot;Vendibile&quot; e &quot;Fiscale&quot; sono per ora solo informativi.
-          I depositi delle case d&apos;asta nascono insieme al canale e non si rinominano. Un deposito gia&apos; usato non
-          si elimina: lo si disattiva.
+          I depositi delle case d&apos;asta nascono insieme al canale e non si rinominano. Un deposito si elimina solo se
+          e&apos; vuoto (senza pezzi); altrimenti lo si disattiva.
         </p>
       </div>
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm">
+      <div className="rounded-lg border">
+        <table className="w-full table-fixed text-sm">
           <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
-              <th className="p-2 font-medium">Nome</th>
-              <th className="p-2 font-medium">Tipo</th>
-              <th className="p-2 font-medium text-center">Vendibile</th>
-              <th className="p-2 font-medium text-center">Fiscale</th>
-              <th className="p-2 font-medium">Referente</th>
-              <th className="p-2 font-medium text-center">Attivo</th>
-              <th className="p-2 font-medium">Contenuto</th>
-              <th className="p-2 font-medium" />
-              <th className="p-2 font-medium" />
+              <th className="w-[24%] p-2 font-medium">Nome</th>
+              <th className="w-[15%] p-2 font-medium">Tipo</th>
+              <th className="w-[20%] p-2 font-medium">Referente</th>
+              <th className="w-[19%] p-2 font-medium">Opzioni</th>
+              <th className="w-[22%] p-2 font-medium">Contenuto</th>
             </tr>
           </thead>
           <tbody className="divide-y">

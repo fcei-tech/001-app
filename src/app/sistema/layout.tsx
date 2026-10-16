@@ -11,6 +11,7 @@ export default function SistemaLayout({ children }: { children: React.ReactNode 
           voci={[
             { href: "/sistema/collegamenti", etichetta: "Collegamenti" },
             { href: "/sistema/dati", etichetta: "Dati" },
+            { href: "/sistema/pulizia", etichetta: "Pulizia dati" },
             { href: "/sistema/zona-pericolo", etichetta: "Zona pericolo" },
           ]}
         />

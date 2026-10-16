@@ -25,6 +25,8 @@ export function EliminaBatchButton({
   batchId,
   canaleId,
   numeroLottiConPrenotazione = 0,
+  numeroLottiConsegnati = 0,
+  avvisoRegistroPortale = false,
 }: {
   batchId: number;
   canaleId: number;
@@ -32,6 +34,12 @@ export function EliminaBatchButton({
   // contaLottiConPrenotazione) - 0 = nessun avviso aggiuntivo, il testo resta
   // quello generico.
   numeroLottiConPrenotazione?: number;
+  // Lotti gia' consegnati (movimento di spostamento gia' scritto): cancellando
+  // il batch si perde il modo di annullare la consegna da qui.
+  numeroLottiConsegnati?: number;
+  // Batch di un portale statico gia' confermato/pubblicato: eliminarlo non
+  // cambia il registro "caricato" del portale.
+  avvisoRegistroPortale?: boolean;
 }) {
   const [aperto, setAperto] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -61,6 +69,19 @@ export function EliminaBatchButton({
               )}
             </DialogDescription>
           </DialogHeader>
+          {numeroLottiConsegnati > 0 && (
+            <p className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+              Attenzione: {numeroLottiConsegnati} lott{numeroLottiConsegnati === 1 ? "o risulta consegnato" : "i risultano consegnati"}. La
+              consegna resta nel Magazzino (i pezzi restano dove sono stati spostati) ma, eliminando il batch, non potrai più annullarla o
+              registrarne il rientro da qui.
+            </p>
+          )}
+          {avvisoRegistroPortale && (
+            <p className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+              Attenzione: eliminare il batch non cambia il registro di cosa è caricato sul portale. Se i pezzi erano già online restano segnati
+              come caricati.
+            </p>
+          )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setAperto(false)} disabled={pending}>
               Annulla

@@ -328,6 +328,8 @@ export default async function BatchPubblicazionePage({
               batchId={batch.id}
               canaleId={Number(canaleId)}
               numeroLottiConPrenotazione={numeroLottiConPrenotazione}
+              numeroLottiConsegnati={batch.lotti.filter((l) => l.consegnatoAt !== null).length}
+              avvisoRegistroPortale={batch.canale.tipo === "statico" && batch.stato !== "bozza"}
             />
             {inBozza && (
               // Spostato dal fondo pagina qui in alto (2026-09-23 notte,

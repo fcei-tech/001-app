@@ -85,7 +85,7 @@ function RigaProprietario({ p, altriNomi, onDisattivato }: { p: Proprietario; al
           onBlur={() => nome !== p.nome && salva()}
           aria-label="Nome proprietario"
           aria-invalid={doppio}
-          className="min-w-40"
+          className="w-full min-w-0"
         />
       </td>
       <td className="p-2">
@@ -95,7 +95,7 @@ function RigaProprietario({ p, altriNomi, onDisattivato }: { p: Proprietario; al
             setTipo(e.target.value);
             salva({ tipo: e.target.value });
           }}
-          className={CLASSE_SELECT}
+          className={`${CLASSE_SELECT} w-full`}
           aria-label="Tipo"
         >
           {TIPI.map((t) => (
@@ -105,8 +105,10 @@ function RigaProprietario({ p, altriNomi, onDisattivato }: { p: Proprietario; al
           ))}
         </select>
       </td>
-      <td className="p-2 text-center">
-        <input
+      <td className="p-2">
+        <div className="flex flex-col gap-1 text-xs">
+          <label className="flex items-center gap-1.5 whitespace-nowrap">
+            <input
           type="checkbox"
           className="size-4"
           checked={conta}
@@ -116,9 +118,10 @@ function RigaProprietario({ p, altriNomi, onDisattivato }: { p: Proprietario; al
           }}
           aria-label="Conta nel valore aziendale"
         />
-      </td>
-      <td className="p-2 text-center">
-        <input
+            Conta nel valore aziendale
+          </label>
+          <label className="flex items-center gap-1.5 whitespace-nowrap">
+            <input
           type="checkbox"
           className="size-4"
           checked={attivo}
@@ -128,19 +131,22 @@ function RigaProprietario({ p, altriNomi, onDisattivato }: { p: Proprietario; al
           }}
           aria-label="Attivo"
         />
-      </td>
-      <td className="p-2 text-sm text-muted-foreground whitespace-nowrap">
-        {p.pezzi} pz · {p.movimenti} mov.
+            Attivo
+          </label>
+        </div>
       </td>
       <td className="p-2 text-sm">
+        <div className="flex flex-col items-start gap-1">
+          <span className="whitespace-nowrap text-muted-foreground">{p.pezzi} pz · {p.movimenti} mov.</span>
+          <div>
         {inCorso ? (
           <span className="text-muted-foreground">Salvo…</span>
         ) : messaggio ? (
           <span className={messaggio.errore ? "text-destructive" : "text-muted-foreground"}>{messaggio.testo}</span>
         ) : null}
         {doppio && !messaggio && <span className="text-destructive">Nome gia&apos; usato</span>}
-      </td>
-      <td className="p-2">
+          </div>
+          <div>
         {p.movimenti === 0 ? (
           chiediConferma ? (
             <span className="flex items-center gap-1 whitespace-nowrap">
@@ -159,6 +165,8 @@ function RigaProprietario({ p, altriNomi, onDisattivato }: { p: Proprietario; al
         ) : (
           <span className="text-xs text-muted-foreground">in uso</span>
         )}
+          </div>
+        </div>
       </td>
     </tr>
   );
@@ -203,17 +211,14 @@ export function GestioneProprietari({ proprietari }: { proprietari: Proprietario
           disattiva.
         </p>
       </div>
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm">
+      <div className="rounded-lg border">
+        <table className="w-full table-fixed text-sm">
           <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
-              <th className="p-2 font-medium">Nome</th>
-              <th className="p-2 font-medium">Tipo</th>
-              <th className="p-2 font-medium text-center">Conta nel valore aziendale</th>
-              <th className="p-2 font-medium text-center">Attivo</th>
-              <th className="p-2 font-medium">Uso</th>
-              <th className="p-2 font-medium" />
-              <th className="p-2 font-medium" />
+              <th className="w-[30%] p-2 font-medium">Nome</th>
+              <th className="w-[18%] p-2 font-medium">Tipo</th>
+              <th className="w-[28%] p-2 font-medium">Opzioni</th>
+              <th className="w-[24%] p-2 font-medium">Uso</th>
             </tr>
           </thead>
           <tbody className="divide-y">
