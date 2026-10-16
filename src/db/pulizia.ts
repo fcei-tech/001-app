@@ -29,6 +29,10 @@ export type AnteprimaPulizia = {
   skuConFoto: number;
   skuEliminabili: number;
   skuNonEliminabiliPerche: { movimentiRimasti: number; lottiRimasti: number };
+  // Righe di blocchi / "caricato" che spariscono perche' legate agli sku
+  // eliminati (solo se la voce "elimina sku" e' scelta).
+  blocchiDegliSkuEliminati: number;
+  caricatoDegliSkuEliminati: number;
   foto: number;
 };
 
@@ -67,6 +71,13 @@ export async function anteprimaPulizia(s: SceltaPulizia): Promise<AnteprimaPuliz
       s.movimenti ? Promise.resolve(0) : conta(sql`select count(distinct sku_id) as n from movimenti_magazzino`),
       s.batch ? Promise.resolve(0) : conta(sql`select count(distinct sku_id) as n from batch_lotti`),
     ]);
+  const listaId = eliminabili.length > 0 ? sql.join(eliminabili.map((i) => sql`${i}`), sql`, `) : null;
+  const [blocchiDegliSkuEliminati, caricatoDegliSkuEliminati] = listaId
+    ? await Promise.all([
+        conta(sql`select count(*) as n from blocco_sku_canale where sku_id in (${listaId})`),
+        conta(sql`select count(*) as n from esposizione_canale where sku_id in (${listaId})`),
+      ])
+    : [0, 0];
   return {
     movimenti,
     pezziAttuali,
@@ -79,6 +90,8 @@ export async function anteprimaPulizia(s: SceltaPulizia): Promise<AnteprimaPuliz
     skuConFoto,
     skuEliminabili: eliminabili.length,
     skuNonEliminabiliPerche: { movimentiRimasti: movRimasti, lottiRimasti },
+    blocchiDegliSkuEliminati,
+    caricatoDegliSkuEliminati,
     foto,
   };
 }

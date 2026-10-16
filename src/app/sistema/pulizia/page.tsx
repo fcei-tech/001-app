@@ -9,10 +9,10 @@ export default function PuliziaPage() {
       <h1 className="text-2xl font-semibold">Pulizia dati</h1>
       <Card>
         <CardHeader>
-          <CardTitle>Prepara il punto zero</CardTitle>
+          <CardTitle>Ripartenza dei dati</CardTitle>
           <CardDescription>
-            Scegli cosa cancellare prima di caricare i dati veri. Le foto e i loro link non si toccano mai. Ordine consigliato: Pulizia → Dati →
-            Importa da Excel (FP e CV).
+            Prepara il software a ricevere FP e CV come punto zero. Le foto e i loro link non si toccano mai. Non serve per i normali
+            aggiornamenti: per quelli basta Importa da Excel. Ordine: Backup → Pulizia → Importa da Excel (FP e CV).
           </CardDescription>
         </CardHeader>
         <CardContent>
