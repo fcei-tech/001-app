@@ -7,6 +7,8 @@
 // (CONFIG_GENERALE: qty_soglia_1_pezzo_max=4, qty_soglia_2_pezzi_min=5,
 // qty_soglia_2_pezzi_max=8, qty_soglia_3_pezzi_min=9).
 
+import { calcolaPrezzoShopify } from "@/lib/shopify-export";
+
 export const FASCE_QUANTITA = [
   { fino: 4, pezzi: 1 },
   { fino: 8, pezzi: 2 },
@@ -36,8 +38,29 @@ export function quantitaDaCaricare(libero: number, impostazioniCanale: unknown):
   return QUANTITA_MASSIMA_VISIBILE;
 }
 
-export type MotivoDaFare = "nuovo" | "tornato" | "esaurito" | "bloccato" | "abbassare";
-export type TipoDaFare = "aggiungere" | "togliere" | "abbassare";
+// --- Prezzo per portale ------------------------------------------------------
+// Il prezzo di un portale statico deriva SEMPRE dal prezzo eBay dello sku
+// (nessun ripiego su altri prezzi):
+//  - Shopify = ROUNDUP(prezzo eBay x 0,9) all'euro (stessa funzione del file
+//    prodotti, cosi' lista e file non possono divergere)
+//  - eBay, Subito, Etsy = prezzo eBay cosi' com'e'
+// null = prezzo eBay mancante o non valido (per quel portale non c'e' prezzo).
+export function prezzoPerPortale(nomePortale: string, prezzoEbay: string | number | null): number | null {
+  if (prezzoEbay === null || prezzoEbay === undefined) return null;
+  const testo = String(prezzoEbay).trim().replace(",", ".");
+  const p = Number(testo);
+  if (!testo || !Number.isFinite(p) || p <= 0) return null;
+  if (nomePortale === "Shopify") return calcolaPrezzoShopify(testo);
+  return Math.round(p * 100) / 100;
+}
+
+export function prezziDiversi(a: number | null, b: number | null): boolean {
+  if (a === null || b === null) return false;
+  return Math.round(a * 100) !== Math.round(b * 100);
+}
+
+export type MotivoDaFare = "nuovo" | "tornato" | "esaurito" | "bloccato" | "ritirato" | "abbassare" | "prezzo";
+export type TipoDaFare = "aggiungere" | "togliere" | "abbassare" | "riprezzare";
 
 export type RigaDaFare = {
   skuId: number;
@@ -49,6 +72,11 @@ export type RigaDaFare = {
   quantitaCaricata: number;
   disponibileLibero: number;
   quantitaTarget: number;
+  // Prezzo registrato come online e prezzo di oggi per quel portale (null se non
+  // disponibili). Si mostrano in "riprezzare"; alla conferma di aggiungere/
+  // riprezzare il prezzo di oggi diventa quello registrato.
+  prezzoCaricato: number | null;
+  prezzoTarget: number | null;
 };
 
 export const ETICHETTA_MOTIVO: Record<MotivoDaFare, string> = {
@@ -56,15 +84,25 @@ export const ETICHETTA_MOTIVO: Record<MotivoDaFare, string> = {
   tornato: "Di nuovo disponibile",
   esaurito: "Esaurito",
   bloccato: "Bloccato su questo portale",
+  ritirato: "Ritirato da te",
   abbassare: "Quantità sopra il disponibile",
+  prezzo: "Prezzo cambiato",
 };
 
 // --- Annulla (2026-10-07) --------------------------------------------------
 // Ogni conferma / blocco in blocco restituisce lo "stato prima e dopo" degli
 // sku toccati: serve al bottone Annulla. Annulla e' tutto-o-niente e viene
 // rifiutato se nel frattempo uno di quegli sku e' stato cambiato da altri.
-export type ModificaEsposizione = { skuId: number; prima: number | null; dopo: number }; // prima null = nessuna riga
-export type ModificaBlocco = { skuId: number; prima: boolean; dopo: boolean };
+// prezzoPrima/prezzoDopo: prezzo caricato registrato (assenti = non toccato).
+export type ModificaEsposizione = {
+  skuId: number;
+  prima: number | null; // null = nessuna riga
+  dopo: number;
+  prezzoPrima?: number | null;
+  prezzoDopo?: number | null;
+};
+// motivoPrima: "blocco" | "ritiro" com'era prima (serve a ripristinarlo).
+export type ModificaBlocco = { skuId: number; prima: boolean; dopo: boolean; motivoPrima?: string };
 export type Annullabile =
   | { tipo: "esposizione"; canaleId: number; modifiche: ModificaEsposizione[] }
   | { tipo: "blocco"; canaleId: number; modifiche: ModificaBlocco[] };

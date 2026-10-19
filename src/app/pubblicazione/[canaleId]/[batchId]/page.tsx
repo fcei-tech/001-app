@@ -185,6 +185,7 @@ export default async function BatchPubblicazionePage({
             skuCondizione: l.sku.condizione,
             skuAnno: l.sku.anno,
             skuPrezzoCatawiki: l.sku.prezzoCatawiki,
+            skuRiservaCatawiki: l.sku.riservaCatawiki,
             override: (l.override as OverrideLottoCatawiki | null) ?? null,
             numeroFoto: fotoMappaCatawiki.get(l.skuId)?.length ?? 0,
           })
@@ -622,6 +623,8 @@ export default async function BatchPubblicazionePage({
                                       Stima: {risolta.stimaLotto !== null ? `€ ${risolta.stimaLotto.toFixed(2)}` : "—"}
                                       {" · "}
                                       Riserva: {risolta.riservaFinale !== null ? `€ ${risolta.riservaFinale.toFixed(2)}` : "—"}
+                                      {risolta.riservaFinale !== null && risolta.origineRiserva === "sku" && " (dallo sku)"}
+                                      {risolta.riservaFinale !== null && risolta.origineRiserva === "automatica" && " (50% automatica)"}
                                     </div>
                                   ) : (
                                     <div className="flex flex-wrap gap-1">

@@ -87,7 +87,7 @@ export default async function ModificaSkuPage({
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>Portali</CardTitle>
-            <CardDescription>Situazione sui portali statici. &quot;Non pubblicare qui&quot; esclude questo sku dal portale.</CardDescription>
+            <CardDescription>Situazione sui portali statici. &quot;Ritira da qui&quot; toglie questo sku dal portale finché non lo rimetti in vendita.</CardDescription>
           </CardHeader>
           <CardContent>
             <PortaliSku skuId={item.id} stato={statoPortali} />

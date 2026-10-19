@@ -8,7 +8,7 @@ import { impostaBloccoPortaleAction } from "@/app/pubblicazione/esposizione-acti
 import type { StatoPortaleSku } from "@/db/esposizione-queries";
 
 // Situazione dello sku sui portali statici: quanti pezzi risultano caricati
-// e l'interruttore "Non pubblicare qui" (blocco).
+// e l'azione "Ritira da qui" / "Rimetti in vendita".
 export function PortaliSku({ skuId, stato }: { skuId: number; stato: StatoPortaleSku[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -23,7 +23,9 @@ export function PortaliSku({ skuId, stato }: { skuId: number; stato: StatoPortal
         <div key={s.canaleId} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
           <div className="flex items-center gap-2 text-sm">
             <span className="font-medium">{s.portale}</span>
-            {s.bloccato ? (
+            {s.ritirato ? (
+              <Badge variant="warning">Ritirato</Badge>
+            ) : s.bloccato ? (
               <Badge variant="destructive">Non pubblicare qui</Badge>
             ) : s.quantitaCaricata > 0 ? (
               <Badge variant="success">Caricato: {s.quantitaCaricata}</Badge>
@@ -39,13 +41,13 @@ export function PortaliSku({ skuId, stato }: { skuId: number; stato: StatoPortal
             onClick={() =>
               start(async () => {
                 setErrore(null);
-                const r = await impostaBloccoPortaleAction([skuId], s.canaleId, !s.bloccato);
+                const r = await impostaBloccoPortaleAction([skuId], s.canaleId, !s.bloccato, "ritiro");
                 if (!r.ok) setErrore(r.errore ?? "Non riuscito");
                 router.refresh();
               })
             }
           >
-            {s.bloccato ? "Sblocca" : "Non pubblicare qui"}
+            {s.bloccato ? "Rimetti in vendita" : "Ritira da qui"}
           </Button>
         </div>
       ))}

@@ -5,8 +5,9 @@ import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { TableEmpty } from "@/components/ui/table-empty";
 import { getCanaleById, getBatchPerCanale } from "@/db/pubblicazione-queries";
-import { getDaFareCanale } from "@/db/esposizione-queries";
+import { getDaFareCanale, getRitiratiCanale } from "@/db/esposizione-queries";
 import { DaFarePortale } from "@/components/pubblicazione/da-fare-portale";
+import { RitiratiPortale } from "@/components/pubblicazione/ritirati-portale";
 import { creaBatch } from "../actions";
 import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
 import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
@@ -36,6 +37,7 @@ export default async function CanalePubblicazionePage({
   // Portali statici: cosa e' da aggiungere / togliere / abbassare (registro
   // "esposto", 2026-10-07). Per le aste non esiste questo registro.
   const daFare = canale.tipo === "statico" ? await getDaFareCanale(canale.id) : [];
+  const ritirati = canale.tipo === "statico" ? await getRitiratiCanale(canale.id) : [];
 
   const colore = coloreCanale(canale.nome);
   const fasce = fasceCanale(canale.nome);
@@ -97,6 +99,7 @@ export default async function CanalePubblicazionePage({
         </div>
 
         {canale.tipo === "statico" && <DaFarePortale canaleId={canale.id} nomePortale={canale.nome} righe={daFare} />}
+        {canale.tipo === "statico" && <RitiratiPortale canaleId={canale.id} nomePortale={canale.nome} righe={ritirati} />}
 
         {righe.length === 0 ? (
           <div className="rounded-lg border">

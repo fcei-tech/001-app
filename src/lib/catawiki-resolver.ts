@@ -74,6 +74,9 @@ export type LottoPerRisoluzioneCatawiki = {
   skuCondizione: string;
   skuAnno: string | null;
   skuPrezzoCatawiki: string | null;
+  // Riserva scritta sullo sku (campo "Riserva Catawiki" di STOCK FP/CV):
+  // se compilata va rispettata (2026-10-19), vedi risolviLottoCatawiki.
+  skuRiservaCatawiki?: string | null;
   override: OverrideLottoCatawiki | null;
   numeroFoto: number;
 };
@@ -85,6 +88,9 @@ export type RigaCatawikiRisolta = {
   prezzoBase: number | null;
   stimaLotto: number | null;
   riservaFinale: number | null;
+  // Da dove arriva la riserva (prima del modificatore in euro del batch):
+  // scritta sul lotto, scritta sullo sku, oppure calcolata (stima x 0,5).
+  origineRiserva: "lotto" | "sku" | "automatica" | null;
   condizioneCodice: string;
   // Descrizione scritta a mano per questo lotto (null = usa quella generata)
   descrizioneOverride: string | null;
@@ -147,14 +153,24 @@ export function risolviLottoCatawiki(
     errori.push("prezzo_mancante_o_sotto_soglia");
   }
 
+  // Riserva: ordine di priorita' (2026-10-19, richiesta esplicita del cliente:
+  // "se sono compilate su CV e FP vanno rispettate"):
+  //  1) riserva scritta sul lotto nel batch
+  //  2) riserva scritta sullo sku (STOCK FP/CV)
+  //  3) solo se mancano entrambe: stima finale x 0,5
+  // Il modificatore in euro del batch si applica poi sopra, in tutti i casi.
   let riservaFinale: number | null = null;
+  let origineRiserva: RigaCatawikiRisolta["origineRiserva"] = null;
   if (impostazioni.riservaAttiva && stimaLotto !== null) {
     const riservaOverride = parseNumero(lotto.override?.riserva);
-    const base = riservaOverride ?? round2(stimaLotto * CATAWIKI_MOLTIPLICATORE_RISERVA_FALLBACK);
+    const riservaSku = parseNumero(lotto.skuRiservaCatawiki);
+    const base = riservaOverride ?? riservaSku ?? round2(stimaLotto * CATAWIKI_MOLTIPLICATORE_RISERVA_FALLBACK);
+    origineRiserva = riservaOverride !== null ? "lotto" : riservaSku !== null ? "sku" : "automatica";
     const conModificatore = round2(base + impostazioni.modificatoreRiservaEur);
     // Mai un valore <=0 (e mai 0 letterale, verrebbe letto come riserva
     // reale a 0 euro) - floor a vuoto, stessa regola del vecchio Master.
     riservaFinale = conModificatore > 0 ? conModificatore : null;
+    if (riservaFinale === null) origineRiserva = null;
   }
 
   const condizioneCodice = lotto.override?.condizione?.trim() || lotto.skuCondizione;
@@ -166,6 +182,7 @@ export function risolviLottoCatawiki(
     prezzoBase,
     stimaLotto,
     riservaFinale,
+    origineRiserva,
     condizioneCodice,
     descrizioneOverride: lotto.override?.descrizione?.trim() || null,
     errori,

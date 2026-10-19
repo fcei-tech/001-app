@@ -17,7 +17,14 @@ import {
 
 // Esito restituito (mai eccezioni): in produzione Next maschera il testo
 // degli errori lanciati da una server action.
-export type EsitoEsposizione = { ok: boolean; errore?: string; messaggio?: string; annullabile?: Annullabile };
+export type EsitoEsposizione = {
+  ok: boolean;
+  errore?: string;
+  messaggio?: string;
+  annullabile?: Annullabile;
+  // Operazioni su piu' portali insieme: un annullabile per portale.
+  annullabili?: Annullabile[];
+};
 
 function aggiorna(canaleId?: number) {
   if (canaleId) revalidatePath(`/pubblicazione/${canaleId}`);
@@ -25,7 +32,7 @@ function aggiorna(canaleId?: number) {
   revalidatePath("/");
 }
 
-const TIPI: TipoDaFare[] = ["aggiungere", "togliere", "abbassare"];
+const TIPI: TipoDaFare[] = ["aggiungere", "togliere", "abbassare", "riprezzare"];
 
 export async function confermaDaFareAction(
   canaleId: number,
@@ -47,17 +54,51 @@ export async function confermaDaFareAction(
 export async function impostaBloccoPortaleAction(
   skuIds: number[],
   canaleId: number,
-  bloccato: boolean
+  bloccato: boolean,
+  motivo: "blocco" | "ritiro" = "blocco"
 ): Promise<EsitoEsposizione> {
   try {
     const ids = skuIds.filter((n) => Number.isInteger(n) && n > 0);
     if (ids.length === 0 || !Number.isInteger(canaleId)) return { ok: false, errore: "Selezione non valida." };
-    const { annullabile } = await impostaBlocco(ids, canaleId, bloccato);
+    const m = motivo === "ritiro" ? "ritiro" : "blocco";
+    const { annullabile } = await impostaBlocco(ids, canaleId, bloccato, m);
     aggiorna(canaleId);
+    const parola = m === "ritiro" ? ["ritirati da questo portale", "rimessi in vendita"] : ["bloccati su questo portale", "sbloccati"];
     return {
       ok: true,
-      messaggio: bloccato ? `${ids.length} sku bloccati su questo portale.` : `${ids.length} sku sbloccati.`,
+      messaggio: `${ids.length} sku ${bloccato ? parola[0] : parola[1]}.`,
       annullabile,
+    };
+  } catch (e) {
+    return { ok: false, errore: `Operazione non riuscita: ${e instanceof Error ? e.message : "errore"}` };
+  }
+}
+
+// "Ritira da…" / "Rimetti in vendita": stessa operazione su PIU' portali
+// insieme. Gli sku ritirati finiscono in "Da togliere" di ognuno; si
+// rimettono con "Rimetti in vendita" (Magazzino, scheda sku o lista Ritirati
+// del portale).
+export async function ritiraDaPortaliAction(
+  skuIds: number[],
+  canaleIds: number[],
+  ritirare: boolean
+): Promise<EsitoEsposizione> {
+  try {
+    const ids = skuIds.filter((n) => Number.isInteger(n) && n > 0);
+    const canali = [...new Set(canaleIds.filter((n) => Number.isInteger(n) && n > 0))];
+    if (ids.length === 0 || canali.length === 0) return { ok: false, errore: "Scegli almeno un portale." };
+    const annullabili: Annullabile[] = [];
+    for (const canaleId of canali) {
+      const { annullabile } = await impostaBlocco(ids, canaleId, ritirare, "ritiro");
+      if (annullabile) annullabili.push(annullabile);
+      aggiorna(canaleId);
+    }
+    return {
+      ok: true,
+      messaggio: ritirare
+        ? `${ids.length} sku ritirati da ${canali.length} ${canali.length === 1 ? "portale" : "portali"}: li trovi in "Da togliere".`
+        : `${ids.length} sku rimessi in vendita su ${canali.length} ${canali.length === 1 ? "portale" : "portali"}.`,
+      annullabili,
     };
   } catch (e) {
     return { ok: false, errore: `Operazione non riuscita: ${e instanceof Error ? e.message : "errore"}` };

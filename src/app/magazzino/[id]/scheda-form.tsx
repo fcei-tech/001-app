@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { modificaSku } from "@/app/magazzino/actions";
 import { EliminaSkuButton } from "./elimina-sku-button";
+import { CampiPrezzi } from "@/components/magazzino/campi-prezzi";
 import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 
 const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"];
@@ -188,24 +189,14 @@ export function SchedaSkuForm({
 
             <div className="border-t pt-4">
               <p className="mb-3 text-sm font-medium text-muted-foreground">Dati commerciali</p>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="valoreCarico">Valore di carico</Label>
-                  <Input id="valoreCarico" name="valoreCarico" inputMode="decimal" defaultValue={item.valoreCarico ?? ""} placeholder="€ (facoltativo)" />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="prezzoEbay">Prezzo eBay</Label>
-                  <Input id="prezzoEbay" name="prezzoEbay" inputMode="decimal" defaultValue={item.prezzoEbay ?? ""} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="prezzoCatawiki">Prezzo Catawiki</Label>
-                  <Input id="prezzoCatawiki" name="prezzoCatawiki" inputMode="decimal" defaultValue={item.prezzoCatawiki ?? ""} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="riservaCatawiki">Riserva Catawiki</Label>
-                  <Input id="riservaCatawiki" name="riservaCatawiki" inputMode="decimal" defaultValue={item.riservaCatawiki ?? ""} />
-                </div>
-              </div>
+              <CampiPrezzi
+                iniziali={{
+                  valoreCarico: item.valoreCarico,
+                  prezzoEbay: item.prezzoEbay,
+                  prezzoCatawiki: item.prezzoCatawiki,
+                  riservaCatawiki: item.riservaCatawiki,
+                }}
+              />
             </div>
 
             <label className="flex items-center gap-2 text-sm">

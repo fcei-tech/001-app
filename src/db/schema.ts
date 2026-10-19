@@ -358,6 +358,10 @@ export const esposizioneCanale = pgTable(
       .notNull()
       .references(() => canali.id),
     quantitaCaricata: integer("quantita_caricata").notNull().default(0),
+    // Prezzo con cui lo sku e' online su quel portale (2026-10-19): serve
+    // alla lista "Da riprezzare". null = non registrato (righe precedenti):
+    // in quel caso non si segnala nulla finche' non viene confermato un prezzo.
+    prezzoCaricato: numeric("prezzo_caricato", { precision: 10, scale: 2 }),
     aggiornatoAt: timestamp("aggiornato_at").notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.skuId, table.canaleId] })]
@@ -376,6 +380,10 @@ export const bloccoSkuCanale = pgTable(
     canaleId: integer("canale_id")
       .notNull()
       .references(() => canali.id),
+    // "blocco" = non va mai su quel portale (importato dal Master o impostato
+    // a mano); "ritiro" = tolto dal portale con "Ritira da…", si rimette con
+    // "Rimetti in vendita". Per il resto il comportamento e' identico.
+    motivo: text("motivo").notNull().default("blocco"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.skuId, table.canaleId] })]

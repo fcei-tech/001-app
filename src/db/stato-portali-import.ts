@@ -1,7 +1,7 @@
 import { db } from "./index";
 import { getBaseSku } from "./esposizione-queries";
 import { bloccoSkuCanale, esposizioneCanale } from "./schema";
-import { disponibileLibero, quantitaDaCaricare } from "@/lib/esposizione";
+import { disponibileLibero, prezzoPerPortale, quantitaDaCaricare } from "@/lib/esposizione";
 import { type StatoSkuMaster } from "@/lib/master-stato-portali";
 
 export type AnteprimaStatoPortali = {
@@ -15,7 +15,7 @@ export type AnteprimaStatoPortali = {
 type Piano = {
   anteprima: AnteprimaStatoPortali;
   blocchi: { skuId: number; canaleId: number }[];
-  caricati: { skuId: number; canaleId: number; quantita: number }[];
+  caricati: { skuId: number; canaleId: number; quantita: number; prezzo: number | null }[];
 };
 
 async function costruisciPiano(stato: StatoSkuMaster[]): Promise<Piano> {
@@ -76,6 +76,9 @@ async function costruisciPiano(stato: StatoSkuMaster[]): Promise<Piano> {
             skuId: b.id,
             canaleId: canale.id,
             quantita: Math.max(1, quantitaDaCaricare(libero, canale.impostazioni)),
+            // Da qui parte il controllo "Da riprezzare": si assume online il
+            // prezzo di oggi.
+            prezzo: prezzoPerPortale(nome, b.prezzoEbay),
           });
         }
       }
@@ -112,7 +115,14 @@ export async function importaStatoPortali(
     for (const parte of aBlocchi(piano.caricati, 500)) {
       await tx
         .insert(esposizioneCanale)
-        .values(parte.map((c) => ({ skuId: c.skuId, canaleId: c.canaleId, quantitaCaricata: c.quantita })))
+        .values(
+          parte.map((c) => ({
+            skuId: c.skuId,
+            canaleId: c.canaleId,
+            quantitaCaricata: c.quantita,
+            prezzoCaricato: c.prezzo === null ? null : c.prezzo.toFixed(2),
+          }))
+        )
         .onConflictDoNothing();
     }
   });

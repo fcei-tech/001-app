@@ -34,7 +34,7 @@ import {
   type ValoreCampoInline,
   type VoceModificaInline,
 } from "@/lib/campi-inline";
-import { annullaEsposizioneAction, impostaBloccoPortaleAction } from "@/app/pubblicazione/esposizione-actions";
+import { annullaEsposizioneAction, ritiraDaPortaliAction } from "@/app/pubblicazione/esposizione-actions";
 import type { DaSistemare } from "@/db/esposizione-queries";
 import { CellTesto, CellSelect, CellMisura } from "@/components/magazzino/editable-cell";
 import { campiMancanti, ETICHETTA_CAMPO_MANCANTE, SPIEGAZIONE_CAMPO_MANCANTE } from "@/lib/campi-mancanti-pubblicazione";
@@ -471,7 +471,7 @@ export function VistaMagazzino({
   );
   // Blocco su portale in blocco (Altre azioni)
   const [dialogBloccoAperto, setDialogBloccoAperto] = useState<"blocca" | "sblocca" | null>(null);
-  const [canaleBlocco, setCanaleBlocco] = useState("");
+  const [canaliBlocco, setCanaliBlocco] = useState<number[]>([]);
 
   const tipiMap = useMemo(() => new Map(tipi.map((t) => [t.id, t.nome])), [tipi]);
 
@@ -713,23 +713,31 @@ export function VistaMagazzino({
     router.refresh();
   }
 
+  // "Ritira da portali…" / "Rimetti in vendita su portali…": stessa operazione
+  // su uno o piu' portali insieme.
   async function confermaBlocco() {
-    if (!dialogBloccoAperto || !canaleBlocco) return;
+    if (!dialogBloccoAperto || canaliBlocco.length === 0) return;
     const ids = Array.from(selezionati);
-    const bloccare = dialogBloccoAperto === "blocca";
+    const ritirare = dialogBloccoAperto === "blocca";
+    const scelti = canaliBlocco;
     setDialogBloccoAperto(null);
     setErrore(null);
     setInfoOk(null);
-    const esito = await impostaBloccoPortaleAction(ids, Number(canaleBlocco), bloccare);
+    const esito = await ritiraDaPortaliAction(ids, scelti, ritirare);
     if (esito.ok) {
       setInfoOk(esito.messaggio ?? "Fatto.");
-      const a = esito.annullabile;
-      if (a) {
+      const annullabili = esito.annullabili ?? [];
+      if (annullabili.length > 0) {
+        const nomi = scelti.map((id) => canaliStatici.find((c) => c.id === id)?.nome ?? "portale").join(", ");
         setUndoSlot({
-          descrizione: `${ids.length} sku ${bloccare ? "bloccati" : "sbloccati"} su ${canaliStatici.find((c) => c.id === Number(canaleBlocco))?.nome ?? "portale"}`,
+          descrizione: `${ids.length} sku ${ritirare ? "ritirati da" : "rimessi in vendita su"} ${nomi}`,
           ripristina: async () => {
-            const e = await annullaEsposizioneAction(a);
-            if (!e.ok) setErrore(e.errore ?? "Annulla non riuscito");
+            let errore: string | undefined;
+            for (const a of annullabili) {
+              const e = await annullaEsposizioneAction(a);
+              if (!e.ok) errore = e.errore ?? "Annulla non riuscito";
+            }
+            if (errore) setErrore(errore);
             else setInfoOk(null);
             setUndoSlot(null);
             router.refresh();
@@ -740,7 +748,7 @@ export function VistaMagazzino({
     } else {
       setErrore(esito.errore ?? "Operazione non riuscita");
     }
-    setCanaleBlocco("");
+    setCanaliBlocco([]);
     router.refresh();
   }
 
@@ -995,12 +1003,12 @@ export function VistaMagazzino({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-72">
                   <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => setDialogBloccoAperto("blocca")}>
-                    <span className="font-medium">Blocca su portale…</span>
-                    <span className="text-xs text-muted-foreground">Questi sku non vanno pubblicati sul portale scelto.</span>
+                    <span className="font-medium">Ritira da portali…</span>
+                    <span className="text-xs text-muted-foreground">Toglie questi sku dai portali che scegli (anche più insieme).</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => setDialogBloccoAperto("sblocca")}>
-                    <span className="font-medium">Sblocca su portale…</span>
-                    <span className="text-xs text-muted-foreground">Torna a prendere questi sku sul portale scelto.</span>
+                    <span className="font-medium">Rimetti in vendita su portali…</span>
+                    <span className="text-xs text-muted-foreground">Questi sku tornano disponibili sui portali che scegli.</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1116,25 +1124,33 @@ export function VistaMagazzino({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={dialogBloccoAperto !== null} onOpenChange={(a) => { if (!a) { setDialogBloccoAperto(null); setCanaleBlocco(""); } }}>
+      <Dialog open={dialogBloccoAperto !== null} onOpenChange={(a) => { if (!a) { setDialogBloccoAperto(null); setCanaliBlocco([]); } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{dialogBloccoAperto === "blocca" ? "Blocca su portale" : "Sblocca su portale"}</DialogTitle>
+            <DialogTitle>{dialogBloccoAperto === "blocca" ? "Ritira da portali" : "Rimetti in vendita su portali"}</DialogTitle>
             <DialogDescription>
               {dialogBloccoAperto === "blocca"
-                ? `${selezionati.size} sku non verranno più pubblicati sul portale scelto (e se già caricati finiranno nella lista "Da togliere").`
-                : `${selezionati.size} sku torneranno a essere pubblicati sul portale scelto.`}
+                ? `${selezionati.size} sku non verranno più proposti sui portali scelti; se sono già caricati finiscono nella lista "Da togliere". Restano ritirati finché non li rimetti in vendita.`
+                : `${selezionati.size} sku tornano a essere proposti sui portali scelti.`}
             </DialogDescription>
           </DialogHeader>
-          <Select value={canaleBlocco} onValueChange={setCanaleBlocco}>
-            <SelectTrigger aria-label="Portale"><SelectValue placeholder="Scegli il portale…" /></SelectTrigger>
-            <SelectContent>
-              {canaliStatici.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.nome}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col gap-2">
+            {canaliStatici.map((c) => (
+              <label key={c.id} className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={canaliBlocco.includes(c.id)}
+                  onCheckedChange={(v) =>
+                    setCanaliBlocco((prec) => (v === true ? [...prec, c.id] : prec.filter((x) => x !== c.id)))
+                  }
+                  aria-label={c.nome}
+                />
+                {c.nome}
+              </label>
+            ))}
+          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDialogBloccoAperto(null)}>Annulla</Button>
-            <Button type="button" disabled={!canaleBlocco} onClick={confermaBlocco}>Conferma</Button>
+            <Button type="button" disabled={canaliBlocco.length === 0} onClick={confermaBlocco}>Conferma</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -36,7 +36,7 @@ const GRUPPI: {
     tipo: "togliere",
     titolo: "Da togliere",
     pulsante: "Conferma rimosso",
-    aiuto: "Esauriti o bloccati: toglili dal portale, poi conferma.",
+    aiuto: "Esauriti, bloccati o ritirati: toglili dal portale, poi conferma.",
     variante: "destructive",
   },
   {
@@ -46,11 +46,23 @@ const GRUPPI: {
     aiuto: "La quantita' sul portale supera il disponibile: abbassala, poi conferma.",
     variante: "warning",
   },
+  {
+    tipo: "riprezzare",
+    titolo: "Da riprezzare",
+    pulsante: "Conferma prezzo aggiornato",
+    aiuto: "Il prezzo di oggi è diverso da quello caricato: cambialo sul portale, poi conferma.",
+    variante: "warning",
+  },
 ];
+
+function euro(n: number | null): string {
+  return n === null ? "—" : `${n.toLocaleString("it-IT", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} €`;
+}
 
 function testoQuantita(r: RigaDaFare): string {
   if (r.tipo === "aggiungere") return `carica ${r.quantitaTarget} (disponibili ${r.disponibileLibero})`;
   if (r.tipo === "togliere") return `da ${r.quantitaCaricata} a 0`;
+  if (r.tipo === "riprezzare") return `da ${euro(r.prezzoCaricato)} a ${euro(r.prezzoTarget)}`;
   return `da ${r.quantitaCaricata} a ${r.quantitaTarget} (disponibili ${r.disponibileLibero})`;
 }
 
@@ -164,7 +176,7 @@ function Gruppo({
                 {r.artista} — {r.opera}
               </span>
             </div>
-            {r.tipo !== "abbassare" && (
+            {r.tipo !== "abbassare" && r.tipo !== "riprezzare" && (
               <span className="hidden text-xs text-muted-foreground sm:inline">{ETICHETTA_MOTIVO[r.motivo]}</span>
             )}
             <span className="whitespace-nowrap text-sm tabular-nums">{testoQuantita(r)}</span>

@@ -428,6 +428,7 @@ export async function generaFileCatawikiAction(batchId: number): Promise<{
     skuCondizione: l.sku.condizione,
     skuAnno: l.sku.anno,
     skuPrezzoCatawiki: l.sku.prezzoCatawiki,
+    skuRiservaCatawiki: l.sku.riservaCatawiki,
     override: (l.override as OverrideLottoCatawiki | null) ?? null,
     numeroFoto: fotoMappa.get(l.skuId)?.length ?? 0,
   }));

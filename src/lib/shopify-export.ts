@@ -70,6 +70,14 @@ function pulisci(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
+// L'anno puo' essere scritto "1950" oppure "circa 1950" (il form suggerisce
+// anche questo): nella descrizione e nei tag il "circa" lo aggiunge il
+// software, quindi un "circa" iniziale gia' scritto si toglie (niente
+// "circa Circa 1950").
+export function annoSenzaCirca(anno: string | null): string {
+  return pulisci(anno ?? "").replace(/^(circa|ca\.?)\s*/i, "").trim();
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -100,7 +108,7 @@ export function buildTitolo(sku: SkuPerShopify): string {
 export function buildBodyHtml(sku: SkuPerShopify): string {
   const l = numero(sku.larghezza);
   const a = numero(sku.altezza);
-  const anno = (sku.anno ?? "").trim();
+  const anno = annoSenzaCirca(sku.anno);
   const righe: string[] = [
     `<b>Artista: </b>${escapeHtml(pulisci(sku.artista))}`,
     `<b>Opera: </b>${escapeHtml(pulisci(sku.opera))}`,
@@ -119,7 +127,7 @@ export function buildTag(sku: SkuPerShopify): string {
   const l = numero(sku.larghezza);
   const a = numero(sku.altezza);
   const tag: string[] = [];
-  const anno = (sku.anno ?? "").trim();
+  const anno = annoSenzaCirca(sku.anno);
   if (anno) tag.push(`Anno:${anno}`);
   tag.push(`Artista:${pulisci(sku.artista)}`);
   if (l && a) {

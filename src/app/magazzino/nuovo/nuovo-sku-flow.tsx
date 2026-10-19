@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { CasellaRegistro } from "@/components/magazzino/casella-registro";
+import { CampiPrezzi } from "@/components/magazzino/campi-prezzi";
 import {
   Card,
   CardContent,
@@ -219,24 +220,7 @@ export function NuovoSkuFlow({
               <p className="mb-3 text-sm font-medium text-muted-foreground">
                 Dati commerciali (facoltativi, puoi compilarli dopo)
               </p>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="valoreCarico">Valore di carico</Label>
-                  <Input id="valoreCarico" name="valoreCarico" inputMode="decimal" placeholder="€ (facoltativo)" />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="prezzoEbay">Prezzo eBay</Label>
-                  <Input id="prezzoEbay" name="prezzoEbay" inputMode="decimal" placeholder="€" />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="prezzoCatawiki">Prezzo Catawiki</Label>
-                  <Input id="prezzoCatawiki" name="prezzoCatawiki" inputMode="decimal" placeholder="€" />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="riservaCatawiki">Riserva Catawiki</Label>
-                  <Input id="riservaCatawiki" name="riservaCatawiki" inputMode="decimal" placeholder="€" />
-                </div>
-              </div>
+              <CampiPrezzi />
             </div>
 
             <div className="flex gap-2">

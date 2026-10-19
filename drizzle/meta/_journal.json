@@ -50,6 +50,13 @@
       "when": 1791371527011,
       "tag": "0006_esposto_portali_statici",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792415230379,
+      "tag": "0007_ritiro_prezzo_caricato",
+      "breakpoints": true
     }
   ]
 }
