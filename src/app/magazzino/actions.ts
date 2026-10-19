@@ -233,28 +233,69 @@ export async function aggiungiMovimento(formData: FormData) {
   redirect(`/magazzino/${skuId}?movimento=1`);
 }
 
-export async function caricaFotoSku(formData: FormData) {
-  const skuId = Number(formData.get("skuId"));
-  if (!skuId) throw new Error("Sku non valido");
+// Carica UNA foto per volta (2026-10-19). Il client le invia una dopo l'altra
+// nell'ordine scelto in anteprima: cosi' l'ordine in galleria e' quello deciso
+// dall'utente, un eventuale errore lascia salvate solo le foto precedenti
+// (mai buchi nella sequenza) e non si supera il limite di dimensione di una
+// singola richiesta. Il nome file NON e' quello originale: lo decide il
+// software, SKU_a, SKU_b, ... (stesso schema delle foto gia' su Shopify, es.
+// Z-00104_a.jpg). La lettera continua dopo l'ultima gia' usata per questo sku.
+// Restituisce un esito (mai eccezioni: in produzione il testo verrebbe
+// mascherato).
+function lettera(i: number): string {
+  return i < 26 ? String.fromCharCode(97 + i) : String(i + 1);
+}
 
-  const files = formData.getAll("foto").filter((f): f is File => f instanceof File && f.size > 0);
-  if (files.length === 0) throw new Error("Nessuna foto selezionata");
+function escapeRegExp(t: string): string {
+  return t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
-  const [{ max }] = await db
-    .select({ max: sql<number>`coalesce(max(${fotoSku.ordine}), -1)`.mapWith(Number) })
-    .from(fotoSku)
-    .where(eq(fotoSku.skuId, skuId));
+function estensioneFile(nome: string, mime: string): string {
+  const daNome = nome.split(".").pop()?.toLowerCase() ?? "";
+  if (["jpg", "jpeg", "png", "webp", "heic"].includes(daNome)) return daNome === "jpeg" ? "jpg" : daNome;
+  if (mime === "image/png") return "png";
+  if (mime === "image/webp") return "webp";
+  return "jpg";
+}
 
-  let prossimoOrdine = (max ?? -1) + 1;
-  for (const file of files) {
+export async function caricaUnaFotoSku(
+  formData: FormData
+): Promise<{ ok: boolean; errore?: string; nome?: string }> {
+  try {
+    const skuId = Number(formData.get("skuId"));
+    const file = formData.get("foto");
+    if (!skuId || !(file instanceof File) || file.size === 0) {
+      return { ok: false, errore: "Foto non valida." };
+    }
+
+    const [s] = await db.select({ skuCode: sku.skuCode }).from(sku).where(eq(sku.id, skuId));
+    if (!s) return { ok: false, errore: "Sku non trovato." };
+
+    const esistenti = await db
+      .select({ url: fotoSku.url, ordine: fotoSku.ordine })
+      .from(fotoSku)
+      .where(eq(fotoSku.skuId, skuId));
+    const maxOrdine = esistenti.reduce((m, f) => Math.max(m, f.ordine), -1);
+
+    // Prossima lettera libera: dopo la piu' alta gia' presente nei nomi di
+    // questo sku (SKU_a, SKU_b...), altrimenti dopo il numero di foto.
+    const re = new RegExp(`${escapeRegExp(s.skuCode)}_([a-z])\\.`, "i");
+    let prossima = esistenti.length;
+    for (const f of esistenti) {
+      const m = re.exec(f.url);
+      if (m) prossima = Math.max(prossima, m[1].toLowerCase().charCodeAt(0) - 97 + 1);
+    }
+    const nome = `${s.skuCode}_${lettera(prossima)}.${estensioneFile(file.name, file.type)}`;
+
     const bytes = Buffer.from(await file.arrayBuffer());
-    const url = await caricaFotoSuShopify(bytes, file.name, file.type || "image/jpeg");
-    await db.insert(fotoSku).values({ skuId, url, ordine: prossimoOrdine });
-    prossimoOrdine += 1;
-  }
+    const url = await caricaFotoSuShopify(bytes, nome, file.type || "image/jpeg");
+    await db.insert(fotoSku).values({ skuId, url, ordine: maxOrdine + 1 });
 
-  revalidatePath(`/magazzino/${skuId}`);
-  redirect(`/magazzino/${skuId}?foto=1`);
+    revalidatePath(`/magazzino/${skuId}`);
+    return { ok: true, nome };
+  } catch (e) {
+    return { ok: false, errore: e instanceof Error ? e.message : "Caricamento non riuscito." };
+  }
 }
 
 export async function eliminaFotoSku(formData: FormData) {

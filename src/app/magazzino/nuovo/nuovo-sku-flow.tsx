@@ -222,7 +222,7 @@ export function NuovoSkuFlow({
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="valoreCarico">Valore di carico</Label>
-                  <Input id="valoreCarico" name="valoreCarico" inputMode="decimal" placeholder="€ (obbligatorio se FP)" />
+                  <Input id="valoreCarico" name="valoreCarico" inputMode="decimal" placeholder="€ (facoltativo)" />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="prezzoEbay">Prezzo eBay</Label>

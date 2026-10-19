@@ -136,7 +136,7 @@ export default async function ModificaSkuPage({
                 ))}
               </div>
             )}
-            <FotoForm skuId={item.id} />
+            <FotoForm skuId={item.id} nFotoEsistenti={foto.length} />
           </CardContent>
         </Card>
 

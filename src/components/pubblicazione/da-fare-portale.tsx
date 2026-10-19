@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { annullaEsposizioneAction, confermaDaFareAction } from "@/app/pubblicazione/esposizione-actions";
+import {
+  annullaEsposizioneAction,
+  confermaDaFareAction,
+  generaFileShopifyAction,
+} from "@/app/pubblicazione/esposizione-actions";
 import { useSelezioneMultipla } from "@/lib/selezione-multipla";
 import { ETICHETTA_MOTIVO, type Annullabile, type RigaDaFare, type TipoDaFare } from "@/lib/esposizione";
 
@@ -52,11 +56,13 @@ function testoQuantita(r: RigaDaFare): string {
 
 function Gruppo({
   canaleId,
+  nomePortale,
   gruppo,
   righe,
   onEsito,
 }: {
   canaleId: number;
+  nomePortale: string;
   gruppo: (typeof GRUPPI)[number];
   righe: RigaDaFare[];
   onEsito: (m: { ok: boolean; testo: string; annullabile?: Annullabile }) => void;
@@ -68,6 +74,36 @@ function Gruppo({
 
   const scelti = righe.filter((r) => selezionati.has(r.skuId)).length;
   const tutti = righe.length > 0 && scelti === righe.length;
+
+  // File prodotti per Shopify: solo per il gruppo "Da aggiungere". Non cambia
+  // nessuno stato, si scarica e poi si conferma a parte.
+  function scaricaFile() {
+    const ids = righe.filter((r) => selezionati.has(r.skuId)).map((r) => r.skuId);
+    startTransition(async () => {
+      const esito = await generaFileShopifyAction(canaleId, ids);
+      if (esito.ok && esito.csv && esito.filename) {
+        const blob = new Blob([esito.csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = esito.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+      const scartati = esito.scartati ?? [];
+      const testoScartati = scartati.length
+        ? ` Esclusi ${scartati.length}: ${scartati.map((s) => `${s.skuCode} (${s.motivo})`).join("; ")}.`
+        : "";
+      onEsito({
+        ok: esito.ok,
+        testo: esito.ok
+          ? `File scaricato con ${esito.inclusi} prodotti. Caricalo su Shopify, poi premi "Conferma caricato".${testoScartati}`
+          : `${esito.errore ?? "Errore."}${testoScartati}`,
+      });
+    });
+  }
 
   function conferma() {
     const ids = righe.filter((r) => selezionati.has(r.skuId)).map((r) => r.skuId);
@@ -85,7 +121,14 @@ function Gruppo({
         <Badge variant={gruppo.variante}>
           {gruppo.titolo} ({righe.length})
         </Badge>
-        <span className="text-xs text-muted-foreground">{gruppo.aiuto}</span>
+        <span className="text-xs text-muted-foreground">
+          {gruppo.aiuto}
+          {gruppo.tipo === "togliere" && nomePortale === "Shopify" && (
+            <strong className="ml-1 text-foreground">
+              Su Shopify archivia o metti in bozza, NON eliminare: eliminando si cancellano anche le foto.
+            </strong>
+          )}
+        </span>
         <div className="ml-auto flex items-center gap-2">
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <Checkbox
@@ -95,6 +138,11 @@ function Gruppo({
             />
             Tutti
           </label>
+          {gruppo.tipo === "aggiungere" && nomePortale === "Shopify" && (
+            <Button type="button" size="sm" variant="outline" disabled={scelti === 0 || pending} onClick={scaricaFile}>
+              {pending ? "…" : `Scarica file Shopify${scelti ? ` (${scelti})` : ""}`}
+            </Button>
+          )}
           <Button type="button" size="sm" disabled={scelti === 0 || pending} onClick={conferma}>
             {pending ? "…" : `${gruppo.pulsante}${scelti ? ` (${scelti})` : ""}`}
           </Button>
@@ -179,7 +227,7 @@ export function DaFarePortale({
       {GRUPPI.map((g) => {
         const lista = righe.filter((r) => r.tipo === g.tipo);
         if (lista.length === 0) return null;
-        return <Gruppo key={g.tipo} canaleId={canaleId} gruppo={g} righe={lista} onEsito={setEsito} />;
+        return <Gruppo key={g.tipo} canaleId={canaleId} nomePortale={nomePortale} gruppo={g} righe={lista} onEsito={setEsito} />;
       })}
       {righe.length === 0 && (
         <p className="px-4 py-3 text-sm text-muted-foreground">{nomePortale} e&apos; allineato. Niente da fare.</p>
