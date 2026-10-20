@@ -72,6 +72,9 @@ export function RitiratiPortale({ canaleId, nomePortale, righe }: { canaleId: nu
                   {r.artista} — {r.opera}
                 </span>
               </div>
+              <span className="whitespace-nowrap text-xs text-muted-foreground">
+                ritirato il {new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(r.ritiratoIl))}
+              </span>
               {r.quantitaCaricata > 0 && (
                 <span className="whitespace-nowrap text-xs text-muted-foreground">ancora online: {r.quantitaCaricata}</span>
               )}

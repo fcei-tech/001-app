@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { bloccoSkuCanale, esposizioneCanale, fotoSku, movimentiMagazzino, proprietari, sku, ubicazioni } from "@/db/schema";
+import { bloccoSkuCanale, esposizioneCanale, fotoSku, movimentiMagazzino, proprietari, sku, storicoPortale, ubicazioni } from "@/db/schema";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { cercaCandidatiDuplicati, getDisponibileSku, getImpegnatoPerSku } from "@/db/queries";
 import { CAUSALE_CORREZIONE, CAUSALE_MODIFICA } from "@/lib/giacenza";
@@ -442,6 +442,7 @@ export async function eliminaSku(formData: FormData) {
 
   await db.transaction(async (tx) => {
     await tx.delete(fotoSku).where(eq(fotoSku.skuId, id));
+    await tx.delete(storicoPortale).where(eq(storicoPortale.skuId, id));
     await tx.delete(esposizioneCanale).where(eq(esposizioneCanale.skuId, id));
     await tx.delete(bloccoSkuCanale).where(eq(bloccoSkuCanale.skuId, id));
     await tx.delete(movimentiMagazzino).where(eq(movimentiMagazzino.skuId, id));

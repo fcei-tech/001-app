@@ -57,6 +57,13 @@
       "when": 1792415230379,
       "tag": "0007_ritiro_prezzo_caricato",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792487813365,
+      "tag": "0008_storico_portale",
+      "breakpoints": true
     }
   ]
 }

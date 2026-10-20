@@ -5,9 +5,11 @@ import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { TableEmpty } from "@/components/ui/table-empty";
 import { getCanaleById, getBatchPerCanale } from "@/db/pubblicazione-queries";
-import { getDaFareCanale, getRitiratiCanale } from "@/db/esposizione-queries";
+import { getDaFareCanale, getOnlineCanale, getRitiratiCanale, getStoricoCanale } from "@/db/esposizione-queries";
 import { DaFarePortale } from "@/components/pubblicazione/da-fare-portale";
 import { RitiratiPortale } from "@/components/pubblicazione/ritirati-portale";
+import { OnlinePortale } from "@/components/pubblicazione/online-portale";
+import { StoricoPortale } from "@/components/pubblicazione/storico-portale";
 import { creaBatch } from "../actions";
 import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
 import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
@@ -38,6 +40,8 @@ export default async function CanalePubblicazionePage({
   // "esposto", 2026-10-07). Per le aste non esiste questo registro.
   const daFare = canale.tipo === "statico" ? await getDaFareCanale(canale.id) : [];
   const ritirati = canale.tipo === "statico" ? await getRitiratiCanale(canale.id) : [];
+  const online = canale.tipo === "statico" ? await getOnlineCanale(canale.id) : [];
+  const storico = canale.tipo === "statico" ? await getStoricoCanale(canale.id) : [];
 
   const colore = coloreCanale(canale.nome);
   const fasce = fasceCanale(canale.nome);
@@ -99,7 +103,9 @@ export default async function CanalePubblicazionePage({
         </div>
 
         {canale.tipo === "statico" && <DaFarePortale canaleId={canale.id} nomePortale={canale.nome} righe={daFare} />}
+        {canale.tipo === "statico" && <OnlinePortale canaleId={canale.id} nomePortale={canale.nome} righe={online} />}
         {canale.tipo === "statico" && <RitiratiPortale canaleId={canale.id} nomePortale={canale.nome} righe={ritirati} />}
+        {canale.tipo === "statico" && <StoricoPortale nomePortale={canale.nome} righe={storico} />}
 
         {righe.length === 0 ? (
           <div className="rounded-lg border">

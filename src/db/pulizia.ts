@@ -1,6 +1,6 @@
 import { inArray, sql } from "drizzle-orm";
 import { db } from "./index";
-import { batchLotti, batchPubblicazione, bloccoSkuCanale, esposizioneCanale, movimentiMagazzino, silenziamentiErrore, sku } from "./schema";
+import { batchLotti, batchPubblicazione, bloccoSkuCanale, esposizioneCanale, movimentiMagazzino, silenziamentiErrore, sku, storicoPortale } from "./schema";
 
 // Pulizia dati prima del go-live. Ogni voce e' scelta a parte; le foto
 // (foto_sku) e le tabelle di base (proprietari, depositi, portali, tipi,
@@ -123,6 +123,7 @@ export async function eseguiPulizia(s: SceltaPulizia): Promise<EsitoPulizia> {
       esito.silenziamenti = r.length;
     }
     if (s.caricato) {
+      await tx.delete(storicoPortale);
       const r = await tx.delete(esposizioneCanale).returning();
       esito.caricato = r.length;
     }
@@ -141,6 +142,7 @@ export async function eseguiPulizia(s: SceltaPulizia): Promise<EsitoPulizia> {
       const ids = rows.map((x) => Number(x.id));
       for (let i = 0; i < ids.length; i += 1000) {
         const parte = ids.slice(i, i + 1000);
+        await tx.delete(storicoPortale).where(inArray(storicoPortale.skuId, parte));
         await tx.delete(esposizioneCanale).where(inArray(esposizioneCanale.skuId, parte));
         await tx.delete(bloccoSkuCanale).where(inArray(bloccoSkuCanale.skuId, parte));
         await tx.delete(silenziamentiErrore).where(inArray(silenziamentiErrore.skuId, parte));

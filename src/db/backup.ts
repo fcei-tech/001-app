@@ -17,6 +17,7 @@ import {
   silenziamentiErrore,
   esposizioneCanale,
   bloccoSkuCanale,
+  storicoPortale,
 } from "./schema";
 
 // Backup/ripristino MANUALE dei dati dell'app in un file JSON sul Mac.
@@ -35,6 +36,7 @@ const TABELLE: PgTable[] = [
   silenziamentiErrore,
   esposizioneCanale,
   bloccoSkuCanale,
+  storicoPortale,
 ];
 
 const nomeTabella = (t: PgTable) => getTableConfig(t).name;

@@ -1,8 +1,9 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./index";
 import { impegnatoSql } from "./queries";
-import { bloccoSkuCanale, canali, esposizioneCanale, movimentiMagazzino, sku } from "./schema";
+import { bloccoSkuCanale, canali, esposizioneCanale, movimentiMagazzino, sku, storicoPortale } from "./schema";
 import {
+  ETICHETTA_MOTIVO,
   disponibileLibero,
   prezziDiversi,
   prezzoPerPortale,
@@ -45,6 +46,19 @@ async function getCanaliStaticiAttivi(): Promise<CanaleStatico[]> {
 export async function getCanaliStatici(): Promise<CanaleStatico[]> {
   return getCanaliStaticiAttivi();
 }
+
+// Storico operazioni (2026-10-20): una riga per sku. Si scrive DENTRO la
+// stessa transazione dell'operazione, cosi' storico e stato non divergono.
+type VoceStorico = { skuId: number; azione: string; dettaglio?: string };
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+async function scriviStorico(tx: Tx, canaleId: number, voci: VoceStorico[]) {
+  for (let i = 0; i < voci.length; i += 500) {
+    await tx
+      .insert(storicoPortale)
+      .values(voci.slice(i, i + 500).map((v) => ({ canaleId, skuId: v.skuId, azione: v.azione, dettaglio: v.dettaglio ?? null })));
+  }
+}
+const eur = (n: number | null | undefined) => (n === null || n === undefined ? "—" : `${n.toFixed(2).replace(".", ",")} €`);
 
 export async function getBaseSku() {
   return db
@@ -163,6 +177,7 @@ export async function confermaDaFare(
   );
   if (lista.length === 0) return { n: 0 };
   const modifiche: ModificaEsposizione[] = [];
+  const voci: VoceStorico[] = [];
   await db.transaction(async (tx) => {
     const prima = await tx
       .select()
@@ -187,6 +202,15 @@ export async function confermaDaFare(
           target: [esposizioneCanale.skuId, esposizioneCanale.canaleId],
           set: { quantitaCaricata: quantita, prezzoCaricato: prezzoDopoTesto, aggiornatoAt: new Date() },
         });
+      const AZIONE: Record<string, string> = { aggiungere: "aggiunto", togliere: "tolto", abbassare: "abbassato", riprezzare: "riprezzato" };
+      const qPrima = primaMap.get(r.skuId) ?? 0;
+      const dettaglio =
+        tipo === "riprezzare"
+          ? `${eur(prezzoPrimaMap.get(r.skuId) ?? null)} → ${eur(prezzoDopo)}`
+          : tipo === "togliere"
+            ? `${qPrima} → 0 pezzi (${ETICHETTA_MOTIVO[r.motivo].toLowerCase()})`
+            : `${qPrima} → ${quantita} pezzi${prezzoDopo !== null ? ` a ${eur(prezzoDopo)}` : ""}`;
+      voci.push({ skuId: r.skuId, azione: AZIONE[tipo], dettaglio });
       modifiche.push({
         skuId: r.skuId,
         prima: primaMap.has(r.skuId) ? primaMap.get(r.skuId)! : null,
@@ -195,6 +219,7 @@ export async function confermaDaFare(
         prezzoDopo,
       });
     }
+    await scriviStorico(tx, canaleId, voci);
   });
   return { n: lista.length, annullabile: { tipo: "esposizione", canaleId, modifiche } };
 }
@@ -222,6 +247,16 @@ export async function impostaBlocco(
         modifiche.push({ skuId: id, prima: eraBloccato.has(id), dopo: bloccato, motivoPrima: motivoPrima.get(id) });
       }
     }
+    await scriviStorico(
+      tx,
+      canaleId,
+      modifiche.map((m) => ({
+        skuId: m.skuId,
+        azione: m.dopo
+          ? motivo === "ritiro" ? "ritirato" : "bloccato"
+          : m.motivoPrima === "ritiro" ? "rimesso" : "sbloccato",
+      }))
+    );
     if (bloccato) {
       await tx.insert(bloccoSkuCanale).values(skuIds.map((skuId) => ({ skuId, canaleId, motivo }))).onConflictDoNothing();
     } else {
@@ -293,6 +328,9 @@ export async function annullaModifiche(a: Annullabile): Promise<{ ok: boolean; e
         await tx.delete(bloccoSkuCanale).where(and(eq(bloccoSkuCanale.canaleId, canaleId), inArray(bloccoSkuCanale.skuId, daSbloccare)));
       }
     }
+    if (!errore) {
+      await scriviStorico(tx, canaleId, ids.map((skuId) => ({ skuId, azione: "annullato", dettaglio: "operazione annullata" })));
+    }
   });
   return errore ? { ok: false, errore } : { ok: true };
 }
@@ -321,7 +359,7 @@ export async function getStatoPortaliSku(skuId: number): Promise<StatoPortaleSku
   }));
 }
 
-export type RigaRitirato = { skuId: number; skuCode: string; artista: string; opera: string; quantitaCaricata: number };
+export type RigaRitirato = { skuId: number; skuCode: string; artista: string; opera: string; quantitaCaricata: number; ritiratoIl: Date };
 
 // Sku ritirati da un portale con "Ritira da…" (per la lista "Ritirati" della
 // pagina del portale, da cui si rimettono in vendita).
@@ -333,6 +371,7 @@ export async function getRitiratiCanale(canaleId: number): Promise<RigaRitirato[
       artista: sku.artista,
       opera: sku.opera,
       quantitaCaricata: sql<number>`coalesce(${esposizioneCanale.quantitaCaricata}, 0)`.mapWith(Number),
+      ritiratoIl: bloccoSkuCanale.createdAt,
     })
     .from(bloccoSkuCanale)
     .innerJoin(sku, eq(sku.id, bloccoSkuCanale.skuId))
@@ -342,4 +381,85 @@ export async function getRitiratiCanale(canaleId: number): Promise<RigaRitirato[
     )
     .where(and(eq(bloccoSkuCanale.canaleId, canaleId), eq(bloccoSkuCanale.motivo, "ritiro")));
   return righe.sort((a, b) => a.skuCode.localeCompare(b.skuCode));
+}
+
+// --- Online su un portale ---------------------------------------------------
+export type RigaOnline = {
+  skuId: number;
+  skuCode: string;
+  artista: string;
+  opera: string;
+  quantitaCaricata: number;
+  prezzoOnline: number | null;
+  prezzoOggi: number | null;
+  aggiornatoIl: Date;
+  // true se lo sku e' gia' in "Da togliere" (ritirato/bloccato/esaurito)
+  daTogliere: boolean;
+};
+
+// Tutti gli sku con quantita' caricata > 0 su quel portale.
+export async function getOnlineCanale(canaleId: number): Promise<RigaOnline[]> {
+  const [canale, righe, daFare] = await Promise.all([
+    db.select().from(canali).where(eq(canali.id, canaleId)),
+    db
+      .select({
+        skuId: sku.id,
+        skuCode: sku.skuCode,
+        artista: sku.artista,
+        opera: sku.opera,
+        prezzoEbay: sku.prezzoEbay,
+        quantitaCaricata: esposizioneCanale.quantitaCaricata,
+        prezzoCaricato: esposizioneCanale.prezzoCaricato,
+        aggiornatoIl: esposizioneCanale.aggiornatoAt,
+      })
+      .from(esposizioneCanale)
+      .innerJoin(sku, eq(sku.id, esposizioneCanale.skuId))
+      .where(and(eq(esposizioneCanale.canaleId, canaleId), sql`${esposizioneCanale.quantitaCaricata} > 0`)),
+    getDaFareCanale(canaleId),
+  ]);
+  const nome = canale[0]?.nome ?? "";
+  const togliere = new Set(daFare.filter((r) => r.tipo === "togliere").map((r) => r.skuId));
+  return righe
+    .map((r) => ({
+      skuId: r.skuId,
+      skuCode: r.skuCode,
+      artista: r.artista,
+      opera: r.opera,
+      quantitaCaricata: r.quantitaCaricata,
+      prezzoOnline: r.prezzoCaricato === null ? null : Number(r.prezzoCaricato),
+      prezzoOggi: prezzoPerPortale(nome, r.prezzoEbay),
+      aggiornatoIl: r.aggiornatoIl,
+      daTogliere: togliere.has(r.skuId),
+    }))
+    .sort((a, b) => a.skuCode.localeCompare(b.skuCode));
+}
+
+// --- Storico ------------------------------------------------------------------
+export type RigaStorico = {
+  id: number;
+  skuCode: string;
+  artista: string;
+  opera: string;
+  azione: string;
+  dettaglio: string | null;
+  quando: Date;
+};
+
+export async function getStoricoCanale(canaleId: number, limite = 300): Promise<RigaStorico[]> {
+  const righe = await db
+    .select({
+      id: storicoPortale.id,
+      skuCode: sku.skuCode,
+      artista: sku.artista,
+      opera: sku.opera,
+      azione: storicoPortale.azione,
+      dettaglio: storicoPortale.dettaglio,
+      quando: storicoPortale.createdAt,
+    })
+    .from(storicoPortale)
+    .innerJoin(sku, eq(sku.id, storicoPortale.skuId))
+    .where(eq(storicoPortale.canaleId, canaleId))
+    .orderBy(desc(storicoPortale.createdAt), desc(storicoPortale.id))
+    .limit(limite);
+  return righe;
 }

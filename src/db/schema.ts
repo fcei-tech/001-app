@@ -389,6 +389,25 @@ export const bloccoSkuCanale = pgTable(
   (table) => [primaryKey({ columns: [table.skuId, table.canaleId] })]
 );
 
+// Storico delle operazioni sui portali statici (2026-10-20): una riga per
+// sku e per operazione (aggiunto, tolto, riprezzato, ritirato, annullato...).
+export const storicoPortale = pgTable(
+  "storico_portale",
+  {
+    id: serial("id").primaryKey(),
+    canaleId: integer("canale_id")
+      .notNull()
+      .references(() => canali.id),
+    skuId: integer("sku_id")
+      .notNull()
+      .references(() => sku.id),
+    azione: text("azione").notNull(),
+    dettaglio: text("dettaglio"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("storico_portale_canale_idx").on(table.canaleId, table.createdAt)]
+);
+
 // --- Relazioni (per db.query.*.findFirst/findMany con `with`) ----------
 export const skuRelations = relations(sku, ({ one, many }) => ({
   tipo: one(tipiOggetto, { fields: [sku.tipoId], references: [tipiOggetto.id] }),
