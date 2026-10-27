@@ -1,8 +1,9 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "./index";
-import { bloccoSkuCanale, esposizioneCanale, filePortale, overridePortale, storicoPortale } from "./schema";
+import { bloccoSkuCanale, esposizioneCanale, filePortale, overridePortale, sku, storicoPortale } from "./schema";
 import { getBaseSku, getCanaliStatici, type CanaleStatico } from "./esposizione-queries";
-import { disponibileLibero, prezzoPerPortale, quantitaDaCaricare } from "@/lib/esposizione";
+import { disponibileLibero, prezziDiversi, prezzoPerPortale, quantitaDaCaricare } from "@/lib/esposizione";
+import type { VoceAllineamento } from "@/lib/allinea-portale";
 import {
   azioneDaStato,
   calcolaRigaPortale,
@@ -54,6 +55,8 @@ export async function calcolaTabelle(): Promise<{ canali: CanaleStatico[]; righe
               quantitaCaricata: reg.quantitaCaricata,
               prezzoCaricato: reg.prezzoCaricato === null ? null : Number(reg.prezzoCaricato),
               aggiornatoAt: reg.aggiornatoAt,
+              idPortale: reg.idPortale,
+              titoloPortale: reg.titoloPortale,
             }
           : null,
         ov: ov
@@ -162,12 +165,12 @@ export async function ripristinaOverride(skuIds: number[], canaleId: number): Pr
 }
 
 // --- Ultimo file generato e conferma ------------------------------------------
-export type FilePortaleInfo = { nomeFile: string; creatoAt: Date; righe: number };
+export type FilePortaleInfo = { nomeFile: string; creatoAt: Date; righe: number; elenco: RigaFile[] };
 
 export async function getFilePortale(canaleId: number): Promise<FilePortaleInfo | null> {
   const [f] = await db.select().from(filePortale).where(eq(filePortale.canaleId, canaleId));
   if (!f) return null;
-  return { nomeFile: f.nomeFile, creatoAt: f.creatoAt, righe: (f.righe as RigaFile[]).length };
+  return { nomeFile: f.nomeFile, creatoAt: f.creatoAt, righe: (f.righe as RigaFile[]).length, elenco: f.righe as RigaFile[] };
 }
 
 export async function salvaFilePortale(canaleId: number, nomeFile: string, righe: RigaFile[]): Promise<void> {
@@ -177,20 +180,24 @@ export async function salvaFilePortale(canaleId: number, nomeFile: string, righe
     .onConflictDoUpdate({ target: filePortale.canaleId, set: { nomeFile, righe, creatoAt: new Date() } });
 }
 
-export function rigaFileDa(r: RigaPortale): RigaFile | null {
-  const azione = azioneDaStato(r.stato);
+// riattiva = true (Shopify): uno sku "nuovo" che ha gia' un prodotto sul portale
+// (archiviato o sospeso) non si ricrea: si riattiva.
+export function rigaFileDa(r: RigaPortale, riattiva = false): RigaFile | null {
+  let azione = azioneDaStato(r.stato);
   if (!azione) return null;
+  if (azione === "nuovo" && riattiva && r.idPortale) azione = "riattiva";
   return {
     skuId: r.skuId,
     azione,
     pezzi: azione === "archivia" ? 0 : r.pezziDopo,
     prezzo: azione === "archivia" ? null : r.prezzoOggi,
-    testo: r.motivi.includes("testo"),
+    testo: r.motivi.includes("testo") || (azione === "riattiva" && (r.condizioneOverride !== null || r.descrizioneOverride !== null)),
   };
 }
 
 const AZIONE_STORICO: Record<AzioneFile, string> = {
   nuovo: "aggiunto",
+  riattiva: "riattivato",
   modifica: "modificato",
   esaurito: "esaurito",
   archivia: "archiviato",
@@ -205,6 +212,9 @@ export async function applicaRighe(canaleId: number, righe: RigaFile[]): Promise
     for (const r of righe) {
       const attiva = r.azione !== "archivia";
       const prezzoTesto = attiva && r.prezzo !== null ? r.prezzo.toFixed(2) : null;
+      // L'id sul portale (handle / numero oggetto) si registra per i nuovi e NON si
+      // cancella mai quando uno sku viene archiviato: serve a riattivarlo.
+      const idTitolo = r.azione === "nuovo" && r.idPortale ? { idPortale: r.idPortale, titoloPortale: r.titolo ?? null } : {};
       await tx
         .insert(esposizioneCanale)
         .values({
@@ -214,16 +224,18 @@ export async function applicaRighe(canaleId: number, righe: RigaFile[]): Promise
           prezzoCaricato: prezzoTesto,
           inVetrina: attiva,
           aggiornatoAt: adesso,
+          ...idTitolo,
         })
         .onConflictDoUpdate({
           target: [esposizioneCanale.skuId, esposizioneCanale.canaleId],
-          set: { quantitaCaricata: r.pezzi, prezzoCaricato: prezzoTesto, inVetrina: attiva, aggiornatoAt: adesso },
+          set: { quantitaCaricata: r.pezzi, prezzoCaricato: prezzoTesto, inVetrina: attiva, aggiornatoAt: adesso, ...idTitolo },
         });
       const prima = motiviPerSku.get(r.skuId);
       let dettaglio: string;
       if (r.azione === "archivia") dettaglio = "tolto dalla vetrina";
       else if (r.azione === "esaurito") dettaglio = `${prima?.pezziOra ?? 0} → 0 pezzi`;
-      else if (r.azione === "nuovo") dettaglio = `${r.pezzi} pezzi${r.prezzo !== null ? ` a ${r.prezzo.toFixed(2).replace(".", ",")} €` : ""}`;
+      else if (r.azione === "nuovo" || r.azione === "riattiva")
+        dettaglio = `${r.pezzi} pezzi${r.prezzo !== null ? ` a ${r.prezzo.toFixed(2).replace(".", ",")} €` : ""}`;
       else dettaglio = (prima?.motivi ?? []).map((m) => ETICHETTA_MOTIVO_MODIFICA[m]).join(", ") || "aggiornato";
       await tx.insert(storicoPortale).values({ canaleId, skuId: r.skuId, azione: AZIONE_STORICO[r.azione], dettaglio });
     }
@@ -242,4 +254,139 @@ export async function confermaFilePortale(canaleId: number): Promise<number> {
 
 export async function scartaFilePortale(canaleId: number): Promise<void> {
   await db.delete(filePortale).where(eq(filePortale.canaleId, canaleId));
+}
+
+// --- Sospendi: pezzi = 0 su piu' sku in un colpo (resta visibile "Esaurito") ---
+export async function sospendiSku(skuIds: number[], canaleId: number): Promise<number> {
+  if (skuIds.length === 0) return 0;
+  const adesso = new Date();
+  await db.transaction(async (tx) => {
+    for (const skuId of skuIds) {
+      const [e] = await tx
+        .select()
+        .from(overridePortale)
+        .where(and(eq(overridePortale.skuId, skuId), eq(overridePortale.canaleId, canaleId)));
+      await tx
+        .insert(overridePortale)
+        .values({ skuId, canaleId, quantita: 0, condizione: e?.condizione ?? null, descrizione: e?.descrizione ?? null, modificatoAt: adesso })
+        .onConflictDoUpdate({
+          target: [overridePortale.skuId, overridePortale.canaleId],
+          set: { quantita: 0, modificatoAt: adesso },
+        });
+    }
+    await tx.insert(storicoPortale).values(skuIds.map((skuId) => ({ skuId, canaleId, azione: "sospeso", dettaglio: "Pezzi a 0 (sospeso)" })));
+  });
+  return skuIds.length;
+}
+
+// --- Allinea con il portale ------------------------------------------------------
+export type DiffAllineamento = {
+  skuCode: string;
+  tipo: "uguale" | "diverso" | "solo-portale" | "solo-software" | "non-nel-software";
+  cosa: string[];
+  software: string;
+  portale: string;
+};
+export type EsitoAnalisi = {
+  contatori: Record<DiffAllineamento["tipo"], number>;
+  diffs: DiffAllineamento[]; // senza gli "uguale"
+};
+
+const euroT = (n: number | null) => (n === null ? "—" : `${n.toFixed(2).replace(".", ",")} €`);
+
+async function confronta(canaleId: number, voci: VoceAllineamento[]) {
+  const [skus, regs] = await Promise.all([
+    db.select({ id: sku.id, skuCode: sku.skuCode }).from(sku),
+    db.select().from(esposizioneCanale).where(eq(esposizioneCanale.canaleId, canaleId)),
+  ]);
+  const perCodice = new Map(skus.map((s) => [s.skuCode.toLowerCase(), s]));
+  const regPerSku = new Map(regs.map((r) => [r.skuId, r]));
+  const visti = new Set<number>();
+  const diffs: DiffAllineamento[] = [];
+  const daApplicare: { skuId: number; voce: VoceAllineamento }[] = [];
+  for (const v of voci) {
+    const s = perCodice.get(v.sku.toLowerCase());
+    if (!s) {
+      diffs.push({ skuCode: v.sku, tipo: "non-nel-software", cosa: [], software: "—", portale: `${v.attivo ? v.quantita : 0} pz` });
+      continue;
+    }
+    visti.add(s.id);
+    daApplicare.push({ skuId: s.id, voce: v });
+    const r = regPerSku.get(s.id);
+    const swIn = r?.inVetrina ?? false;
+    const swQ = swIn ? (r?.quantitaCaricata ?? 0) : 0;
+    const swP = swIn && r?.prezzoCaricato != null ? Number(r.prezzoCaricato) : null;
+    const pQ = v.attivo ? v.quantita : 0;
+    const software = swIn ? `${swQ} pz, ${euroT(swP)}` : "non online";
+    const portale = v.attivo ? `${pQ} pz, ${euroT(v.prezzo)}` : "non visibile";
+    const cosa: string[] = [];
+    if (swIn !== v.attivo) cosa.push(v.attivo ? "online sul portale, non nel software" : "nel software e' online, sul portale no");
+    else if (swIn) {
+      if (swQ !== pQ) cosa.push("pezzi diversi");
+      if (prezziDiversi(swP, v.prezzo)) cosa.push("prezzo diverso");
+    }
+    if (r?.idPortale !== v.idPortale) cosa.push("id portale da registrare");
+    const solo = cosa.length === 1 && cosa[0] === "id portale da registrare";
+    diffs.push({
+      skuCode: s.skuCode,
+      tipo: cosa.length === 0 ? "uguale" : solo ? "uguale" : !swIn && v.attivo ? "solo-portale" : "diverso",
+      cosa,
+      software,
+      portale,
+    });
+  }
+  const sparitiSku: number[] = [];
+  const codici = new Map(skus.map((s) => [s.id, s.skuCode]));
+  for (const r of regs) {
+    if (r.inVetrina && !visti.has(r.skuId)) {
+      sparitiSku.push(r.skuId);
+      diffs.push({
+        skuCode: codici.get(r.skuId) ?? String(r.skuId),
+        tipo: "solo-software",
+        cosa: ["nel software e' online, sul portale non c'e'"],
+        software: `${r.quantitaCaricata} pz`,
+        portale: "assente",
+      });
+    }
+  }
+  return { diffs, daApplicare, sparitiSku };
+}
+
+export async function analizzaAllineamento(canaleId: number, voci: VoceAllineamento[]): Promise<EsitoAnalisi> {
+  const { diffs } = await confronta(canaleId, voci);
+  const contatori = { uguale: 0, diverso: 0, "solo-portale": 0, "solo-software": 0, "non-nel-software": 0 };
+  for (const d of diffs) contatori[d.tipo]++;
+  return { contatori, diffs: diffs.filter((d) => d.tipo !== "uguale").sort((a, b) => a.skuCode.localeCompare(b.skuCode)) };
+}
+
+// Il software prende per buono quello che c'e' sul portale: stato, pezzi, prezzo e id.
+// Gli sku online nel software ma assenti dal portale risultano non online.
+export async function applicaAllineamento(canaleId: number, voci: VoceAllineamento[]): Promise<{ allineati: number; tolti: number }> {
+  const { daApplicare, sparitiSku } = await confronta(canaleId, voci);
+  const adesso = new Date();
+  await db.transaction(async (tx) => {
+    for (const { skuId, voce } of daApplicare) {
+      const q = voce.attivo ? voce.quantita : 0;
+      const prezzo = voce.attivo && voce.prezzo !== null ? voce.prezzo.toFixed(2) : null;
+      await tx
+        .insert(esposizioneCanale)
+        .values({ skuId, canaleId, quantitaCaricata: q, prezzoCaricato: prezzo, inVetrina: voce.attivo, idPortale: voce.idPortale, titoloPortale: voce.titolo, aggiornatoAt: adesso })
+        .onConflictDoUpdate({
+          target: [esposizioneCanale.skuId, esposizioneCanale.canaleId],
+          set: { quantitaCaricata: q, prezzoCaricato: prezzo, inVetrina: voce.attivo, idPortale: voce.idPortale, titoloPortale: voce.titolo, aggiornatoAt: adesso },
+        });
+    }
+    for (const skuId of sparitiSku) {
+      await tx
+        .update(esposizioneCanale)
+        .set({ quantitaCaricata: 0, prezzoCaricato: null, inVetrina: false, aggiornatoAt: adesso })
+        .where(and(eq(esposizioneCanale.skuId, skuId), eq(esposizioneCanale.canaleId, canaleId)));
+    }
+    const voceStorico = [
+      ...daApplicare.map((x) => ({ skuId: x.skuId, canaleId, azione: "allineato", dettaglio: x.voce.attivo ? `${x.voce.quantita} pz` : "non visibile" })),
+      ...sparitiSku.map((skuId) => ({ skuId, canaleId, azione: "allineato", dettaglio: "assente dal portale: tolto dalla vetrina" })),
+    ];
+    for (let i = 0; i < voceStorico.length; i += 500) await tx.insert(storicoPortale).values(voceStorico.slice(i, i + 500));
+  });
+  return { allineati: daApplicare.length, tolti: sparitiSku.length };
 }

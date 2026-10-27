@@ -8,6 +8,7 @@ import { getCanaleById, getBatchPerCanale } from "@/db/pubblicazione-queries";
 import { getRitiratiCanale, getStoricoCanale } from "@/db/esposizione-queries";
 import { getFilePortale, getTabellaCanale } from "@/db/portale-queries";
 import { TabellaPortale } from "@/components/pubblicazione/tabella-portale";
+import { AllineaPortale } from "@/components/pubblicazione/allinea-portale";
 import { RitiratiPortale } from "@/components/pubblicazione/ritirati-portale";
 import { StoricoPortale } from "@/components/pubblicazione/storico-portale";
 import { creaBatch } from "../actions";
@@ -107,9 +108,10 @@ export default async function CanalePubblicazionePage({
             canaleId={canale.id}
             nomePortale={canale.nome}
             righe={tabella}
-            file={fileUltimo ? { nomeFile: fileUltimo.nomeFile, creatoAtTesto: formatData(fileUltimo.creatoAt), righe: fileUltimo.righe } : null}
+            file={fileUltimo ? { nomi: fileUltimo.nomeFile.split("|"), creatoAtTesto: formatData(fileUltimo.creatoAt), righe: fileUltimo.righe } : null}
           />
         )}
+        {(canale.nome === "Shopify" || canale.nome === "eBay") && <AllineaPortale canaleId={canale.id} nomePortale={canale.nome} />}
         {canale.tipo === "statico" && <RitiratiPortale canaleId={canale.id} nomePortale={canale.nome} righe={ritirati} />}
         {canale.tipo === "statico" && <StoricoPortale nomePortale={canale.nome} righe={storico} />}
 

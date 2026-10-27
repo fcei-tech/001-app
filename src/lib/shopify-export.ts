@@ -205,48 +205,66 @@ export function motivoScarto(sku: SkuPerShopify, numeroFoto: number): MotivoScar
   return null;
 }
 
-// Aggiornamento di un prodotto GIA' su Shopify (import con "Sovrascrivi"):
-// una sola riga, senza foto, con solo cio' che cambia.
-//  - modifica: pezzi, prezzo e (se cambiato) il testo
-//  - esaurito: pezzi 0, il prodotto resta visibile e Shopify mostra "Esaurito"
-//    (Variant Inventory Policy = deny)
-//  - archivia: Status = archived, nulla viene cancellato (foto comprese)
-export type AggiornamentoShopify = {
-  sku: SkuPerShopify;
-  azione: "modifica" | "esaurito" | "archivia";
-  pezzi: number;
-  prezzo: number | null;
-  testo?: TestoPortale | null; // presente solo se il testo va rimandato
-};
+// --- File per i prodotti GIA' su Shopify (import con "Sovrascrivi") ------------
+// Shopify cambia TUTTE le colonne presenti nel file (anche se la cella e' vuota
+// per quella riga): per questo i file sono separati e contengono solo le
+// colonne che servono a ogni tipo di modifica. Provato su un prodotto vero
+// (2026-10-27): un file con 11 colonne ha cambiato solo le scorte.
+//  - AGGIORNAMENTI: pezzi, prezzo, stato attivo (modifiche, esauriti, riattivazioni)
+//  - TESTI: solo il testo (descrizione / condizione) - DA PROVARE su un prodotto vero
+//  - ARCHIVIATI: solo lo stato "archived" - DA PROVARE su un prodotto vero
+// Handle e Title sono SEMPRE quelli veri del prodotto (registrati da "Allinea"):
+// Shopify vuole il titolo anche in sovrascrittura e un handle diverso creerebbe
+// un prodotto nuovo e vuoto.
+export type PerAggiornamento = { handle: string; titolo: string; skuCode: string };
 
-export function generaRigaAggiornamento(a: AggiornamentoShopify): string[] {
-  const r: string[] = new Array(SHOPIFY_HEADER.length).fill("");
-  const col = (nome: (typeof SHOPIFY_HEADER)[number]) => SHOPIFY_HEADER.indexOf(nome);
-  r[col("Handle")] = handleShopify(a.sku.skuCode);
-  // Per riconoscere l'unica variante del prodotto.
-  r[col("Option1 Name")] = "Title";
-  r[col("Option1 Value")] = "Default Title";
-  r[col("Variant SKU")] = a.sku.skuCode;
-  if (a.azione === "archivia") {
-    r[col("Status")] = "archived";
-    return r;
-  }
-  r[col("Variant Inventory Tracker")] = "shopify";
-  r[col("Variant Inventory Qty")] = String(a.azione === "esaurito" ? 0 : a.pezzi);
-  r[col("Variant Inventory Policy")] = "deny";
-  r[col("Variant Fulfillment Service")] = "manual";
-  if (a.prezzo !== null) r[col("Variant Price")] = a.prezzo.toFixed(2);
-  r[col("Status")] = "active";
-  if (a.testo) r[col("Body (HTML)")] = buildBodyHtml(a.sku, a.testo);
-  return r;
+export const COLONNE_AGGIORNAMENTI = [
+  "Handle", "Title", "Option1 Name", "Option1 Value", "Variant SKU", "Variant Inventory Tracker",
+  "Variant Inventory Qty", "Variant Inventory Policy", "Variant Fulfillment Service", "Variant Price", "Status",
+] as const;
+export const COLONNE_TESTI = ["Handle", "Title", "Body (HTML)"] as const;
+export const COLONNE_ARCHIVIATI = ["Handle", "Title", "Option1 Name", "Option1 Value", "Variant SKU", "Status"] as const;
+
+export type AggiornamentoShopify = PerAggiornamento & { azione: "modifica" | "esaurito" | "riattiva"; pezzi: number; prezzo: number };
+export type TestoShopify = PerAggiornamento & { sku: SkuPerShopify; testo: TestoPortale };
+
+function csv(intestazione: readonly string[], righe: string[][]): string {
+  // UTF-8 puro, senza BOM.
+  return [intestazione.map(escapiCsv).join(","), ...righe.map((r) => r.map(escapiCsv).join(","))].join("\r\n") + "\r\n";
 }
 
-export function generaCsvShopify(prodotti: RigaShopifyInput[], aggiornamenti: AggiornamentoShopify[] = []): string {
-  const righe = [
-    SHOPIFY_HEADER.map(escapiCsv).join(","),
-    ...prodotti.flatMap((p) => generaRigheProdotto(p).map((r) => r.map(escapiCsv).join(","))),
-    ...aggiornamenti.map((a) => generaRigaAggiornamento(a).map(escapiCsv).join(",")),
-  ];
-  // UTF-8 puro, senza BOM.
-  return righe.join("\r\n") + "\r\n";
+export function generaCsvNuovi(prodotti: RigaShopifyInput[]): string {
+  return csv(SHOPIFY_HEADER, prodotti.flatMap((p) => generaRigheProdotto(p)));
+}
+
+export function generaCsvAggiornamenti(agg: AggiornamentoShopify[]): string {
+  return csv(
+    COLONNE_AGGIORNAMENTI,
+    agg.map((a) => [
+      a.handle, a.titolo, "Title", "Default Title", a.skuCode, "shopify",
+      String(a.azione === "esaurito" ? 0 : a.pezzi), "deny", "manual", a.prezzo.toFixed(2), "active",
+    ])
+  );
+}
+
+export function generaCsvTesti(testi: TestoShopify[]): string {
+  return csv(COLONNE_TESTI, testi.map((t) => [t.handle, t.titolo, buildBodyHtml(t.sku, t.testo)]));
+}
+
+export function generaCsvArchiviati(arch: PerAggiornamento[]): string {
+  return csv(COLONNE_ARCHIVIATI, arch.map((a) => [a.handle, a.titolo, "Title", "Default Title", a.skuCode, "archived"]));
+}
+
+// Nomi dei file e spunte da usare nell'importazione di Shopify.
+export type TipoFileShopify = "NUOVI" | "AGGIORNAMENTI" | "TESTI" | "ARCHIVIATI";
+export const NUMERO_FILE_SHOPIFY: Record<TipoFileShopify, number> = { NUOVI: 1, AGGIORNAMENTI: 2, TESTI: 3, ARCHIVIATI: 4 };
+export const SPUNTE_SHOPIFY: Record<TipoFileShopify, { sovrascrivi: boolean; pubblica: boolean; sigla: string }> = {
+  NUOVI: { sovrascrivi: true, pubblica: true, sigla: "SOVRASCRIVI+PUBBLICA" },
+  AGGIORNAMENTI: { sovrascrivi: true, pubblica: false, sigla: "SOLO-SOVRASCRIVI" },
+  TESTI: { sovrascrivi: true, pubblica: false, sigla: "SOLO-SOVRASCRIVI" },
+  ARCHIVIATI: { sovrascrivi: true, pubblica: false, sigla: "SOLO-SOVRASCRIVI" },
+};
+
+export function nomeFileShopify(tipo: TipoFileShopify, marca: string): string {
+  return `shopify_${NUMERO_FILE_SHOPIFY[tipo]}-${tipo}_[${SPUNTE_SHOPIFY[tipo].sigla}]_${marca}.csv`;
 }

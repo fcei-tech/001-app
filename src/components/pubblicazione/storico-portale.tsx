@@ -5,7 +5,7 @@ const ETICHETTA: Record<string, string> = {
   tolto: "Tolto",
   abbassato: "Quantità abbassata",
   riprezzato: "Prezzo aggiornato",
-  ritirato: "Ritirato da te",
+  ritirato: "Escluso da te",
   rimesso: "Rimesso in vendita",
   bloccato: "Bloccato",
   sbloccato: "Sbloccato",
@@ -14,6 +14,9 @@ const ETICHETTA: Record<string, string> = {
   esaurito: "Esaurito",
   archiviato: "Archiviato",
   cella: "Cella modificata",
+  sospeso: "Sospeso (pezzi a 0)",
+  riattivato: "Riattivato",
+  allineato: "Allineato col portale",
 };
 
 const formatta = (d: Date) =>

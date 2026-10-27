@@ -10,12 +10,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { CellTesto } from "@/components/magazzino/editable-cell";
 import {
   confermaFileAction,
-  generaFileShopifyAction,
+  generaFilePortaleAction,
   ripristinaCellePortaleAction,
   ritiraDaPortaliAction,
   salvaCellaPortaleAction,
   scartaFileAction,
   segnaFattoAction,
+  sospendiAction,
+  type FileGenerato,
 } from "@/app/pubblicazione/esposizione-actions";
 import { useSelezioneMultipla } from "@/lib/selezione-multipla";
 import {
@@ -96,6 +98,15 @@ function CellaDescrizione({ r, salva }: { r: RigaPortale; salva: (v: string | nu
   );
 }
 
+// Istruzioni ricavate dal nome del file (il nome contiene numero, tipo e spunte).
+function istruzioneDaNome(nome: string, portale: string): string {
+  if (portale === "Shopify") {
+    if (nome.includes("[SOVRASCRIVI+PUBBLICA]")) return 'Shopify: Importa, spunta "Sovrascrivi" e "Pubblica i nuovi prodotti".';
+    return 'Shopify: Importa, spunta solo "Sovrascrivi" (togli "Pubblica i nuovi prodotti").';
+  }
+  return nome.includes("DA-PROVARE") ? "eBay: File Exchange. DA PROVARE su 1–2 annunci." : "eBay: File Exchange.";
+}
+
 export function TabellaPortale({
   canaleId,
   nomePortale,
@@ -105,7 +116,7 @@ export function TabellaPortale({
   canaleId: number;
   nomePortale: string;
   righe: RigaPortale[];
-  file: { nomeFile: string; creatoAtTesto: string; righe: number } | null;
+  file: { nomi: string[]; creatoAtTesto: string; righe: number } | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -113,7 +124,9 @@ export function TabellaPortale({
   const [filtro, setFiltro] = useState<Filtro>("tutti");
   const [mostraTutte, setMostraTutte] = useState(false);
   const [esito, setEsito] = useState<{ ok: boolean; testo: string; dettaglio?: string[] } | null>(null);
-  const conFile = nomePortale === "Shopify";
+  const conFile = nomePortale === "Shopify" || nomePortale === "eBay";
+  const soloSegna = !conFile;
+  const [scaricati, setScaricati] = useState<FileGenerato[]>([]);
 
   const riassunto = useMemo(() => riassuntoModifiche(righe), [righe]);
 
@@ -149,8 +162,8 @@ export function TabellaPortale({
 
   function scaricaFile() {
     start(async () => {
-      const r = await generaFileShopifyAction(canaleId, scelti.map((x) => x.skuId));
-      if (!r.ok || !r.csv || !r.filename) {
+      const r = await generaFilePortaleAction(canaleId, scelti.map((x) => x.skuId));
+      if (!r.ok || !r.files || r.files.length === 0) {
         setEsito({
           ok: false,
           testo: r.errore ?? "Errore.",
@@ -158,10 +171,15 @@ export function TabellaPortale({
         });
         return;
       }
-      scarica(r.filename, r.csv);
+      setScaricati(r.files);
+      // Un file alla volta, con una pausa: il browser blocca i download in raffica.
+      for (const f of r.files) {
+        scarica(f.nome, f.csv);
+        await new Promise((ok) => setTimeout(ok, 400));
+      }
       setEsito({
         ok: true,
-        testo: `File ${r.filename} scaricato con ${r.inclusi} sku. Caricalo su Shopify (Prodotti → Importa, con "Sovrascrivi"), poi premi "Ho caricato il file".`,
+        testo: `${r.files.length} ${r.files.length === 1 ? "file scaricato" : "file scaricati"} (${r.inclusi} sku). Caricali su ${nomePortale} nell'ordine indicato qui sotto, poi premi "Ho caricato il file".`,
         dettaglio: r.scartati?.length ? r.scartati.map((s) => `Esclusi: ${s.skuCode} — ${s.motivo}`) : undefined,
       });
       setSelezionati(new Set());
@@ -189,33 +207,57 @@ export function TabellaPortale({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {conFile ? (
+          {conFile && (
             <>
               <Button type="button" disabled={pending || nFile === 0} onClick={scaricaFile}>
-                {pending ? "…" : `Scarica file Shopify (${nFile})`}
+                {pending ? "…" : `Scarica file ${nomePortale} (${nFile})`}
               </Button>
-              <Button type="button" variant="secondary" disabled={pending || !file} onClick={() => esegui(() => confermaFileAction(canaleId))}>
+              <Button type="button" variant="secondary" disabled={pending || !file} onClick={() => esegui(() => confermaFileAction(canaleId), () => setScaricati([]))}>
                 Ho caricato il file
               </Button>
             </>
-          ) : (
-            <Button type="button" disabled={pending || nFile === 0} onClick={() => esegui(() => segnaFattoAction(canaleId, scelti.map((x) => x.skuId)), () => setSelezionati(new Set()))}>
-              {pending ? "…" : `Segna come fatto (${nFile})`}
-            </Button>
           )}
+          <Button
+            type="button"
+            variant={soloSegna ? "default" : "ghost"}
+            disabled={pending || nFile === 0}
+            onClick={() => esegui(() => segnaFattoAction(canaleId, scelti.map((x) => x.skuId)), () => setSelezionati(new Set()))}
+          >
+            {pending ? "…" : `Segna come fatto (${nFile})`}
+          </Button>
         </div>
       </div>
-      {conFile && file && (
-        <div className="mb-3 flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs text-muted-foreground">
-          <span>
-            Ultimo file: <span className="font-mono">{file.nomeFile}</span> ({file.righe} sku, {file.creatoAtTesto}). Dopo averlo caricato su Shopify premi &quot;Ho caricato il file&quot;.
-          </span>
-          <button type="button" className="underline-offset-4 hover:underline" onClick={() => esegui(() => scartaFileAction(canaleId))}>
-            Scarta
-          </button>
+      {conFile && (scaricati.length > 0 || file) && (
+        <div className="mb-3 rounded-md border px-3 py-2 text-xs">
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <span className="font-medium">
+              File da caricare su {nomePortale}
+              {file ? ` (generati il ${file.creatoAtTesto}, ${file.righe} sku)` : ""}
+            </span>
+            {file && (
+              <button type="button" className="text-muted-foreground underline-offset-4 hover:underline" onClick={() => esegui(() => scartaFileAction(canaleId), () => setScaricati([]))}>
+                Scarta
+              </button>
+            )}
+          </div>
+          <ol className="flex flex-col gap-1">
+            {(scaricati.length > 0 ? scaricati.map((f) => ({ nome: f.nome, nSku: f.nSku, csv: f.csv, istruzione: f.istruzione })) : (file?.nomi ?? []).map((n) => ({ nome: n, nSku: null as number | null, csv: null as string | null, istruzione: istruzioneDaNome(n, nomePortale) }))).map((f) => (
+              <li key={f.nome} className="flex flex-wrap items-baseline gap-x-2">
+                <span className="font-mono">{f.nome}</span>
+                {f.nSku !== null && <span className="text-muted-foreground">({f.nSku} sku)</span>}
+                <span className="text-muted-foreground">— {f.istruzione}</span>
+                {f.csv && (
+                  <button type="button" className="underline-offset-4 hover:underline" onClick={() => scarica(f.nome, f.csv!)}>
+                    scarica di nuovo
+                  </button>
+                )}
+              </li>
+            ))}
+          </ol>
+          <p className="mt-1 text-muted-foreground">Carica nell&apos;ordine del numero davanti al nome. Se non carichi tutti i file, non premere &quot;Ho caricato il file&quot;.</p>
         </div>
       )}
-      {!conFile && (
+      {soloSegna && (
         <p className="mb-3 text-xs text-muted-foreground">
           Il file per {nomePortale} non è ancora pronto: fai le modifiche sul portale e poi premi &quot;Segna come fatto&quot;.
         </p>
@@ -262,15 +304,15 @@ export function TabellaPortale({
           </label>
         </div>
 
-        <div className="hidden items-center gap-3 border-t bg-muted/40 px-4 py-2 text-[11px] uppercase tracking-wide text-muted-foreground md:flex">
-          <span className="w-4" />
-          <span className="w-28">Sku</span>
+        <div className="hidden items-center gap-3 border-t bg-muted/40 px-4 py-2 text-[11px] uppercase tracking-wide text-muted-foreground md:grid grid-cols-[1.25rem_6rem_minmax(6rem,1fr)_7.5rem_6.5rem_8rem_6rem_8.5rem]">
+          <span />
+          <span>Sku</span>
           <span className="min-w-0 flex-1">Opera</span>
-          <span className="w-32">Pezzi ora → dopo</span>
-          <span className="w-28 text-right">Prezzo</span>
-          <span className="w-36">Condizione</span>
-          <span className="w-24">Descrizione</span>
-          <span className="w-32">Stato</span>
+          <span>Pezzi ora → dopo</span>
+          <span className="text-right">Prezzo</span>
+          <span>Condizione</span>
+          <span>Descrizione</span>
+          <span>Stato</span>
         </div>
 
         {mostrate.length === 0 ? (
@@ -281,17 +323,17 @@ export function TabellaPortale({
           <ul>
             {mostrate.map((r) => {
               const cambiato = prezziDiversi(r.prezzoOnline, r.prezzoOggi);
-              const etichettaStato = r.stato === "modificato" ? r.motivi.map((m) => ETICHETTA_MOTIVO_MODIFICA[m]).join(", ") : r.esauritoOnline ? "Esaurito (online)" : ETICHETTA_STATO[r.stato];
+              const etichettaStato = r.stato === "nuovo" && nomePortale === "Shopify" && r.idPortale ? "Da riattivare" : r.stato === "modificato" ? r.motivi.map((m) => ETICHETTA_MOTIVO_MODIFICA[m]).join(", ") : r.esauritoOnline ? "Esaurito (online)" : ETICHETTA_STATO[r.stato];
               return (
-                <li key={r.skuId} className={`flex flex-wrap items-center gap-3 border-t px-4 py-2 text-sm ${SFONDO[r.stato]}`}>
+                <li key={r.skuId} className={`grid grid-cols-[1.25rem_6rem_minmax(6rem,1fr)_7.5rem_6.5rem_8rem_6rem_8.5rem] items-center gap-3 border-t px-4 py-2 text-sm ${SFONDO[r.stato]}`}>
                   <span onClickCapture={segnalaShift}>
                     <Checkbox checked={selezionati.has(r.skuId)} onCheckedChange={(v) => gestisciSeleziona(r.skuId, v === true)} aria-label={`Seleziona ${r.skuCode}`} />
                   </span>
-                  <span className="w-28 font-mono text-xs">{r.skuCode}</span>
+                  <span className="font-mono text-xs">{r.skuCode}</span>
                   <span className="min-w-0 flex-1 truncate">
                     {r.artista} — {r.opera}
                   </span>
-                  <span className="flex w-32 items-center gap-1 text-xs">
+                  <span className="flex items-center gap-1 text-xs">
                     <span className="text-muted-foreground">{r.inVetrina ? r.pezziOra : "—"}</span>
                     <span className="text-muted-foreground">→</span>
                     {r.stato === "archiviare" ? (
@@ -307,7 +349,7 @@ export function TabellaPortale({
                       </span>
                     )}
                   </span>
-                  <span className="w-28 text-right text-xs">
+                  <span className="text-right text-xs">
                     {cambiato ? (
                       <>
                         <span className="text-muted-foreground line-through">{euro(r.prezzoOnline)}</span> {euro(r.prezzoOggi)}
@@ -318,17 +360,17 @@ export function TabellaPortale({
                       euro(r.prezzoOggi)
                     )}
                   </span>
-                  <span className="w-36 text-xs">
+                  <span className="text-xs">
                     <CellTesto
                       valore={r.condizioneOverride}
                       placeholder="Buone (come da foto)"
                       onSalva={(v) => salvaCella(r.skuId, "condizione", v.trim() === "" ? null : v)}
                     />
                   </span>
-                  <span className="w-24">
+                  <span>
                     <CellaDescrizione r={r} salva={(v) => salvaCella(r.skuId, "descrizione", v)} />
                   </span>
-                  <span className="w-32">
+                  <span>
                     <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] ${CHIP[r.stato]}`}>{etichettaStato}</span>
                   </span>
                 </li>
@@ -354,7 +396,10 @@ export function TabellaPortale({
               disabled={pending}
               onClick={() => esegui(() => ritiraDaPortaliAction(scelti.map((x) => x.skuId), [canaleId], true), () => setSelezionati(new Set()))}
             >
-              Archivia e non rimettere più qui
+              Escludi da questo portale
+            </Button>
+            <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => esegui(() => sospendiAction(scelti.map((x) => x.skuId), canaleId), () => setSelezionati(new Set()))}>
+              Sospendi (pezzi a 0)
             </Button>
             <Button
               type="button"

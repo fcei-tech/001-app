@@ -8,8 +8,8 @@ import { ritiraDaPortaliAction } from "@/app/pubblicazione/esposizione-actions";
 import { useSelezioneMultipla } from "@/lib/selezione-multipla";
 import type { RigaRitirato } from "@/db/esposizione-queries";
 
-// Elenco degli sku ritirati da questo portale con "Ritira da…": da qui si
-// rimettono in vendita (tornano a comparire in "Da aggiungere").
+// Elenco degli sku esclusi da questo portale: da qui si rimettono in vendita
+// (tornano a comparire in tabella).
 export function RitiratiPortale({ canaleId, nomePortale, righe }: { canaleId: number; nomePortale: string; righe: RigaRitirato[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -32,8 +32,8 @@ export function RitiratiPortale({ canaleId, nomePortale, righe }: { canaleId: nu
   }
 
   return (
-    <details className="mb-6 rounded-xl border" aria-label={`Ritirati da ${nomePortale}`}>
-      <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Ritirati da {nomePortale} ({righe.length})</summary>
+    <details className="mb-6 rounded-xl border" aria-label={`Esclusi da ${nomePortale}`}>
+      <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Esclusi da {nomePortale} ({righe.length})</summary>
       <div className="border-t px-4 py-3">
         <div className="mb-2 flex flex-wrap items-center gap-3">
           <span className="text-xs text-muted-foreground">
@@ -44,7 +44,7 @@ export function RitiratiPortale({ canaleId, nomePortale, righe }: { canaleId: nu
               <Checkbox
                 checked={tutti ? true : scelti > 0 ? "indeterminate" : false}
                 onCheckedChange={(v) => selezionaTutti(v === true)}
-                aria-label="Seleziona tutti i ritirati"
+                aria-label="Seleziona tutti gli esclusi"
               />
               Tutti
             </label>
@@ -73,7 +73,7 @@ export function RitiratiPortale({ canaleId, nomePortale, righe }: { canaleId: nu
                 </span>
               </div>
               <span className="whitespace-nowrap text-xs text-muted-foreground">
-                ritirato il {new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(r.ritiratoIl))}
+                escluso il {new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(r.ritiratoIl))}
               </span>
               {r.inVetrina && (
                 <span className="whitespace-nowrap text-xs text-muted-foreground">ancora in vetrina: da archiviare</span>

@@ -367,6 +367,9 @@ export const esposizioneCanale = pgTable(
     inVetrina: boolean("in_vetrina").notNull().default(false),
     // Numero oggetto / id del portale (eBay): si riempie con "Allinea con il portale".
     idPortale: text("id_portale"),
+    // Titolo del prodotto sul portale (Shopify): serve a rimandarlo identico negli
+    // aggiornamenti (Shopify lo vuole sempre) senza sovrascrivere quello reale.
+    titoloPortale: text("titolo_portale"),
     aggiornatoAt: timestamp("aggiornato_at").notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.skuId, table.canaleId] })]

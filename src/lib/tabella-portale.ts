@@ -48,6 +48,8 @@ export type InputRigaPortale = {
     quantitaCaricata: number;
     prezzoCaricato: number | null;
     aggiornatoAt: Date;
+    idPortale: string | null;
+    titoloPortale: string | null;
   } | null;
   ov: {
     quantita: number | null;
@@ -75,6 +77,10 @@ export type RigaPortale = {
   prezzoOggi: number | null;
   esauritoOnline: boolean;
   mancaPrezzo: boolean;
+  // Il prodotto esiste gia' sul portale (handle / numero oggetto noti):
+  // rimetterlo in vetrina e' una riattivazione, non una creazione.
+  idPortale: string | null;
+  titoloPortale: string | null;
 };
 
 // null = la riga non compare in tabella (non e' in vetrina e non deve entrarci).
@@ -99,6 +105,8 @@ export function calcolaRigaPortale(i: InputRigaPortale): RigaPortale | null {
     prezzoOnline: inVetrina ? (i.reg?.prezzoCaricato ?? null) : null,
     prezzoOggi: i.prezzoOggi,
     mancaPrezzo: i.prezzoOggi === null,
+    idPortale: i.reg?.idPortale ?? null,
+    titoloPortale: i.reg?.titoloPortale ?? null,
   };
 
   if (!inVetrina) {
@@ -127,13 +135,15 @@ export function calcolaRigaPortale(i: InputRigaPortale): RigaPortale | null {
 }
 
 // Riga del file da mandare al portale (e da registrare alla conferma).
-export type AzioneFile = "nuovo" | "modifica" | "esaurito" | "archivia";
+export type AzioneFile = "nuovo" | "riattiva" | "modifica" | "esaurito" | "archivia";
 export type RigaFile = {
   skuId: number;
   azione: AzioneFile;
   pezzi: number;
   prezzo: number | null;
   testo: boolean; // il testo (condizione/descrizione) va rimandato
+  idPortale?: string | null; // handle / numero oggetto da registrare (nuovi)
+  titolo?: string | null;
 };
 
 export function azioneDaStato(stato: StatoRiga): AzioneFile | null {

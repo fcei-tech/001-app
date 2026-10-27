@@ -1,0 +1,1 @@
+ALTER TABLE "esposizione_canale" ADD COLUMN "titolo_portale" text;
