@@ -27,8 +27,8 @@ export function PortaliSku({ skuId, stato }: { skuId: number; stato: StatoPortal
               <Badge variant="warning">Ritirato</Badge>
             ) : s.bloccato ? (
               <Badge variant="destructive">Non pubblicare qui</Badge>
-            ) : s.quantitaCaricata > 0 ? (
-              <Badge variant="success">Caricato: {s.quantitaCaricata}</Badge>
+            ) : s.inVetrina ? (
+              <Badge variant="success">{s.quantitaCaricata > 0 ? `Caricato: ${s.quantitaCaricata}` : "In vetrina (esaurito)"}</Badge>
             ) : (
               <Badge variant="secondary">Non caricato</Badge>
             )}

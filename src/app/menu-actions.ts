@@ -1,6 +1,6 @@
 "use server";
 
-import { calcolaDaFare } from "@/db/esposizione-queries";
+import { calcolaDaFare } from "@/db/portale-queries";
 
 // Numeri mostrati accanto alle voci del menu. Mai eccezioni: se il calcolo
 // fallisce il menu resta semplicemente senza numero.

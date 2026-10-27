@@ -10,6 +10,10 @@ const ETICHETTA: Record<string, string> = {
   bloccato: "Bloccato",
   sbloccato: "Sbloccato",
   annullato: "Annullato",
+  modificato: "Modificato",
+  esaurito: "Esaurito",
+  archiviato: "Archiviato",
+  cella: "Cella modificata",
 };
 
 const formatta = (d: Date) =>

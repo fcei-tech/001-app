@@ -362,6 +362,11 @@ export const esposizioneCanale = pgTable(
     // alla lista "Da riprezzare". null = non registrato (righe precedenti):
     // in quel caso non si segnala nulla finche' non viene confermato un prezzo.
     prezzoCaricato: numeric("prezzo_caricato", { precision: 10, scale: 2 }),
+    // In vetrina sul portale (2026-10-27): true anche con 0 pezzi = prodotto
+    // "Esaurito" ancora visibile. false = non c'e' (mai caricato, o archiviato).
+    inVetrina: boolean("in_vetrina").notNull().default(false),
+    // Numero oggetto / id del portale (eBay): si riempie con "Allinea con il portale".
+    idPortale: text("id_portale"),
     aggiornatoAt: timestamp("aggiornato_at").notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.skuId, table.canaleId] })]
@@ -388,6 +393,37 @@ export const bloccoSkuCanale = pgTable(
   },
   (table) => [primaryKey({ columns: [table.skuId, table.canaleId] })]
 );
+
+// Valori scelti a mano per UN portale statico (2026-10-27), come le celle del
+// batch Catawiki. null = valore automatico. "modificatoAt" confrontato con
+// l'ultimo caricamento dice se la modifica e' ancora da mandare al portale.
+export const overridePortale = pgTable(
+  "override_portale",
+  {
+    skuId: integer("sku_id")
+      .notNull()
+      .references(() => sku.id),
+    canaleId: integer("canale_id")
+      .notNull()
+      .references(() => canali.id),
+    quantita: integer("quantita"),
+    condizione: text("condizione"),
+    descrizione: text("descrizione"),
+    modificatoAt: timestamp("modificato_at").notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.skuId, table.canaleId] })]
+);
+
+// Ultimo file generato per un portale: "Ho caricato il file" registra
+// esattamente queste righe (anche dopo aver chiuso e riaperto l'app).
+export const filePortale = pgTable("file_portale", {
+  canaleId: integer("canale_id")
+    .primaryKey()
+    .references(() => canali.id),
+  creatoAt: timestamp("creato_at").notNull().defaultNow(),
+  nomeFile: text("nome_file").notNull(),
+  righe: jsonb("righe").notNull(),
+});
 
 // Storico delle operazioni sui portali statici (2026-10-20): una riga per
 // sku e per operazione (aggiunto, tolto, riprezzato, ritirato, annullato...).

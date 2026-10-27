@@ -35,7 +35,7 @@ import {
   type VoceModificaInline,
 } from "@/lib/campi-inline";
 import { annullaEsposizioneAction, ritiraDaPortaliAction } from "@/app/pubblicazione/esposizione-actions";
-import type { DaSistemare } from "@/db/esposizione-queries";
+import type { DaSistemare } from "@/db/portale-queries";
 import { CellTesto, CellSelect, CellMisura } from "@/components/magazzino/editable-cell";
 import { campiMancanti, ETICHETTA_CAMPO_MANCANTE, SPIEGAZIONE_CAMPO_MANCANTE } from "@/lib/campi-mancanti-pubblicazione";
 
@@ -1066,7 +1066,7 @@ export function VistaMagazzino({
                   <TableCell className="p-0"><Link href={`/magazzino/${r.id}`} className="block font-mono text-xs p-3">
                       {r.skuCode}
                       {daSistemare[r.id]?.length ? (
-                        <Badge variant="warning" className="ml-2 align-middle" title={daSistemare[r.id].map((d) => `${d.portale}: ${d.tipo}`).join(" · ")}>
+                        <Badge variant="warning" className="ml-2 align-middle" title={daSistemare[r.id].map((d) => `${d.portale}: ${d.stato}`).join(" · ")}>
                           {Array.from(new Set(daSistemare[r.id].map((d) => d.portale))).join(", ")}
                         </Badge>
                       ) : null}

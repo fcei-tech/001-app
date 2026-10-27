@@ -64,6 +64,13 @@
       "when": 1792487813365,
       "tag": "0008_storico_portale",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793093450442,
+      "tag": "0009_tabella_portale",
+      "breakpoints": true
     }
   ]
 }

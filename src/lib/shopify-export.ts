@@ -105,22 +105,30 @@ export function buildTitolo(sku: SkuPerShopify): string {
   return pulisci(`${sku.artista} ${sku.opera} POSTER VINTAGE`) + dim;
 }
 
-export function buildBodyHtml(sku: SkuPerShopify): string {
+// Testi scelti a mano per questo portale (celle della tabella): una
+// descrizione scritta a mano sostituisce il blocco Artista/Opera/Epoca/
+// Dimensioni/Condizioni (Garanzia e Spedizione restano sempre); una
+// condizione scritta a mano sostituisce solo "BUONE (COME DA FOTO)".
+export type TestoPortale = { condizione?: string | null; descrizione?: string | null };
+
+export function buildBodyHtml(sku: SkuPerShopify, testo?: TestoPortale): string {
   const l = numero(sku.larghezza);
   const a = numero(sku.altezza);
   const anno = annoSenzaCirca(sku.anno);
+  const coda = `<br><br><b>Garanzia: </b>${TESTO_GARANZIA}` + `<br><br><b>Spedizione: </b>${TESTO_SPEDIZIONE}`;
+  const descrizione = testo?.descrizione?.trim();
+  if (descrizione) {
+    return descrizione.split(/\r?\n/).map((r) => escapeHtml(r.trim())).filter((r) => r !== "").join("<br>") + coda;
+  }
   const righe: string[] = [
     `<b>Artista: </b>${escapeHtml(pulisci(sku.artista))}`,
     `<b>Opera: </b>${escapeHtml(pulisci(sku.opera))}`,
   ];
   if (anno) righe.push(`<b>Epoca: </b>circa ${escapeHtml(anno)}`);
   if (l && a) righe.push(`<b>Dimensioni: </b>circa ${formatMisura(l)}x${formatMisura(a)} cm`);
-  righe.push(`<b>Condizioni: </b>${TESTO_CONDIZIONI}${eTela(sku.supporto) ? " LINEN BACKED" : ""}`);
-  return (
-    righe.join("<br>") +
-    `<br><br><b>Garanzia: </b>${TESTO_GARANZIA}` +
-    `<br><br><b>Spedizione: </b>${TESTO_SPEDIZIONE}`
-  );
+  const condizione = testo?.condizione?.trim() ? escapeHtml(pulisci(testo.condizione)) : TESTO_CONDIZIONI;
+  righe.push(`<b>Condizioni: </b>${condizione}${eTela(sku.supporto) ? " LINEN BACKED" : ""}`);
+  return righe.join("<br>") + coda;
 }
 
 export function buildTag(sku: SkuPerShopify): string {
@@ -149,11 +157,11 @@ function escapiCsv(v: string): string {
   return v;
 }
 
-export type RigaShopifyInput = { sku: SkuPerShopify; quantita: number; foto: string[] };
+export type RigaShopifyInput = { sku: SkuPerShopify; quantita: number; foto: string[]; testo?: TestoPortale };
 
 // Restituisce le righe CSV di UN prodotto (prima riga + una per ogni foto
 // successiva). Chi chiama ha gia' verificato prezzo e foto.
-export function generaRigheProdotto({ sku, quantita, foto }: RigaShopifyInput): string[][] {
+export function generaRigheProdotto({ sku, quantita, foto, testo }: RigaShopifyInput): string[][] {
   const handle = handleShopify(sku.skuCode);
   const prezzo = calcolaPrezzoShopify(sku.prezzoEbay);
   const riga = (): string[] => new Array(SHOPIFY_HEADER.length).fill("");
@@ -167,7 +175,7 @@ export function generaRigheProdotto({ sku, quantita, foto }: RigaShopifyInput): 
     r[col("Image Alt Text")] = sku.skuCode;
     if (i === 0) {
       r[col("Title")] = buildTitolo(sku);
-      r[col("Body (HTML)")] = buildBodyHtml(sku);
+      r[col("Body (HTML)")] = buildBodyHtml(sku, testo);
       r[col("Vendor")] = SHOPIFY_VENDOR;
       r[col("Type")] = SHOPIFY_TIPO;
       r[col("Tags")] = buildTag(sku);
@@ -197,10 +205,47 @@ export function motivoScarto(sku: SkuPerShopify, numeroFoto: number): MotivoScar
   return null;
 }
 
-export function generaCsvShopify(prodotti: RigaShopifyInput[]): string {
+// Aggiornamento di un prodotto GIA' su Shopify (import con "Sovrascrivi"):
+// una sola riga, senza foto, con solo cio' che cambia.
+//  - modifica: pezzi, prezzo e (se cambiato) il testo
+//  - esaurito: pezzi 0, il prodotto resta visibile e Shopify mostra "Esaurito"
+//    (Variant Inventory Policy = deny)
+//  - archivia: Status = archived, nulla viene cancellato (foto comprese)
+export type AggiornamentoShopify = {
+  sku: SkuPerShopify;
+  azione: "modifica" | "esaurito" | "archivia";
+  pezzi: number;
+  prezzo: number | null;
+  testo?: TestoPortale | null; // presente solo se il testo va rimandato
+};
+
+export function generaRigaAggiornamento(a: AggiornamentoShopify): string[] {
+  const r: string[] = new Array(SHOPIFY_HEADER.length).fill("");
+  const col = (nome: (typeof SHOPIFY_HEADER)[number]) => SHOPIFY_HEADER.indexOf(nome);
+  r[col("Handle")] = handleShopify(a.sku.skuCode);
+  // Per riconoscere l'unica variante del prodotto.
+  r[col("Option1 Name")] = "Title";
+  r[col("Option1 Value")] = "Default Title";
+  r[col("Variant SKU")] = a.sku.skuCode;
+  if (a.azione === "archivia") {
+    r[col("Status")] = "archived";
+    return r;
+  }
+  r[col("Variant Inventory Tracker")] = "shopify";
+  r[col("Variant Inventory Qty")] = String(a.azione === "esaurito" ? 0 : a.pezzi);
+  r[col("Variant Inventory Policy")] = "deny";
+  r[col("Variant Fulfillment Service")] = "manual";
+  if (a.prezzo !== null) r[col("Variant Price")] = a.prezzo.toFixed(2);
+  r[col("Status")] = "active";
+  if (a.testo) r[col("Body (HTML)")] = buildBodyHtml(a.sku, a.testo);
+  return r;
+}
+
+export function generaCsvShopify(prodotti: RigaShopifyInput[], aggiornamenti: AggiornamentoShopify[] = []): string {
   const righe = [
     SHOPIFY_HEADER.map(escapiCsv).join(","),
     ...prodotti.flatMap((p) => generaRigheProdotto(p).map((r) => r.map(escapiCsv).join(","))),
+    ...aggiornamenti.map((a) => generaRigaAggiornamento(a).map(escapiCsv).join(",")),
   ];
   // UTF-8 puro, senza BOM.
   return righe.join("\r\n") + "\r\n";

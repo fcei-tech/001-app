@@ -120,6 +120,7 @@ export async function importaStatoPortali(
             skuId: c.skuId,
             canaleId: c.canaleId,
             quantitaCaricata: c.quantita,
+            inVetrina: c.quantita > 0,
             prezzoCaricato: c.prezzo === null ? null : c.prezzo.toFixed(2),
           }))
         )

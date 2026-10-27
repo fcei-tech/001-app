@@ -3,7 +3,7 @@ import { Header } from "@/components/header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { getCanaliConConteggio } from "@/db/pubblicazione-queries";
-import { calcolaDaFare } from "@/db/esposizione-queries";
+import { calcolaDaFare } from "@/db/portale-queries";
 import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
 import { BarraCanale } from "@/components/pubblicazione/barra-canale";
 

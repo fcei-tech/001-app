@@ -3,7 +3,8 @@ import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { getMagazzino, getProprietariAttivi, getTipiOggetto, getUbicazioniAttive, type ColonnaOrdinabile } from "@/db/queries";
 import { Plus, FileSpreadsheet, Images } from "lucide-react";
-import { getCanaliStatici, getDaSistemarePerSku } from "@/db/esposizione-queries";
+import { getCanaliStatici } from "@/db/esposizione-queries";
+import { getDaSistemarePerSku } from "@/db/portale-queries";
 import { VistaMagazzino } from "@/components/magazzino/vista-magazzino";
 
 // Whitelist di validazione del parametro URL ?ordina= (2026-09-23, estesa a
