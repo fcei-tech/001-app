@@ -20,7 +20,7 @@ jobs:
   build-and-release:
     # Runner Apple Silicon (arm64) - stessa architettura dei due Mac di
     # destinazione, cosi' non serve cross-compilare.
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
