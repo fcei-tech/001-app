@@ -22,6 +22,7 @@ import {
   rimuoviLottoDaBatch,
   confermaBatchAction,
   accettaLottoAction,
+  cambiaStatoBatchAction,
   annullaAccettazioneAction,
   annullaConsegnaAction,
 } from "../../actions";
@@ -29,7 +30,6 @@ import { SelettoreLottiBatch } from "@/components/pubblicazione/selettore-lotti"
 import { SezioneAggiungiLotti } from "@/components/pubblicazione/sezione-aggiungi-lotti";
 import { EliminaBatchButton } from "@/components/pubblicazione/elimina-batch-button";
 import { OverrideLottoForm } from "@/components/pubblicazione/override-lotto-form";
-import { CambiaStatoBatchControl } from "@/components/pubblicazione/cambia-stato-batch-control";
 import { ConsegnaLottoForm } from "@/components/pubblicazione/consegna-lotto-form";
 import { MenuAltreAzioni } from "@/components/menu-altre-azioni";
 import { RientroLottoButton } from "@/components/pubblicazione/rientro-lotto-button";
@@ -41,6 +41,8 @@ import {
   SilenziaErroreButton,
 } from "@/components/pubblicazione/celle-override-catawiki";
 import { ImpostazioniBatchCatawikiForm } from "@/components/pubblicazione/impostazioni-batch-catawiki-form";
+import { AzioneLottiGruppo } from "@/components/pubblicazione/azione-lotti-gruppo";
+import { GeneraFileBidspiritButton } from "@/components/pubblicazione/genera-file-bidspirit-button";
 import { GeneraFileCatawikiButton } from "@/components/pubblicazione/genera-file-catawiki-button";
 import { GeneraFileAstaFisicaButton } from "@/components/pubblicazione/genera-file-asta-fisica-button";
 import { buildDescription } from "@/lib/catawiki-export";
@@ -58,8 +60,8 @@ import {
 } from "@/lib/catawiki-resolver";
 
 const ETICHETTE_STATO_RIGA: Record<string, { label: string; variant: "secondary" | "success" | "outline" }> = {
-  attivo: { label: "Attivo", variant: "secondary" },
-  candidato: { label: "Candidato", variant: "outline" },
+  attivo: { label: "In asta", variant: "secondary" },
+  candidato: { label: "Proposto", variant: "outline" },
   accettato: { label: "Accettato", variant: "success" },
 };
 
@@ -196,9 +198,9 @@ export default async function BatchPubblicazionePage({
   const risoltaPerLottoId = new Map(righeRisolteCatawiki.map((r) => [r.batchLottoId, r]));
   const motivoGeneraDisabilitato =
     batch.stato === "pubblicato"
-      ? "Batch gia' pubblicato - genera un nuovo batch per una nuova esportazione."
+      ? "Batch gia' inviato - genera un nuovo batch per una nuova esportazione."
       : batch.stato === "bozza"
-        ? "Conferma il batch prima di generare il file."
+        ? "Segna il batch come Pronto prima di generare il file."
         : undefined;
 
   // Colonne selezionabili della tabella "Lotti nel batch" (2026-09-29): Sku e
@@ -321,7 +323,7 @@ export default async function BatchPubblicazionePage({
             </h1>
             <p className="text-sm text-muted-foreground">
               Creato il {formatData(batch.createdAt)}
-              {batch.confermatoAt && <> · confermato il {formatData(batch.confermatoAt)}</>}
+              {batch.confermatoAt && <> · pronto dal {formatData(batch.confermatoAt)}</>}
               {numeroLottiConPrenotazione > 0 && (
                 <> · {numeroLottiConPrenotazione} lott{numeroLottiConPrenotazione === 1 ? "o" : "i"} con prenotazione reale</>
               )}
@@ -345,14 +347,29 @@ export default async function BatchPubblicazionePage({
                 <input type="hidden" name="batchId" value={batch.id} />
                 <input type="hidden" name="canaleId" value={canaleId} />
                 <Button type="submit" disabled={batch.lotti.length === 0}>
-                  Conferma batch
+                  Batch pronto
                 </Button>
               </form>
             )}
             {/* Controllo esterno "Cambia stato" (2026-09-25) - transizioni
                 libere in qualsiasi direzione, sostituisce il vecchio bottone
                 "Riporta in bozza" col Select generico a 3 vie. */}
-            <CambiaStatoBatchControl batchId={batch.id} canaleId={Number(canaleId)} statoAttuale={batch.stato} />
+            <MenuAltreAzioni
+              voci={(
+                [
+                  ["bozza", "Metti In preparazione", "Il batch torna modificabile; la disponibilita' prenotata si libera."],
+                  ["confermato", "Segna come Pronto", "Il batch e' pronto per generare il file / la lista."],
+                  ["pubblicato", "Segna come Inviato", "Il file o la lista sono gia' stati mandati al portale."],
+                ] as const
+              )
+                .filter(([stato]) => stato !== batch.stato)
+                .map(([stato, etichetta, descrizione]) => ({
+                  etichetta,
+                  descrizione,
+                  azione: cambiaStatoBatchAction,
+                  campi: { batchId: batch.id, canaleId, nuovoStato: stato },
+                }))}
+            />
             {isCatawiki && (
               // Genera E pubblica in un solo click (2026-09-28) - abilitato
               // SOLO a batch confermato (vedi generaFileCatawikiAction in
@@ -364,6 +381,16 @@ export default async function BatchPubblicazionePage({
                 motivoDisabilitato={motivoGeneraDisabilitato}
               />
             )}
+            {batch.canale.nome === "Bidspirit" && (
+              <GeneraFileBidspiritButton
+                batchId={batch.id}
+                disabled={batch.stato === "bozza" || batch.lotti.length === 0}
+                motivoDisabilitato={
+                  batch.stato === "bozza" ? "Segna il batch come Pronto prima di generare il file." : "Il batch non ha lotti."
+                }
+                giaInviato={batch.stato === "pubblicato"}
+              />
+            )}
             {batch.canale.tipo === "asta_fisica" && (
               // PDF lista lotti per le aste fisiche (2026-09-29): abilitato a
               // batch confermato (genera e pubblica) e a batch pubblicato
@@ -373,12 +400,27 @@ export default async function BatchPubblicazionePage({
                 batchId={batch.id}
                 disabled={batch.stato === "bozza" || batch.lotti.length === 0}
                 motivoDisabilitato={
-                  batch.stato === "bozza" ? "Conferma il batch prima di generare il PDF." : "Il batch non ha lotti."
+                  batch.stato === "bozza" ? "Segna il batch come Pronto prima di generare il PDF." : "Il batch non ha lotti."
                 }
               />
             )}
           </div>
         </div>
+
+        {batch.canale.tipo === "asta_fisica" && !inBozza && batch.lotti.length > 0 && (
+          <AzioneLottiGruppo
+            batchId={batch.id}
+            canaleNome={batch.canale.nome}
+            lotti={batch.lotti.map((l) => ({
+              id: l.id,
+              skuCode: l.sku.skuCode,
+              artista: l.sku.artista,
+              opera: l.sku.opera,
+              statoRiga: l.statoRiga,
+              consegnato: l.consegnatoAt !== null,
+            }))}
+          />
+        )}
 
         {sp.aggiunti && (
           <div className="mb-4 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
@@ -387,7 +429,7 @@ export default async function BatchPubblicazionePage({
         )}
         {sp.confermato && (
           <div className="mb-4 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
-            Batch confermato — la disponibilita&apos; e&apos; stata aggiornata per i canali esclusivi.
+            Batch pronto — la disponibilita&apos; e&apos; stata aggiornata per i canali esclusivi.
           </div>
         )}
 
@@ -672,7 +714,7 @@ export default async function BatchPubblicazionePage({
                               </form>
                             ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "accettato" && !l.consegnatoAt ? (
                               // Accettato, non ancora consegnato: azione principale
-                              // "Consegna all'asta"; la correzione "Torna candidato"
+                              // "Consegna all'asta"; la correzione "Torna proposto"
                               // (ex "Annulla accettazione", 2026-09-24: deve restare
                               // possibile liberare un lotto da "accettato", altrimenti
                               // un accordo saltato blocca Elimina/Riporta in bozza sul
@@ -689,8 +731,8 @@ export default async function BatchPubblicazionePage({
                                 <MenuAltreAzioni
                                   voci={[
                                     {
-                                      etichetta: "Torna candidato",
-                                      descrizione: "L'asta non lo accetta piu': il lotto torna candidato, il pezzo non si muove.",
+                                      etichetta: "Torna proposto",
+                                      descrizione: "L'asta non lo accetta piu': il lotto torna proposto, il pezzo non si muove.",
                                       azione: annullaAccettazioneAction,
                                       campi: { batchLottoId: l.id, batchId: batch.id, canaleId },
                                     },

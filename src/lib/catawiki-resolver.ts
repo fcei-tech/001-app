@@ -114,10 +114,17 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// Opzioni di risoluzione (Release 4, Bidspirit): stessa logica di prezzo e
+// riserva di Catawiki, ma la soglia minima 200 vale SOLO per Catawiki.
+// soglia: null = nessuna soglia (Bidspirit); omessa = soglia Catawiki.
+export type OpzioniRisoluzione = { soglia?: number | null };
+
 export function risolviLottoCatawiki(
   lotto: LottoPerRisoluzioneCatawiki,
-  impostazioni: ImpostazioniBatchCatawiki
+  impostazioni: ImpostazioniBatchCatawiki,
+  opzioni?: OpzioniRisoluzione
 ): RigaCatawikiRisolta {
+  const soglia = opzioni?.soglia === undefined ? CATAWIKI_SOGLIA_MINIMA_STIMA_IMPORT : opzioni.soglia;
   const errori: TipoErroreValidazione[] = [];
 
   // Prezzo base: override vince sempre sul dato Magazzino (livello 3 su
@@ -149,7 +156,7 @@ export function risolviLottoCatawiki(
   const stimaLotto =
     prezzoBase === null ? null : round2(prezzoBase * (1 + impostazioni.modificatorePrezzoPercentuale / 100));
 
-  if (stimaLotto !== null && stimaLotto < CATAWIKI_SOGLIA_MINIMA_STIMA_IMPORT) {
+  if (stimaLotto !== null && soglia !== null && stimaLotto < soglia) {
     errori.push("prezzo_mancante_o_sotto_soglia");
   }
 
@@ -192,7 +199,8 @@ export function risolviLottoCatawiki(
 
 export function risolviBatchCatawiki(
   lotti: LottoPerRisoluzioneCatawiki[],
-  impostazioni: ImpostazioniBatchCatawiki
+  impostazioni: ImpostazioniBatchCatawiki,
+  opzioni?: OpzioniRisoluzione
 ): RigaCatawikiRisolta[] {
-  return lotti.map((l) => risolviLottoCatawiki(l, impostazioni));
+  return lotti.map((l) => risolviLottoCatawiki(l, impostazioni, opzioni));
 }

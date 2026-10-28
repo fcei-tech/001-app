@@ -25,9 +25,9 @@ import { eliminaBatchMultiploAction, cambiaStatoBatchMultiploAction } from "@/ap
 // applicare la stessa operazione a tutte le righe selezionate in un colpo,
 // con un unico avviso/dialog consolidato invece di uno per batch.
 const ETICHETTE_STATO: Record<string, { label: string; variant: "secondary" | "success" | "outline" }> = {
-  bozza: { label: "Bozza", variant: "secondary" },
-  confermato: { label: "Confermato", variant: "success" },
-  pubblicato: { label: "Pubblicato", variant: "outline" },
+  bozza: { label: "In preparazione", variant: "secondary" },
+  confermato: { label: "Pronto", variant: "success" },
+  pubblicato: { label: "Inviato", variant: "outline" },
 };
 
 export type RigaBatch = {
@@ -112,9 +112,9 @@ export function ListaBatchCanale({
               <SelectValue placeholder="Cambia stato in…" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="bozza">Bozza</SelectItem>
-              <SelectItem value="confermato">Confermato</SelectItem>
-              <SelectItem value="pubblicato">Pubblicato</SelectItem>
+              <SelectItem value="bozza">In preparazione</SelectItem>
+              <SelectItem value="confermato">Pronto</SelectItem>
+              <SelectItem value="pubblicato">Inviato</SelectItem>
             </SelectContent>
           </Select>
           <Button
@@ -261,8 +261,8 @@ export function ListaBatchCanale({
             </DialogTitle>
             <DialogDescription>
               {statoBulk === "bozza"
-                ? "I batch selezionati torneranno in bozza: la disponibilita' dei lotti gia' confermati/pubblicati (canali esclusivi) tornera' libera."
-                : "I batch selezionati che erano in bozza consumeranno disponibilita' se il canale e' esclusivo. Un batch senza lotti non puo' uscire da bozza - verra' segnalato tra gli errori."}
+                ? "I batch selezionati torneranno in preparazione: la disponibilita' dei lotti gia' confermati/pubblicati (canali esclusivi) tornera' libera."
+                : "I batch selezionati che erano in preparazione consumeranno disponibilita' se il canale e' esclusivo. Un batch senza lotti non puo' uscire da bozza - verra' segnalato tra gli errori."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

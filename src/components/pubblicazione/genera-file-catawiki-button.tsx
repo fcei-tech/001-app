@@ -65,11 +65,11 @@ export function GeneraFileCatawikiButton({
       {scartati && (
         <div className="w-full max-w-md rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
           {scartati.length === 0 ? (
-            <p>File generato e batch pubblicato — nessun lotto escluso.</p>
+            <p>File generato e batch segnato come Inviato — nessun lotto escluso.</p>
           ) : (
             <>
               <p className="mb-1 font-medium">
-                File generato e batch pubblicato — {scartati.length} lott{scartati.length === 1 ? "o" : "i"} escl
+                File generato e batch segnato come Inviato — {scartati.length} lott{scartati.length === 1 ? "o" : "i"} escl
                 {scartati.length === 1 ? "uso" : "usi"}:
               </p>
               <ul className="space-y-0.5">

@@ -86,7 +86,7 @@ export default async function PubblicazionePage() {
                         {c.batchInBozza > 0 && (
                           <>
                             {" "}
-                            · <span className="font-medium text-foreground">{c.batchInBozza} in bozza</span>
+                            · <span className="font-medium text-foreground">{c.batchInBozza} in preparazione</span>
                           </>
                         )}
                       </>

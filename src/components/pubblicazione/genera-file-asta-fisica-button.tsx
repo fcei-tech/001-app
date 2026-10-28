@@ -83,7 +83,7 @@ export function GeneraFileAstaFisicaButton({
       {esito && (
         <div className="w-full max-w-md rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
           <p className="font-medium">
-            PDF generato{esito.passatoAPubblicato ? " e batch pubblicato" : " (stato del batch invariato)"}.
+            PDF generato{esito.passatoAPubblicato ? " e batch segnato come Inviato" : " (stato del batch invariato)"}.
           </p>
           {esito.senzaMiniatura.length > 0 && (
             <div className="mt-1">

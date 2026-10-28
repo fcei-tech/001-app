@@ -23,7 +23,7 @@ import {
   type OverrideLotto,
   getBatch,
 } from "@/db/pubblicazione-queries";
-import { getFotoPerSkuIds } from "@/db/queries";
+import { getFotoPerSkuIds, getSaldiSkuPerUbicazione, getTipiOggetto, getUbicazioniAttive } from "@/db/queries";
 import {
   silenziaErrore as silenziaErroreQuery,
   riattivaSilenziamento as riattivaSilenziamentoQuery,
@@ -44,6 +44,7 @@ import {
   type TipoErroreValidazione,
 } from "@/lib/catawiki-resolver";
 import { generaCsvCatawiki } from "@/lib/catawiki-export";
+import { generaXlsxBidspiritBase64 } from "@/lib/bidspirit-export";
 import { generaPdfAstaFisica, scaricaMiniatureInParallelo } from "@/lib/asta-fisica-pdf";
 
 type StatoBatch = "bozza" | "confermato" | "pubblicato";
@@ -496,6 +497,211 @@ export async function generaFileCatawikiAction(batchId: number): Promise<{
       return { skuCode: r.skuCode, artista: s.artista, opera: s.opera, errori: r.errori };
     }),
   };
+}
+
+
+// --- Bidspirit (Release 4) ------------------------------------------------
+// File .xlsx (47 colonne) per il canale Bidspirit. Prezzi/riserva come
+// Catawiki ma senza soglia 200. Bidspirit NON sovrascrive i lotti gia'
+// caricati: rigenerare il file di un batch gia' Inviato crea doppioni sul
+// portale, quindi serve forza=true (il client mostra prima l'avviso).
+export async function generaFileBidspiritAction(
+  batchId: number,
+  forza = false
+): Promise<{
+  xlsxBase64: string;
+  filename: string;
+  esportati: number;
+  scartati: { skuCode: string; artista: string; opera: string; motivi: string[] }[];
+}> {
+  const batch = await getBatch(batchId);
+  if (!batch) throw new Error("Batch non trovato");
+  if (batch.canale.nome !== "Bidspirit") {
+    throw new Error("La generazione file Bidspirit e' disponibile solo per il canale Bidspirit");
+  }
+  if (batch.stato === "bozza") {
+    throw new Error("Segna il batch come Pronto prima di generare il file");
+  }
+  if (batch.stato === "pubblicato" && !forza) {
+    throw new Error("Questo batch risulta gia' Inviato: rigenerare il file crea doppioni su Bidspirit. Conferma per procedere.");
+  }
+  if (batch.lotti.length === 0) throw new Error("Il batch non ha lotti");
+
+  // La riserva e' obbligatoria su Bidspirit: sempre attiva.
+  const impostazioni: ImpostazioniBatchCatawiki = {
+    ...IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
+    ...((batch.impostazioniBatch ?? {}) as Partial<ImpostazioniBatchCatawiki>),
+    riservaAttiva: true,
+  };
+
+  const skuIds = batch.lotti.map((l) => l.skuId);
+  const [fotoMappa, tipi] = await Promise.all([getFotoPerSkuIds(skuIds), getTipiOggetto()]);
+  const nomeTipo = new Map(tipi.map((t) => [t.id, t.nome]));
+  const skuPerId = new Map(batch.lotti.map((l) => [l.skuId, l.sku]));
+
+  const righeRisolte = risolviBatchCatawiki(
+    batch.lotti.map(
+      (l): LottoPerRisoluzioneCatawiki => ({
+        batchLottoId: l.id,
+        skuId: l.skuId,
+        skuCode: l.sku.skuCode,
+        skuCondizione: l.sku.condizione,
+        skuAnno: l.sku.anno,
+        skuPrezzoCatawiki: l.sku.prezzoCatawiki,
+        skuRiservaCatawiki: l.sku.riservaCatawiki,
+        override: (l.override as OverrideLottoCatawiki | null) ?? null,
+        numeroFoto: fotoMappa.get(l.skuId)?.length ?? 0,
+      })
+    ),
+    impostazioni,
+    { soglia: null }
+  );
+  const valide = righeRisolte.filter((r) => r.valido);
+  const scartate = righeRisolte.filter((r) => !r.valido);
+  if (valide.length === 0) {
+    throw new Error("Nessun lotto valido da esportare - correggi gli errori prima di generare il file");
+  }
+
+  const xlsxBase64 = generaXlsxBidspiritBase64(
+    valide.map((risolta) => {
+      const s = skuPerId.get(risolta.skuId)!;
+      return {
+        risolta,
+        sku: {
+          artista: s.artista,
+          opera: s.opera,
+          tipo: nomeTipo.get(s.tipoId) ?? "",
+          larghezza: s.larghezza,
+          altezza: s.altezza,
+          supporto: s.supporto,
+          anno: (s.anno ?? "").trim(),
+          note: s.note,
+        },
+        foto: (fotoMappa.get(risolta.skuId) ?? []).map((f) => f.url),
+      };
+    })
+  );
+
+  if (batch.stato === "confermato") await segnaBatchPubblicatoQuery(batchId);
+
+  const p = new Intl.DateTimeFormat("it-IT", {
+    timeZone: "Europe/Rome", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date());
+  const g = (t: string) => p.find((x) => x.type === t)?.value ?? "";
+  const filename = `batch_bidspirit_${batchId}_${g("year")}${g("month")}${g("day")}_${g("hour")}${g("minute")}.xlsx`;
+
+  revalidatePath(`/pubblicazione/${batch.canaleId}/${batchId}`);
+  revalidatePath(`/pubblicazione/${batch.canaleId}`);
+
+  const ETICHETTA: Record<string, string> = {
+    prezzo_mancante_o_sotto_soglia: "Prezzo mancante",
+    anno_mancante: "Anno/epoca mancante",
+    zero_foto: "Nessuna foto disponibile",
+  };
+  return {
+    xlsxBase64,
+    filename,
+    esportati: valide.length,
+    scartati: scartate.map((r) => {
+      const s = skuPerId.get(r.skuId)!;
+      return { skuCode: r.skuCode, artista: s.artista, opera: s.opera, motivi: r.errori.map((e) => ETICHETTA[e] ?? e) };
+    }),
+  };
+}
+
+// --- Azione sui lotti a gruppo (Release 4, aste fisiche) -------------------
+// Accetta / Consegna / Rientrato su tutti i lotti idonei del batch (o solo
+// quelli scelti), SENZA conferma lotto per lotto. Alla fine ritorna l'esito e
+// l'ELENCO DEGLI ERRORI (un lotto che non si puo' fare non ferma gli altri).
+// - accetta:   Proposto -> Accettato
+// - consegna:  Accettato -> Consegnato. Il pezzo parte dall'UNICA scorta
+//              presente fuori dalla casa d'asta e va nell'ubicazione che ha lo
+//              STESSO NOME del canale (es. "Cambi"), quantita' 1.
+// - rientrato: annulla la consegna (il pezzo torna da noi, il lotto resta
+//              Accettato). Il lotto NON viene tolto dal batch.
+export type AzioneGruppo = "accetta" | "consegna" | "rientrato";
+export type EsitoAzioneGruppo = {
+  azione: AzioneGruppo;
+  eseguiti: number;
+  errori: { skuCode: string; artista: string; opera: string; motivo: string }[];
+};
+
+export async function azioneLottiGruppoAction(input: {
+  batchId: number;
+  azione: AzioneGruppo;
+  batchLottoIds: number[] | null;
+}): Promise<EsitoAzioneGruppo> {
+  const batch = await getBatch(input.batchId);
+  if (!batch) throw new Error("Batch non trovato");
+  if (batch.canale.tipo !== "asta_fisica") {
+    throw new Error("L'azione sui lotti vale solo per le aste fisiche");
+  }
+  const { azione } = input;
+  const idoneo = (l: (typeof batch.lotti)[number]) =>
+    azione === "accetta"
+      ? l.statoRiga === "candidato"
+      : azione === "consegna"
+        ? l.statoRiga === "accettato" && !l.consegnatoAt
+        : l.consegnatoAt !== null && l.consegnaDettagli !== null;
+  const motivoNonIdoneo =
+    azione === "accetta"
+      ? "Il lotto non e' Proposto"
+      : azione === "consegna"
+        ? "Il lotto non e' Accettato oppure e' gia' consegnato"
+        : "Il lotto non risulta consegnato";
+
+  const scelti = input.batchLottoIds ? new Set(input.batchLottoIds) : null;
+  const candidati = batch.lotti.filter((l) => (scelti ? scelti.has(l.id) : idoneo(l)));
+
+  const errori: EsitoAzioneGruppo["errori"] = [];
+  let eseguiti = 0;
+  const ubicazioni = azione === "consegna" ? await getUbicazioniAttive() : [];
+  const destinazione = ubicazioni.find(
+    (u) => u.nome.trim().toLowerCase() === batch.canale.nome.trim().toLowerCase()
+  );
+
+  for (const l of candidati) {
+    const err = (motivo: string) =>
+      errori.push({ skuCode: l.sku.skuCode, artista: l.sku.artista, opera: l.sku.opera, motivo });
+    try {
+      if (!idoneo(l)) {
+        err(motivoNonIdoneo);
+        continue;
+      }
+      if (azione === "accetta") {
+        await accettaLottoQuery(l.id);
+      } else if (azione === "consegna") {
+        if (!destinazione) {
+          err(`Non esiste un'ubicazione chiamata "${batch.canale.nome}" (creala in Manutenzione)`);
+          continue;
+        }
+        const saldi = (await getSaldiSkuPerUbicazione(l.skuId)).filter((s) => s.ubicazioneId !== destinazione.id);
+        if (saldi.length === 0) {
+          err(`Nessuna scorta disponibile fuori da "${destinazione.nome}"`);
+          continue;
+        }
+        if (saldi.length > 1) {
+          err("Scorta in piu' posti: consegnalo a mano scegliendo da dove parte");
+          continue;
+        }
+        await consegnaLottoQuery(l.id, l.skuId, {
+          proprietarioId: saldi[0].proprietarioId,
+          ubicazioneOrigineId: saldi[0].ubicazioneId,
+          ubicazioneDestinazioneId: destinazione.id,
+          quantita: 1,
+        });
+      } else {
+        await annullaConsegnaQuery(l.id, l.skuId, l.consegnaDettagli as ConsegnaDettagli);
+      }
+      eseguiti++;
+    } catch (e) {
+      err(e instanceof Error ? e.message : "Errore sconosciuto");
+    }
+  }
+
+  revalidatePath(`/pubblicazione/${batch.canaleId}/${input.batchId}`);
+  return { azione, eseguiti, errori };
 }
 
 // --- Silenziamento errori di validazione (2026-09-28) --------------------
