@@ -370,6 +370,9 @@ export const esposizioneCanale = pgTable(
     // Titolo del prodotto sul portale (Shopify): serve a rimandarlo identico negli
     // aggiornamenti (Shopify lo vuole sempre) senza sovrascrivere quello reale.
     titoloPortale: text("titolo_portale"),
+    // Il testo (descrizione/condizione) caricato sul portale era personalizzato (2026-10-28):
+    // se poi si torna ai valori automatici la riga va rimandata con il testo automatico.
+    testoInviato: boolean("testo_inviato").notNull().default(false),
     aggiornatoAt: timestamp("aggiornato_at").notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.skuId, table.canaleId] })]

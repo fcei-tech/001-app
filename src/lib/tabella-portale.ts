@@ -50,6 +50,7 @@ export type InputRigaPortale = {
     aggiornatoAt: Date;
     idPortale: string | null;
     titoloPortale: string | null;
+    testoInviato: boolean;
   } | null;
   ov: {
     quantita: number | null;
@@ -129,6 +130,8 @@ export function calcolaRigaPortale(i: InputRigaPortale): RigaPortale | null {
   if (prezziDiversi(i.reg?.prezzoCaricato ?? null, i.prezzoOggi)) motivi.push("prezzo");
   const haTesto = i.ov !== null && (i.ov.condizione !== null || i.ov.descrizione !== null);
   if (haTesto && i.reg && i.ov!.modificatoAt.getTime() > i.reg.aggiornatoAt.getTime()) motivi.push("testo");
+  // Tornati ai valori automatici ma sul portale c'e' ancora il testo personalizzato: da rimandare.
+  if (!haTesto && i.reg?.testoInviato) motivi.push("testo");
 
   if (motivi.length > 0) return { ...base, stato: "modificato", motivi, esauritoOnline: false };
   return { ...base, stato: "online", motivi: [], esauritoOnline: dopo === 0 };

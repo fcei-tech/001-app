@@ -57,6 +57,7 @@ export async function calcolaTabelle(): Promise<{ canali: CanaleStatico[]; righe
               aggiornatoAt: reg.aggiornatoAt,
               idPortale: reg.idPortale,
               titoloPortale: reg.titoloPortale,
+              testoInviato: reg.testoInviato,
             }
           : null,
         ov: ov
@@ -231,6 +232,14 @@ export async function applicaRighe(canaleId: number, righe: RigaFile[]): Promise
           set: { quantitaCaricata: r.pezzi, prezzoCaricato: prezzoTesto, inVetrina: attiva, aggiornatoAt: adesso, ...idTitolo },
         });
       const prima = motiviPerSku.get(r.skuId);
+      // Ricorda se il testo appena caricato e' personalizzato (nuovi, riattivati e file TESTI).
+      if (r.azione === "nuovo" || r.azione === "riattiva" || r.testo) {
+        const personalizzato = !!prima && (prima.condizioneOverride !== null || prima.descrizioneOverride !== null);
+        await tx
+          .update(esposizioneCanale)
+          .set({ testoInviato: personalizzato })
+          .where(and(eq(esposizioneCanale.skuId, r.skuId), eq(esposizioneCanale.canaleId, canaleId)));
+      }
       let dettaglio: string;
       if (r.azione === "archivia") dettaglio = "tolto dalla vetrina";
       else if (r.azione === "esaurito") dettaglio = `${prima?.pezziOra ?? 0} → 0 pezzi`;

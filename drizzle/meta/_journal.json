@@ -78,6 +78,13 @@
       "when": 1793112672153,
       "tag": "0010_titolo_portale",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793189066355,
+      "tag": "0011_testo_inviato",
+      "breakpoints": true
     }
   ]
 }

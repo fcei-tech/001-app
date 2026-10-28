@@ -293,7 +293,7 @@ async function generaFileEbay(canaleId: number, skuIds?: number[]): Promise<Esit
   const nota = "eBay: carica con File Exchange come sempre.";
   if (nuovi.length > 0) files.push({ tipo: "ADD", nome: nomeFileEbay("ADD", marca), csv: generaCsvEbayAdd(nuovi), nSku: nuovi.length, istruzione: nota });
   if (revise.length > 0)
-    files.push({ tipo: "REVISE", nome: nomeFileEbay("REVISE", marca), csv: generaCsvEbayRevise(revise), nSku: revise.length, istruzione: `${nota} DA PROVARE: usalo prima su 1–2 annunci.`, daProvare: true });
+    files.push({ tipo: "REVISE", nome: nomeFileEbay("REVISE", marca), csv: generaCsvEbayRevise(revise), nSku: revise.length, istruzione: nota });
   if (reviseTesti.length > 0)
     files.push({ tipo: "REVISE-TESTI", nome: nomeFileEbay("REVISE-TESTI", marca), csv: generaCsvEbayReviseTesti(reviseTesti), nSku: reviseTesti.length, istruzione: `${nota} DA PROVARE: usalo prima su 1–2 annunci.`, daProvare: true });
   await salvaFilePortale(canaleId, files.map((f) => f.nome).join("|"), incluse);

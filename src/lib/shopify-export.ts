@@ -222,7 +222,9 @@ export const COLONNE_AGGIORNAMENTI = [
   "Handle", "Title", "Option1 Name", "Option1 Value", "Variant SKU", "Variant Inventory Tracker",
   "Variant Inventory Qty", "Variant Inventory Policy", "Variant Fulfillment Service", "Variant Price", "Status",
 ] as const;
-export const COLONNE_TESTI = ["Handle", "Title", "Body (HTML)"] as const;
+// Shopify rifiuta un file con la sola descrizione ("l'input delle opzioni e' obbligatorio quando si
+// aggiornano le varianti"): servono Option1 Name/Value e Variant SKU, come per ARCHIVIATI (2026-10-28).
+export const COLONNE_TESTI = ["Handle", "Title", "Option1 Name", "Option1 Value", "Variant SKU", "Body (HTML)"] as const;
 export const COLONNE_ARCHIVIATI = ["Handle", "Title", "Option1 Name", "Option1 Value", "Variant SKU", "Status"] as const;
 
 export type AggiornamentoShopify = PerAggiornamento & { azione: "modifica" | "esaurito" | "riattiva"; pezzi: number; prezzo: number };
@@ -248,7 +250,7 @@ export function generaCsvAggiornamenti(agg: AggiornamentoShopify[]): string {
 }
 
 export function generaCsvTesti(testi: TestoShopify[]): string {
-  return csv(COLONNE_TESTI, testi.map((t) => [t.handle, t.titolo, buildBodyHtml(t.sku, t.testo)]));
+  return csv(COLONNE_TESTI, testi.map((t) => [t.handle, t.titolo, "Title", "Default Title", t.skuCode, buildBodyHtml(t.sku, t.testo)]));
 }
 
 export function generaCsvArchiviati(arch: PerAggiornamento[]): string {

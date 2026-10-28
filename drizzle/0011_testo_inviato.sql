@@ -1,0 +1,1 @@
+ALTER TABLE "esposizione_canale" ADD COLUMN "testo_inviato" boolean DEFAULT false NOT NULL;

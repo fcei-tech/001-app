@@ -188,5 +188,5 @@ export function generaCsvEbayReviseTesti(rev: ReviseTestoEbay[]): string {
 export type TipoFileEbay = "ADD" | "REVISE" | "REVISE-TESTI";
 export const NUMERO_FILE_EBAY: Record<TipoFileEbay, number> = { ADD: 1, REVISE: 2, "REVISE-TESTI": 3 };
 export function nomeFileEbay(tipo: TipoFileEbay, marca: string): string {
-  return `ebay_${NUMERO_FILE_EBAY[tipo]}-${tipo}${tipo === "ADD" ? "" : "_[DA-PROVARE]"}_${marca}.csv`;
+  return `ebay_${NUMERO_FILE_EBAY[tipo]}-${tipo}${tipo === "REVISE-TESTI" ? "_[DA-PROVARE]" : ""}_${marca}.csv`;
 }

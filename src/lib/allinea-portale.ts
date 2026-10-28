@@ -68,9 +68,14 @@ export function leggiExportShopify(testo: string): LetturaAllineamento {
 // Rapporto "Tutti gli annunci attivi" di eBay (separatore ;). Solo il sito IT:
 // gli altri siti sono copie gestite a parte.
 export function leggiReportEbay(testo: string): LetturaAllineamento {
-  const righe = leggiCsv(testo, ";");
+  const tutte = leggiCsv(testo, ";");
+  // Il modello "VAT" (Annunci > Scarica) ha righe #INFO prima dell'intestazione e "Start price"
+  // al posto di "Current price": si accettano entrambi i formati (2026-10-28).
+  const riga0 = tutte.findIndex((r) => r.some((h) => h.trim().toLowerCase() === "item number"));
+  const righe = riga0 >= 0 ? tutte.slice(riga0) : tutte;
   if (righe.length < 2) return { voci: [], avvisi: [], errore: "Il file e' vuoto." };
-  const ix = indiciColonne(righe[0], ["Item number", "Custom label (SKU)", "Available quantity", "Current price", "Listing site"]);
+  const colonnaPrezzo = righe[0].some((h) => h.trim().toLowerCase() === "current price") ? "Current price" : "Start price";
+  const ix = indiciColonne(righe[0], ["Item number", "Custom label (SKU)", "Available quantity", colonnaPrezzo, "Listing site"]);
   if (!ix) return { voci: [], avvisi: [], errore: "Questo non sembra il rapporto annunci attivi di eBay (mancano Item number, Custom label (SKU)...)." };
   const [iN, iS, iQ, iP, iL] = ix;
   const iT = righe[0].findIndex((h) => h.trim().toLowerCase() === "title");
