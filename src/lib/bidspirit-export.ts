@@ -56,6 +56,27 @@ export function buildDescrizioneBidspirit(sku: SkuDettagliBidspirit): string {
   return righe.join("\n");
 }
 
+// Descrizione in inglese (secondLangDesc), stesso schema dell'italiano: tipo /
+// "about" anno / "about" misure [LINEN BACKED] / note / Warranty / Shipping.
+const TESTO_GARANZIA_EN =
+  "As a professional company, we guarantee full compliance with the Consumer Rights of the European Union (Directive 2011/83/EU).";
+const TESTO_SPEDIZIONE_EN = "Professionally packed in a rigid tube. Please sign with reservation in case of visible damage.";
+const TIPO_EN: Record<string, string> = { manifesto: "Poster", poster: "Poster", locandina: "Poster", stampa: "Print", litografia: "Lithograph" };
+
+export function buildDescrizioneBidspiritEn(sku: SkuDettagliBidspirit): string {
+  const misure = `${num(Number(sku.larghezza ?? 0))}x${num(Number(sku.altezza ?? 0))}`;
+  const telatura = sku.supporto === "T" ? FRASE_TELATURA : "";
+  const anno = sku.anno.replace(/^circa\s+/i, "");
+  const righe = [
+    TIPO_EN[sku.tipo.trim().toLowerCase()] ?? sku.tipo,
+    `about ${anno}`,
+    `about ${misure} cm${telatura}`,
+    `Warranty: ${TESTO_GARANZIA_EN}`,
+    `Shipping: ${TESTO_SPEDIZIONE_EN}`,
+  ].filter((r) => r);
+  return righe.join("\n");
+}
+
 export function generaRigaBidspirit(
   riga: RigaCatawikiRisolta,
   sku: SkuDettagliBidspirit,
@@ -75,6 +96,8 @@ export function generaRigaBidspirit(
   set("maxEstimate", Math.round(stima * (1 + BIDSPIRIT_PERCENTUALE_MAX_ESTIMATE / 100) * 100) / 100);
   set("mainLangName", `${sku.artista} - ${sku.opera}`);
   set("mainLangDesc", riga.descrizioneOverride ?? buildDescrizioneBidspirit(sku));
+  // Se il lotto ha una descrizione scritta a mano non si traduce da sola: EN vuota.
+  set("secondLangDesc", riga.descrizioneOverride ? "" : buildDescrizioneBidspiritEn(sku));
   set("mainLangAuthor", sku.artista);
   set("mainLangConditionReport", FRASE_CONDIZIONI_STANDARD);
   set("secondLangName", `${sku.artista} - ${sku.opera}`);

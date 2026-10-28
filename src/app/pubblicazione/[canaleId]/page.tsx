@@ -97,10 +97,14 @@ export default async function CanalePubblicazionePage({
                 : "Canale parallelo — nessun consumo di disponibilita' condivisa"}
             </p>
           </div>
-          <form action={creaBatch}>
-            <input type="hidden" name="canaleId" value={canale.id} />
-            <Button type="submit">Nuovo batch</Button>
-          </form>
+          {canale.tipo !== "statico" && (
+            // Sui portali statici (Shopify, eBay, Subito) non si usano i batch:
+            // si lavora dalla tabella qui sotto.
+            <form action={creaBatch}>
+              <input type="hidden" name="canaleId" value={canale.id} />
+              <Button type="submit">Nuovo batch</Button>
+            </form>
+          )}
         </div>
 
         {canale.tipo === "statico" && (
@@ -116,7 +120,7 @@ export default async function CanalePubblicazionePage({
         {canale.tipo === "statico" && <StoricoPortale nomePortale={canale.nome} righe={storico} />}
 
         {righe.length === 0 ? (
-          <div className="rounded-lg border">
+          canale.tipo === "statico" ? null : <div className="rounded-lg border">
             <TableEmpty>Nessun batch per questo canale. Creane uno per iniziare.</TableEmpty>
           </div>
         ) : (

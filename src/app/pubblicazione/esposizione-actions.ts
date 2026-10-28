@@ -302,7 +302,7 @@ async function generaFileEbay(canaleId: number, skuIds?: number[]): Promise<Esit
   if (reviseTesti.length > 0)
     files.push({ tipo: "REVISE-TESTI", nome: nomeFileEbay("REVISE-TESTI", marca), csv: generaCsvEbayReviseTesti(reviseTesti), nSku: reviseTesti.length, istruzione: `${nota} DA PROVARE: usalo prima su 1–2 annunci.`, daProvare: true });
   if (chiudi.length > 0)
-    files.push({ tipo: "END", nome: nomeFileEbay("END", marca), csv: generaCsvEbayEnd(chiudi), nSku: chiudi.length, istruzione: `${nota} Chiude gli annunci. DA PROVARE: usalo prima su 1–2 annunci.`, daProvare: true });
+    files.push({ tipo: "END", nome: nomeFileEbay("END", marca), csv: generaCsvEbayEnd(chiudi), nSku: chiudi.length, istruzione: `${nota} Chiude gli annunci.` });
   await salvaFilePortale(canaleId, files.map((f) => f.nome).join("|"), incluse);
   aggiorna(canaleId);
   return { ok: true, files, inclusi: incluse.length, scartati };

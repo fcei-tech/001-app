@@ -187,7 +187,7 @@ export function generaCsvEbayReviseTesti(rev: ReviseTestoEbay[]): string {
 }
 
 // Chiusura annunci (2026-10-28): eBay RIFIUTA Quantity 0 (errore 515, provato dal
-// vivo), quindi esauriti e archiviati si chiudono con Action End. DA PROVARE.
+// vivo), quindi esauriti e archiviati si chiudono con Action End (provato dal vivo 2026-10-28, 12 annunci).
 export type ChiudiEbay = { itemId: string };
 export function generaCsvEbayEnd(voci: ChiudiEbay[]): string {
   return csvEbay(EBAY_HEADER_END, voci.map((v) => ["End", v.itemId, "NotAvailable"]));
@@ -196,5 +196,5 @@ export function generaCsvEbayEnd(voci: ChiudiEbay[]): string {
 export type TipoFileEbay = "ADD" | "REVISE" | "REVISE-TESTI" | "END";
 export const NUMERO_FILE_EBAY: Record<TipoFileEbay, number> = { ADD: 1, REVISE: 2, "REVISE-TESTI": 3, END: 4 };
 export function nomeFileEbay(tipo: TipoFileEbay, marca: string): string {
-  return `ebay_${NUMERO_FILE_EBAY[tipo]}-${tipo}${tipo === "REVISE-TESTI" || tipo === "END" ? "_[DA-PROVARE]" : ""}_${marca}.csv`;
+  return `ebay_${NUMERO_FILE_EBAY[tipo]}-${tipo}${tipo === "REVISE-TESTI" ? "_[DA-PROVARE]" : ""}_${marca}.csv`;
 }
