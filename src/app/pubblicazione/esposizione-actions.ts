@@ -29,6 +29,7 @@ import {
   generaCsvEbayAdd,
   generaCsvEbayRevise,
   generaCsvEbayReviseTesti,
+  generaCsvEbayEnd,
   motivoScartoEbay,
   nomeFileEbay,
   type NuovoEbay,
@@ -245,6 +246,7 @@ async function generaFileEbay(canaleId: number, skuIds?: number[]): Promise<Esit
   const nuovi: NuovoEbay[] = [];
   const revise: ReviseEbay[] = [];
   const reviseTesti: ReviseTestoEbay[] = [];
+  const chiudi: { itemId: string }[] = [];
   const incluse: RigaFile[] = [];
   const scartati: NonNullable<EsitoFileShopify["scartati"]> = [];
   const scarta = (d: { skuCode: string; artista: string; opera: string }, motivo: string) =>
@@ -267,16 +269,19 @@ async function generaFileEbay(canaleId: number, skuIds?: number[]): Promise<Esit
       incluse.push(file);
       continue;
     }
-    if (file.azione === "archivia") {
-      scarta(d, "Da chiudere a mano su eBay; poi premi \"Segna come fatto\"");
-      continue;
-    }
     if (!r.idPortale) {
       scarta(d, MOTIVO_NON_ALLINEATO.replace("Shopify", "eBay"));
       continue;
     }
+    // eBay rifiuta Quantity 0 (errore 515): esauriti e archiviati si chiudono
+    // con il file END e vengono registrati come "tolti dalla vetrina".
+    if (file.azione === "archivia" || file.azione === "esaurito") {
+      chiudi.push({ itemId: r.idPortale });
+      incluse.push({ ...file, azione: "archivia", pezzi: 0, prezzo: null, testo: false });
+      continue;
+    }
     const prezzo = file.prezzo ?? r.prezzoOnline;
-    const serveRevise = file.azione === "esaurito" || r.motivi.some((m) => m !== "testo");
+    const serveRevise = r.motivi.some((m) => m !== "testo");
     if (serveRevise) {
       if (prezzo === null) {
         scarta(d, "Prezzo mancante");
@@ -296,6 +301,8 @@ async function generaFileEbay(canaleId: number, skuIds?: number[]): Promise<Esit
     files.push({ tipo: "REVISE", nome: nomeFileEbay("REVISE", marca), csv: generaCsvEbayRevise(revise), nSku: revise.length, istruzione: nota });
   if (reviseTesti.length > 0)
     files.push({ tipo: "REVISE-TESTI", nome: nomeFileEbay("REVISE-TESTI", marca), csv: generaCsvEbayReviseTesti(reviseTesti), nSku: reviseTesti.length, istruzione: `${nota} DA PROVARE: usalo prima su 1–2 annunci.`, daProvare: true });
+  if (chiudi.length > 0)
+    files.push({ tipo: "END", nome: nomeFileEbay("END", marca), csv: generaCsvEbayEnd(chiudi), nSku: chiudi.length, istruzione: `${nota} Chiude gli annunci. DA PROVARE: usalo prima su 1–2 annunci.`, daProvare: true });
   await salvaFilePortale(canaleId, files.map((f) => f.nome).join("|"), incluse);
   aggiorna(canaleId);
   return { ok: true, files, inclusi: incluse.length, scartati };
