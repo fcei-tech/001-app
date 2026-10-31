@@ -1,4 +1,4 @@
-// Preferenza della finestra iniziale "Cosa devi fare": vale per questo Mac
+// Preferenza della guida iniziale ("Cosa vuoi fare?"): vale per questo Mac
 // (come la scelta delle colonne), non e' un dato del database.
 export const CHIAVE_NASCONDI_BENVENUTO = "posterclub.benvenuto.nascondi.v1";
 export const CHIAVE_MOSTRATO_SESSIONE = "posterclub.benvenuto.mostrato.v1";

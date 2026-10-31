@@ -3,10 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Archive, Send, Tags, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { cosaFareAction } from "@/app/cosa-fare-actions";
-import type { VoceCosaFare } from "@/db/cosa-fare";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   CHIAVE_MOSTRATO_SESSIONE,
   EVENTO_MOSTRA_BENVENUTO,
@@ -14,21 +13,24 @@ import {
   impostaBenvenutoNascosto,
 } from "@/lib/benvenuto-preferenza";
 
-// Finestra "Cosa devi fare" all'apertura dell'app: una volta per apertura,
-// salvo "Non mostrare più". Si riattiva da Sistema > Collegamenti.
+// Finestra guida: il giro di lavoro del programma in quattro passi, ognuno
+// porta alla pagina giusta. Compare una volta per apertura dell'app (salvo
+// "Non mostrare più") e si riapre sempre dal tasto "?" nella barra in alto.
+const PASSI = [
+  { id: "carica", titolo: "Carica", testo: "Excel, foto o nuovo sku", href: "/importa-excel", Icona: Upload },
+  { id: "organizza", titolo: "Organizza", testo: "Dati, tag, viste del magazzino", href: "/", Icona: Tags },
+  { id: "pubblica", titolo: "Pubblica", testo: "Portali e aste", href: "/pubblicazione", Icona: Send },
+  { id: "chiudi", titolo: "Chiudi", testo: "Vendite, giacenze, copia di sicurezza", href: "/sistema/dati", Icona: Archive },
+] as const;
+
 export function Benvenuto() {
   const pathname = usePathname();
   const [aperto, setAperto] = useState(false);
-  const [voci, setVoci] = useState<VoceCosaFare[] | null>(null);
   const [nonMostrare, setNonMostrare] = useState(false);
 
-  function carica(): void {
-    cosaFareAction().then((v) => {
-      if (v === null) return; // database non collegato o errore: niente finestra
-      setVoci(v);
-      setNonMostrare(false);
-      setAperto(true);
-    });
+  function mostra(): void {
+    setNonMostrare(benvenutoNascosto());
+    setAperto(true);
   }
 
   // All'avvio: una sola volta per apertura dell'app, mai nelle pagine di configurazione.
@@ -42,53 +44,43 @@ export function Benvenuto() {
       return;
     }
     if (benvenutoNascosto()) return;
-    carica();
+    // Un attimo dopo il caricamento della pagina (senza annullare il timer: in sviluppo
+    // l'effetto gira due volte e la seconda troverebbe già il segno "mostrata").
+    setTimeout(mostra, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // "Mostra adesso" dalla pagina Collegamenti.
+  // Tasto "?" nella barra in alto e "Mostrala adesso" da Impostazioni.
   useEffect(() => {
-    const h = () => carica();
+    const h = () => mostra();
     window.addEventListener(EVENTO_MOSTRA_BENVENUTO, h);
     return () => window.removeEventListener(EVENTO_MOSTRA_BENVENUTO, h);
   }, []);
 
   function chiudi() {
-    if (nonMostrare) impostaBenvenutoNascosto(true);
+    impostaBenvenutoNascosto(nonMostrare);
     setAperto(false);
   }
 
-  const gruppi = (["Portali", "Aste"] as const).map((g) => ({ g, items: (voci ?? []).filter((v) => v.gruppo === g) }));
-
   return (
     <Dialog open={aperto} onOpenChange={(o) => { if (!o) chiudi(); }}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Cosa devi fare</DialogTitle>
-          <DialogDescription>
-            {voci && voci.length > 0
-              ? "Clicca una voce per andare dove serve."
-              : "Niente in sospeso sui portali e sulle aste."}
-          </DialogDescription>
+          <DialogTitle>Cosa vuoi fare?</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-3">
-          {gruppi.map(({ g, items }) =>
-            items.length ? (
-              <div key={g} className="flex flex-col gap-1">
-                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{g}</span>
-                {items.map((v) => (
-                  <Link
-                    key={v.id}
-                    href={v.href}
-                    onClick={() => setAperto(false)}
-                    className="rounded-md border px-3 py-2 text-sm transition-colors hover:bg-muted"
-                  >
-                    {v.testo}
-                  </Link>
-                ))}
-              </div>
-            ) : null
-          )}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {PASSI.map(({ id, titolo, testo, href, Icona }) => (
+            <Link
+              key={id}
+              href={href}
+              onClick={() => { impostaBenvenutoNascosto(nonMostrare); setAperto(false); }}
+              className="flex flex-col items-center gap-2 rounded-lg border bg-muted/30 px-3 py-4 text-center transition-colors hover:bg-muted"
+            >
+              <Icona className="size-8 text-primary" aria-hidden />
+              <span className="text-sm font-medium">{titolo}</span>
+              <span className="text-xs text-muted-foreground">{testo}</span>
+            </Link>
+          ))}
         </div>
         <DialogFooter className="items-center sm:justify-between">
           <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">

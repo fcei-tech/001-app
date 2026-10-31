@@ -50,9 +50,9 @@ export default function CollegamentiPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Finestra iniziale</CardTitle>
+          <CardTitle>Guida iniziale</CardTitle>
           <CardDescription>
-            All&apos;apertura dell&apos;app compare l&apos;elenco di cosa c&apos;è da fare su portali e aste. Vale solo per questo Mac.
+            All&apos;apertura dell&apos;app compare la guida in quattro passi (Carica, Organizza, Pubblica, Chiudi). Si riapre sempre dal tasto ? in alto. Vale solo per questo Mac.
           </CardDescription>
         </CardHeader>
         <CardContent>

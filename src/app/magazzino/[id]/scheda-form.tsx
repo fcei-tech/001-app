@@ -211,7 +211,7 @@ export function SchedaSkuForm({
               Bloccato per la vendita (escluso da tutti i portali)
             </label>
 
-            <div>
+            <div className="sticky bottom-0 -mx-6 -mb-6 border-t bg-card/95 px-6 py-3 backdrop-blur">
               <Button type="submit">Salva modifiche</Button>
             </div>
           </form>

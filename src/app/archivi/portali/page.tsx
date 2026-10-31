@@ -22,6 +22,17 @@ export default async function PortaliPage() {
         </p>
       </div>
       <Card>
+        <CardContent className="p-4 text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">Un pezzo alla volta</p>
+          <p className="mt-1">
+            Nelle aste (Catawiki, Bidspirit, eBay Asta, Cambi, Bolaffi, Wannenes, Libero) un pezzo messo in un lotto
+            viene prenotato: la disponibilità in magazzino scende finché il lotto è in gioco. Nei portali di vendita
+            diretta (Shopify, eBay, Subito) non c&apos;è prenotazione. Qui sotto gli esclusivi sono quelli con la
+            scritta &quot;un pezzo alla volta&quot;.
+          </p>
+        </CardContent>
+      </Card>
+      <Card>
         <CardContent className="divide-y p-0">
           {canali.map((c) => {
             const imp = (c.impostazioni ?? {}) as { quantitaFissa?: number };

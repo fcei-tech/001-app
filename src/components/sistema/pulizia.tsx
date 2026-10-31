@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { anteprimaPuliziaAction, eseguiPuliziaAction } from "@/app/sistema/pulizia/actions";
 import type { AnteprimaPulizia, SceltaPulizia } from "@/db/pulizia";
+import { pl } from "@/lib/plurale";
 
 // "Ripartenza dei dati": prepara il software a ricevere FP/CV come punto
 // zero. La scelta di base cancella solo cio' che si ricarica dal file
@@ -41,22 +42,22 @@ const VOCI: Voce[] = [
   {
     chiave: "movimenti",
     titolo: "Movimenti di magazzino",
-    cancella: (a) => `${a.movimenti} movimenti (${a.pezziAttuali} pezzi a registro): le giacenze tornano a zero`,
-    resta: (a) => `${a.movimenti} movimenti e le giacenze attuali (${a.pezziAttuali} pezzi)`,
+    cancella: (a) => `${a.movimenti} ${pl(a.movimenti, "movimento", "movimenti")} (${a.pezziAttuali} ${pl(a.pezziAttuali, "pezzo", "pezzi")} a registro): le giacenze tornano a zero`,
+    resta: (a) => `${a.movimenti} ${pl(a.movimenti, "movimento", "movimenti")} e le giacenze attuali (${a.pezziAttuali} ${pl(a.pezziAttuali, "pezzo", "pezzi")})`,
     spiega: "Rimette le giacenze a zero. Poi le ricarichi con Importa da Excel (FP e CV).",
   },
   {
     chiave: "batch",
     titolo: "Batch e lotti",
-    cancella: (a) => `${a.batch} batch con ${a.lotti} lotti, di tutti i portali`,
-    resta: (a) => `${a.batch} batch con ${a.lotti} lotti`,
+    cancella: (a) => `${a.batch} batch con ${a.lotti} ${pl(a.lotti, "lotto", "lotti")}, di tutti i portali`,
+    resta: (a) => `${a.batch} batch con ${a.lotti} ${pl(a.lotti, "lotto", "lotti")}`,
     spiega: "Cancella i batch di pubblicazione e i loro lotti. Controlla prima che non ce ne sia uno vero che ti serve.",
   },
   {
     chiave: "silenziamenti",
     titolo: "Errori silenziati",
-    cancella: (a) => `${a.silenziamenti} errori di validazione messi a tacere`,
-    resta: (a) => `${a.silenziamenti} errori silenziati`,
+    cancella: (a) => `${a.silenziamenti} ${pl(a.silenziamenti, "errore di validazione messo", "errori di validazione messi")} a tacere`,
+    resta: (a) => `${a.silenziamenti} ${pl(a.silenziamenti, "errore silenziato", "errori silenziati")}`,
     spiega: "Gli errori di validazione dell'output che avevi accettato e messo a tacere.",
   },
   {

@@ -5,7 +5,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type MouseEvent } from "react";
 import { contatoriMenuAction } from "@/app/menu-actions";
+import { CircleHelp } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { EVENTO_MOSTRA_BENVENUTO } from "@/lib/benvenuto-preferenza";
 import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 
 // Menu principale (stile gestionale): le voci rare stanno dentro Archivi
@@ -13,9 +16,11 @@ import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 const VOCI = [
   { href: "/", etichetta: "Magazzino" },
   { href: "/pubblicazione", etichetta: "Pubblicazione" },
-  { href: "/archivi", etichetta: "Archivi" },
-  { href: "/sistema", etichetta: "Sistema" },
+  { href: "/impostazioni", etichetta: "Impostazioni" },
 ];
+
+// Pagine che appartengono a "Impostazioni" (elenchi, prezzi, dati, sistema).
+const PREFISSI_IMPOSTAZIONI = ["/impostazioni", "/archivi", "/sistema"];
 
 export function Header() {
   const pathname = usePathname();
@@ -70,7 +75,12 @@ export function Header() {
         </Link>
         <nav className="flex items-center gap-1 text-sm">
           {VOCI.map((v) => {
-            const attiva = v.href === "/" ? pathname === "/" || pathname.startsWith("/magazzino") : pathname.startsWith(v.href);
+            const attiva =
+              v.href === "/"
+                ? pathname === "/" || pathname.startsWith("/magazzino")
+                : v.href === "/impostazioni"
+                  ? PREFISSI_IMPOSTAZIONI.some((p) => pathname.startsWith(p))
+                  : pathname.startsWith(v.href);
             return (
               <Link
                 key={v.href}
@@ -86,7 +96,19 @@ export function Header() {
             );
           })}
         </nav>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => window.dispatchEvent(new Event(EVENTO_MOSTRA_BENVENUTO))}
+            aria-label="Guida: cosa vuoi fare?"
+            title="Guida: cosa vuoi fare?"
+          >
+            <CircleHelp />
+          </Button>
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   );

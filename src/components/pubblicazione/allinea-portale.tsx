@@ -94,6 +94,12 @@ export function AllineaPortale({ canaleId, nomePortale }: { canaleId: number; no
               <strong>{c["solo-portale"]}</strong> sul portale ma non nel software, <strong>{c["solo-software"]}</strong> nel software ma non sul portale,{" "}
               <strong>{c["non-nel-software"]}</strong> sconosciuti al software.
             </p>
+            <div className="flex items-center gap-3">
+              <Button type="button" disabled={pending} onClick={allinea}>
+                {pending ? "…" : "Allinea ora"}
+              </Button>
+              <span className="text-xs text-muted-foreground">Il software prende per buono il portale. Fai prima un backup se non l&apos;hai fatto oggi.</span>
+            </div>
             {analisi.diffs.length > 0 && (
               <div className="max-h-72 overflow-auto rounded-md border text-xs">
                 <table className="w-full">
@@ -119,12 +125,6 @@ export function AllineaPortale({ canaleId, nomePortale }: { canaleId: number; no
                 {analisi.diffs.length > 200 && <p className="px-2 py-1 text-muted-foreground">… e altri {analisi.diffs.length - 200}.</p>}
               </div>
             )}
-            <div className="flex items-center gap-3">
-              <Button type="button" disabled={pending} onClick={allinea}>
-                {pending ? "…" : "Allinea ora"}
-              </Button>
-              <span className="text-xs text-muted-foreground">Il software prende per buono il portale. Fai prima un backup se non l&apos;hai fatto oggi.</span>
-            </div>
           </>
         )}
         {esito && <p className={esito.ok ? "" : "text-destructive"}>{esito.testo}</p>}

@@ -21,6 +21,7 @@ import { FiltroTag } from "@/components/tag/filtro-tag";
 import { BarraFiltri, CampoFiltro, type ChipFiltro } from "@/components/filtri/barra-filtri";
 import { MenuOrdina } from "@/components/filtri/menu-ordina";
 import { MenuViste } from "@/components/filtri/menu-viste";
+import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
 import type { TagBreve } from "@/db/tag-queries";
 import { leggiTagParam, scriviTagParam } from "@/lib/tag-filtro";
 import { TableEmpty } from "@/components/ui/table-empty";
@@ -28,6 +29,7 @@ import { Columns3, ArrowUp, ArrowDown, ArrowUpDown, TriangleAlert, RotateCcw } f
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 import { aggiungiLottiABatch } from "@/app/pubblicazione/actions";
 import { useSelezioneMultipla } from "@/lib/selezione-multipla";
+import { pl } from "@/lib/plurale";
 
 const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"];
 
@@ -256,6 +258,7 @@ export function SelettoreLottiBatch({
 }) {
   const router = useRouter();
   const [filtri, setFiltri] = useState(filtriIniziali);
+  const [infoTag, setInfoTag] = useState<string | null>(null);
   const ordinamentoCorrente: ColonnaOrdinabile = ordinaAttuale ?? "skuCode";
   const colonne = useSyncExternalStore(sottoscriviColonne, leggiColonneSalvate, () => COLONNE_DI_DEFAULT);
   // Selezione multipla stile file-manager (shift+click estende a un
@@ -534,13 +537,16 @@ export function SelettoreLottiBatch({
             barra sticky in fondo alla viewport). Sta comunque dentro questo
             form: la posizione nel JSX non deve coincidere con l'ultimo
             elemento del form perche' il submit funzioni. */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="sticky top-16 z-30 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background/95 px-3 py-2 backdrop-blur">
           <p className="text-sm text-muted-foreground">
-            {righe.length} sku disponibili con questi filtri (già esclusi: bloccati per la vendita, quantità esaurita, già presenti nel batch).
+            {infoTag ?? `${righe.length} sku disponibili con questi filtri (già esclusi: bloccati per la vendita, quantità esaurita, già presenti nel batch).`}
           </p>
           <div className="flex items-center gap-3">
             {selezionati.size > 0 && (
-              <span className="text-sm text-muted-foreground">{selezionati.size} selezionati</span>
+              <span className="text-sm text-muted-foreground">{selezionati.size} {pl(selezionati.size, "selezionato", "selezionati")}</span>
+            )}
+            {selezionati.size > 0 && (
+              <AssegnaTagSelezione tag={tagDisponibili} skuIds={Array.from(selezionati)} onEsito={(e) => setInfoTag(e.testo)} />
             )}
             <Button type="submit" disabled={selezionati.size === 0}>
               Aggiungi {selezionati.size > 0 ? `${selezionati.size} sku` : "selezionati"}

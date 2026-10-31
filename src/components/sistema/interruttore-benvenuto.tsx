@@ -29,7 +29,7 @@ export function InterruttoreBenvenuto() {
           onChange={(e) => impostaBenvenutoNascosto(!e.target.checked)}
           className="size-4"
         />
-        Mostra la finestra &quot;Cosa devi fare&quot; quando apro l&apos;app
+        Mostra la guida iniziale quando apro l&apos;app
       </label>
       <Button type="button" variant="outline" size="sm" onClick={() => window.dispatchEvent(new Event(EVENTO_MOSTRA_BENVENUTO))}>
         Mostrala adesso

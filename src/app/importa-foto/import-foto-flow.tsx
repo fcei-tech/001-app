@@ -196,8 +196,8 @@ function AnteprimaVista({ anteprima, erroriRighe, inCorso, onConferma }: {
         </Card>
       )}
 
-      <Card>
-        <CardContent className="flex items-center justify-between gap-4 pt-6">
+      <Card className="sticky bottom-4 z-20 shadow-lg">
+        <CardContent className="flex flex-wrap items-center justify-between gap-4 pt-6">
           {nessunaModifica ? (
             <p className="text-sm text-muted-foreground">Nessuno sku da aggiornare: niente da importare.</p>
           ) : (

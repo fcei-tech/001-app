@@ -10,6 +10,8 @@ import { CellTesto } from "@/components/magazzino/editable-cell";
 import { FiltroTag } from "@/components/tag/filtro-tag";
 import { BarraFiltri, CampoFiltro, type ChipFiltro } from "@/components/filtri/barra-filtri";
 import { BarraSelezione } from "@/components/filtri/barra-selezione";
+import { MenuOrdina } from "@/components/filtri/menu-ordina";
+import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
 import type { TagBreve } from "@/db/tag-queries";
 import {
   confermaFileAction,
@@ -31,6 +33,7 @@ import {
   type StatoRiga,
 } from "@/lib/tabella-portale";
 import { prezziDiversi } from "@/lib/esposizione";
+import { pl } from "@/lib/plurale";
 
 type Filtro = "tutti" | "da-inviare" | "nuovo" | "esaurito" | "archiviare" | "personalizzati";
 
@@ -131,6 +134,8 @@ export function TabellaPortale({
   const [cerca, setCerca] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("tutti");
   const [tagScelti, setTagScelti] = useState<number[]>([]);
+  // null = ordine predefinito (prima gli sku con modifiche in attesa, poi per SKU)
+  const [ordinamento, setOrdinamento] = useState<{ chiave: string; dir: "asc" | "desc" } | null>(null);
   const [mostraTutte, setMostraTutte] = useState(false);
   const [esito, setEsito] = useState<{ ok: boolean; testo: string; dettaglio?: string[] } | null>(null);
   const conFile = nomePortale === "Shopify" || nomePortale === "eBay";
@@ -153,8 +158,15 @@ export function TabellaPortale({
         if (filtro === "nuovo" || filtro === "esaurito" || filtro === "archiviare") return r.stato === filtro;
         return true;
       })
-      .sort((a, b) => ORDINE[a.stato] - ORDINE[b.stato] || a.skuCode.localeCompare(b.skuCode));
-  }, [righe, cerca, filtro, tagScelti, tagPerSku]);
+      .sort((a, b) => {
+        if (!ordinamento) return ORDINE[a.stato] - ORDINE[b.stato] || a.skuCode.localeCompare(b.skuCode);
+        const segno = ordinamento.dir === "desc" ? -1 : 1;
+        if (ordinamento.chiave === "stato") return segno * (ORDINE[a.stato] - ORDINE[b.stato] || a.skuCode.localeCompare(b.skuCode));
+        if (ordinamento.chiave === "prezzo") return segno * ((Number(a.prezzoOggi) || 0) - (Number(b.prezzoOggi) || 0) || a.skuCode.localeCompare(b.skuCode));
+        if (ordinamento.chiave === "opera") return segno * (`${a.artista} ${a.opera}`.localeCompare(`${b.artista} ${b.opera}`, "it") || a.skuCode.localeCompare(b.skuCode));
+        return segno * a.skuCode.localeCompare(b.skuCode);
+      });
+  }, [righe, cerca, filtro, tagScelti, tagPerSku, ordinamento]);
 
   const mostrate = mostraTutte ? filtrate : filtrate.slice(0, LIMITE_RIGHE);
   const { selezionati, setSelezionati, gestisciSeleziona, segnalaShift, selezionaTutti } =
@@ -220,7 +232,7 @@ export function TabellaPortale({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-400/50 bg-amber-400/10 px-4 py-3">
         <div>
           <div className="text-base font-semibold">
-            {riassunto.totale === 0 ? "Nessuna modifica in attesa" : `${riassunto.totale} modifiche in attesa`}
+            {riassunto.totale === 0 ? "Nessuna modifica in attesa" : `${riassunto.totale} ${pl(riassunto.totale, "modifica", "modifiche")} in attesa`}
           </div>
           <div className="text-xs text-muted-foreground">
             {riassunto.nuovi} nuovi · {riassunto.modificati} da modificare · {riassunto.esauriti} esauriti · {riassunto.archiviati} da archiviare
@@ -313,7 +325,24 @@ export function TabellaPortale({
             chips={chips}
             onAzzera={() => { setFiltro("tutti"); setTagScelti([]); }}
             strumenti={
-              <label className="ml-auto flex h-9 items-center gap-2 rounded-md border px-3 text-sm">
+              <>
+              <MenuOrdina
+                voci={[
+                  { chiave: "stato", etichetta: "Stato" },
+                  { chiave: "skuCode", etichetta: "SKU" },
+                  { chiave: "opera", etichetta: "Opera" },
+                  { chiave: "prezzo", etichetta: "Prezzo" },
+                ]}
+                attuale={ordinamento?.chiave}
+                direzione={ordinamento?.dir ?? "asc"}
+                onScegli={(k) =>
+                  setOrdinamento((o) =>
+                    o && o.chiave === k ? (o.dir === "asc" ? { chiave: k, dir: "desc" } : null) : { chiave: k, dir: "asc" }
+                  )
+                }
+                onAzzera={() => setOrdinamento(null)}
+              />
+              <label className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm">
                 <Checkbox
                   checked={tutti ? true : scelti.length > 0 ? "indeterminate" : false}
                   onCheckedChange={(v) => selezionaTutti(v === true)}
@@ -321,6 +350,7 @@ export function TabellaPortale({
                 />
                 Seleziona tutti
               </label>
+              </>
             }
           >
             <CampoFiltro etichetta="Stato">
@@ -341,6 +371,11 @@ export function TabellaPortale({
 
         {scelti.length > 0 && (
           <BarraSelezione n={scelti.length} totale={mostrate.length} onDeseleziona={() => setSelezionati(new Set())} className="rounded-none border-y">
+            <AssegnaTagSelezione
+              tag={tagDisponibili}
+              skuIds={scelti.map((x) => x.skuId)}
+              onEsito={(e) => setEsito({ ok: e.ok, testo: e.testo })}
+            />
             <Button
               type="button"
               variant="outline"
@@ -361,6 +396,13 @@ export function TabellaPortale({
               Escludi da questo portale
             </Button>
           </BarraSelezione>
+        )}
+
+        {filtrate.length > mostrate.length && (
+          <div className="flex items-center gap-3 border-t px-4 py-2 text-xs text-muted-foreground">
+            <span>Mostro {mostrate.length} di {filtrate.length}.</span>
+            <Button type="button" size="sm" variant="secondary" onClick={() => setMostraTutte(true)}>Mostra tutti</Button>
+          </div>
         )}
 
         <div className="hidden items-center gap-3 border-t bg-muted/40 px-4 py-2 text-[11px] uppercase tracking-wide text-muted-foreground md:grid grid-cols-[1.25rem_6rem_minmax(6rem,1fr)_7.5rem_6.5rem_8rem_6rem_8.5rem]">
@@ -436,12 +478,6 @@ export function TabellaPortale({
               );
             })}
           </ul>
-        )}
-        {filtrate.length > mostrate.length && (
-          <div className="flex items-center justify-between border-t px-4 py-2 text-xs text-muted-foreground">
-            <span>Mostro {mostrate.length} di {filtrate.length}.</span>
-            <Button type="button" size="sm" variant="secondary" onClick={() => setMostraTutte(true)}>Mostra tutti</Button>
-          </div>
         )}
 
       </div>

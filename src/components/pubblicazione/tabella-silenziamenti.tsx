@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TableEmpty } from "@/components/ui/table-empty";
 import { useSelezioneMultipla } from "@/lib/selezione-multipla";
 import { riattivaSilenziamentoAction, riattivaSilenziamentiBulkAction } from "@/app/pubblicazione/actions";
+import { pl } from "@/lib/plurale";
 
 export type RigaSilenziamento = {
   id: number;
@@ -69,7 +70,7 @@ export function TabellaSilenziamenti({ righe }: { righe: RigaSilenziamento[] }) 
       <div className="flex flex-wrap items-center gap-3">
         {selezionati.size > 0 && (
           <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
-            <span className="text-sm font-medium">{selezionati.size} selezionati</span>
+            <span className="text-sm font-medium">{selezionati.size} {pl(selezionati.size, "selezionato", "selezionati")}</span>
             <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={riattivaSelezionati}>
               Riattiva selezionati
             </Button>

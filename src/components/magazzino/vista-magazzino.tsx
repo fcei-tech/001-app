@@ -18,7 +18,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
 import { Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert, Pencil, Ellipsis, Warehouse, ChevronDown } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
@@ -169,6 +169,10 @@ const MAPPA_ORDINABILI: Record<ColonnaId, ColonnaOrdinabile> = {
   datiMancanti: "datiMancanti",
 };
 
+// Intestazione sempre visibile mentre si scorre l'elenco lungo (la tabella
+// scorre dentro il suo riquadro).
+const CLASSE_INTESTAZIONE_FISSA = "sticky top-0 z-10 bg-background shadow-[0_1px_0_0_var(--border)]";
+
 function IntestazioneOrdinabile({
   etichetta,
   chiave,
@@ -186,7 +190,7 @@ function IntestazioneOrdinabile({
 }) {
   const Icona = attiva ? (direzione === "desc" ? ArrowDown : ArrowUp) : ArrowUpDown;
   return (
-    <TableHead className={allineaDestra ? "text-right" : undefined}>
+    <TableHead className={`${CLASSE_INTESTAZIONE_FISSA} ${allineaDestra ? "text-right" : ""}`}>
       <button
         type="button"
         onClick={() => onOrdina(chiave)}
@@ -1057,14 +1061,14 @@ export function VistaMagazzino({
         </BarraSelezione>
       )}
 
-      <div className="rounded-xl border overflow-x-auto">
+      <div className="max-h-[calc(100vh-12rem)] min-h-64 overflow-auto rounded-xl border">
         {righeMostrate.length === 0 ? (
           <TableEmpty><p className="font-medium text-foreground">Nessuno sku trovato</p><p>Prova a modificare la ricerca o i filtri.</p></TableEmpty>
         ) : (
-          <Table>
+          <table data-slot="table" className="w-full caption-bottom text-sm">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-10">
+                <TableHead className={`w-10 ${CLASSE_INTESTAZIONE_FISSA}`}>
                   <Checkbox
                     checked={tuttiSelezionati ? true : alcuniSelezionati ? "indeterminate" : false}
                     onCheckedChange={(v) => selezionaTutti(v === true)}
@@ -1119,7 +1123,7 @@ export function VistaMagazzino({
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </table>
         )}
       </div>
 

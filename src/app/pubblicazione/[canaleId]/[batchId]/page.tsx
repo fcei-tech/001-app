@@ -60,6 +60,7 @@ import {
   type LottoPerRisoluzioneCatawiki,
   type OverrideLottoCatawiki,
 } from "@/lib/catawiki-resolver";
+import { pl } from "@/lib/plurale";
 
 const ETICHETTE_STATO_RIGA: Record<string, { label: string; variant: "secondary" | "success" | "outline" }> = {
   attivo: { label: "In asta", variant: "secondary" },
@@ -517,7 +518,7 @@ export default async function BatchPubblicazionePage({
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>Lotti nel batch</CardTitle>
-            <CardDescription>{batch.lotti.length} sku selezionati.</CardDescription>
+            <CardDescription>{batch.lotti.length} sku {pl(batch.lotti.length, "selezionato", "selezionati")}.</CardDescription>
           </CardHeader>
           <CardContent>
             {batch.lotti.length === 0 ? (
@@ -551,7 +552,7 @@ export default async function BatchPubblicazionePage({
                         <TableHead data-col="statoExport">Stato export</TableHead>
                       </>
                     )}
-                    {mostraColonnaAzioni && <TableHead className="text-right">Azioni</TableHead>}
+                    {mostraColonnaAzioni && <TableHead className="sticky right-0 z-10 bg-background text-right shadow-[-1px_0_0_0_var(--border)]">Azioni</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -701,7 +702,7 @@ export default async function BatchPubblicazionePage({
                             );
                           })()}
                         {mostraColonnaAzioni && (
-                          <TableCell className="text-right">
+                          <TableCell className="sticky right-0 z-10 bg-background text-right shadow-[-1px_0_0_0_var(--border)]">
                             {inBozza ? (
                               <form action={rimuoviLottoDaBatch}>
                                 <input type="hidden" name="batchLottoId" value={l.id} />

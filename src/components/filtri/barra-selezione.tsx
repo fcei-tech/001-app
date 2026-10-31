@@ -24,7 +24,7 @@ export function BarraSelezione({
   return (
     <div className={`sticky top-16 z-30 flex flex-wrap items-center gap-2 bg-background/95 px-3 py-2 shadow-sm backdrop-blur ${className}`}>
       <span className="text-sm font-medium">
-        {n} selezionati
+        {n} {n === 1 ? "selezionato" : "selezionati"}
         {tutti && <span className="ml-1 font-normal text-muted-foreground">(tutto l&apos;elenco)</span>}
       </span>
       <span className="flex-1" />

@@ -1,17 +1,17 @@
 import Link from "next/link";
 import { Header } from "@/components/header";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { pl } from "@/lib/plurale";
 import { getCanaliConConteggio } from "@/db/pubblicazione-queries";
 import { calcolaDaFare } from "@/db/portale-queries";
 import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
 import { BarraCanale } from "@/components/pubblicazione/barra-canale";
 
-const ETICHETTE_TIPO: Record<string, string> = {
-  statico: "Statico",
-  asta_online: "Asta online",
-  asta_fisica: "Asta fisica",
-};
+// Due gruppi con titolo al posto delle etichette "Statico / Asta online / Asta fisica".
+const GRUPPI = [
+  { titolo: "Vendita diretta", tipi: ["statico"] },
+  { titolo: "Aste", tipi: ["asta_online", "asta_fisica"] },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -40,60 +40,62 @@ export default async function PubblicazionePage() {
         {canali.filter((c) => c.attivo).length === 0 ? (
           <p className="text-sm text-muted-foreground">Nessun canale trovato.</p>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {canali.filter((c) => c.attivo).map((c) => {
-              const colore = coloreCanale(c.nome);
-              const fasce = fasceCanale(c.nome);
-              // Portali statici: quante cose da sistemare (registro esposto).
-              const nDaFare = daFareMap.get(c.id)?.length ?? 0;
+          <div className="flex flex-col gap-8">
+            {GRUPPI.map((gruppo) => {
+              const elenco = canali.filter((c) => c.attivo && gruppo.tipi.includes(c.tipo));
+              if (elenco.length === 0) return null;
               return (
-              <Link key={c.id} href={`/pubblicazione/${c.id}`}>
-                {/* Accento colore brand/canale (2026-09-25, richiesta esplicita
-                    utente 2026-09-24 - vedi COLORE_CANALE in
-                    src/lib/colori-canali.ts): bordo colorato, non riempimento
-                    pieno, per non compromettere leggibilita' su colori chiari
-                    (es. giallo eBay statico, verde Shopify).
-                    2026-09-29: bordo portato a 20px (SPESSORE_BORDO_CANALE_PX,
-                    "opzione C") per tutti; eBay/eBay Asta usano invece
-                    BarraCanale (4 fasce, vedi barra-canale.tsx) - "pl-5"
-                    riserva sul Card la stessa larghezza che altrove occupa il
-                    border-l-[20px], cosi' il testo parte dallo stesso punto in
-                    entrambi i casi. "relative overflow-hidden" e' quello che
-                    garantisce che la fascia non sconfini mai oltre l'angolo
-                    arrotondato della card (vedi commento in barra-canale.tsx). */}
-                <Card
-                  className={`relative h-full overflow-hidden transition-colors hover:border-primary/40 ${fasce ? "pl-5" : "border-l-[20px]"}`}
-                  style={!fasce && colore ? { borderLeftColor: colore } : undefined}
-                >
-                  {fasce && <BarraCanale nomeCanale={c.nome} />}
-                  <CardHeader className="flex-row items-start justify-between gap-2 space-y-0">
-                    <div className="flex items-center gap-2">
-                      {colore && <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: colore }} />}
-                      <div>
-                        <CardTitle>{c.nome}</CardTitle>
-                        <CardDescription>{ETICHETTE_TIPO[c.tipo] ?? c.tipo}</CardDescription>
-                      </div>
-                    </div>
-                    {c.esclusivo && <Badge variant="warning">Esclusivo</Badge>}
-                    {nDaFare > 0 && <Badge variant="warning">{nDaFare} da fare</Badge>}
-                  </CardHeader>
-                  <CardContent className="text-sm text-muted-foreground">
-                    {c.batchTotali === 0 ? (
-                      "Nessun batch"
-                    ) : (
-                      <>
-                        {c.batchTotali} batch totali
-                        {c.batchInBozza > 0 && (
-                          <>
-                            {" "}
-                            · <span className="font-medium text-foreground">{c.batchInBozza} in preparazione</span>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              </Link>
+                <section key={gruppo.titolo} aria-label={gruppo.titolo}>
+                  <h2 className="mb-3 text-sm font-semibold">{gruppo.titolo}</h2>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {elenco.map((c) => {
+                      const colore = coloreCanale(c.nome);
+                      const fasce = fasceCanale(c.nome);
+                      // Portali con tabella (Shopify, eBay, Subito): quante cose da sistemare.
+                      const nDaFare = daFareMap.get(c.id)?.length ?? 0;
+                      return (
+                        <Link key={c.id} href={`/pubblicazione/${c.id}`}>
+                          {/* Accento colore del canale (bordo colorato, non riempimento:
+                              resta leggibile anche su colori chiari). eBay/eBay Asta usano
+                              invece BarraCanale (4 fasce); "pl-5" riserva la stessa
+                              larghezza del bordo, e "overflow-hidden" tiene la fascia
+                              dentro l'angolo arrotondato. */}
+                          <Card
+                            className={`relative h-full overflow-hidden transition-colors hover:border-primary/40 ${fasce ? "pl-5" : "border-l-[20px]"}`}
+                            style={!fasce && colore ? { borderLeftColor: colore } : undefined}
+                          >
+                            {fasce && <BarraCanale nomeCanale={c.nome} />}
+                            <CardHeader className="space-y-0">
+                              <div className="flex items-center gap-2">
+                                {colore && <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: colore }} />}
+                                <CardTitle>{c.nome}</CardTitle>
+                              </div>
+                            </CardHeader>
+                            <CardContent className="text-sm text-muted-foreground">
+                              {c.tipo === "statico" ? (
+                                nDaFare > 0 ? (
+                                  <span className="font-medium text-foreground">
+                                    {nDaFare} {pl(nDaFare, "modifica da inviare", "modifiche da inviare")}
+                                  </span>
+                                ) : (
+                                  "Tutto allineato"
+                                )
+                              ) : c.batchInBozza > 0 ? (
+                                <span className="font-medium text-foreground">
+                                  {c.batchInBozza} batch in preparazione
+                                </span>
+                              ) : c.batchTotali === 0 ? (
+                                "Nessun batch"
+                              ) : (
+                                `${c.batchTotali} batch`
+                              )}
+                            </CardContent>
+                          </Card>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </section>
               );
             })}
           </div>
