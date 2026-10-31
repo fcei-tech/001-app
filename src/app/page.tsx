@@ -76,12 +76,12 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
         {skueliminato && (
           <div className="mb-4 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">Sku eliminato.</div>
         )}
-        <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-col gap-1">
             <h1 className="text-xl font-semibold tracking-tight">Magazzino</h1>
             <p className="text-sm text-muted-foreground">{righe.length} sku {filtriAttivi ? "con questi filtri" : "totali"}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button asChild variant="secondary"><Link href="/importa-excel"><FileSpreadsheet /> Importa da Excel</Link></Button>
             <Button asChild variant="secondary"><Link href="/importa-foto"><Images /> Importa Foto</Link></Button>
             <Button asChild><Link href="/magazzino/nuovo"><Plus /> Nuovo sku</Link></Button>

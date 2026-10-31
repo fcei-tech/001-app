@@ -28,7 +28,7 @@ export function FiltroTag({
   const interni = tag.filter((t) => t.tipo === "interno");
   const soggetti = tag.filter((t) => t.tipo !== "interno");
   const nomi = tag.filter((t) => valore.includes(t.id)).map((t) => t.nome);
-  const etichetta = nomi.length === 0 ? "Tag" : nomi.length === 1 ? `Tag: ${nomi[0]}` : `Tag (${nomi.length})`;
+  const etichetta = nomi.length === 0 ? "Tutti" : nomi.length === 1 ? nomi[0] : `${nomi.length} tag`;
 
   function commuta(id: number, acceso: boolean) {
     onChange(acceso ? [...valore, id] : valore.filter((x) => x !== id));
@@ -48,7 +48,7 @@ export function FiltroTag({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant={valore.length ? "secondary" : "outline"} className="w-44 justify-start" aria-label="Filtro tag">
+        <Button type="button" variant="outline" className="w-full justify-start font-normal" aria-label="Filtro tag">
           <TagIcon /> <span className="truncate">{etichetta}</span>
         </Button>
       </DropdownMenuTrigger>

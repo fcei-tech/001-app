@@ -4,11 +4,12 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CellTesto } from "@/components/magazzino/editable-cell";
 import { FiltroTag } from "@/components/tag/filtro-tag";
+import { BarraFiltri, CampoFiltro, type ChipFiltro } from "@/components/filtri/barra-filtri";
+import { BarraSelezione } from "@/components/filtri/barra-selezione";
 import type { TagBreve } from "@/db/tag-queries";
 import {
   confermaFileAction,
@@ -163,6 +164,13 @@ export function TabellaPortale({
   const sceltiDaInviare = scelti.filter((r) => r.stato !== "online").length;
   const nFile = scelti.length > 0 ? sceltiDaInviare : riassunto.totale;
 
+  const chips: ChipFiltro[] = [];
+  const NOMI_FILTRO: Record<string, string> = { "da-inviare": "Da mandare al portale", nuovo: "Nuovi", esaurito: "Esauriti", archiviare: "Da archiviare", personalizzati: "Con celle modificate a mano" };
+  if (filtro !== "tutti") chips.push({ id: "stato", etichetta: "Stato", valore: NOMI_FILTRO[filtro] ?? filtro, rimuovi: () => setFiltro("tutti") });
+  for (const t of tagDisponibili.filter((x) => tagScelti.includes(x.id))) {
+    chips.push({ id: `tag-${t.id}`, etichetta: "Tag", valore: t.nome, rimuovi: () => setTagScelti(tagScelti.filter((x) => x !== t.id)) });
+  }
+
   function esegui(fn: () => Promise<{ ok: boolean; errore?: string; messaggio?: string }>, dopo?: () => void) {
     start(async () => {
       const r = await fn();
@@ -296,26 +304,64 @@ export function TabellaPortale({
       </div>
 
       <div className="rounded-xl border">
-        <div className="flex flex-wrap items-center gap-2 px-4 py-2">
-          <Input value={cerca} onChange={(e) => setCerca(e.target.value)} placeholder="Cerca sku, artista, opera…" className="h-8 w-64" aria-label="Cerca" />
-          <FiltroTag tag={tagDisponibili} valore={tagScelti} onChange={setTagScelti} />
-          <select value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)} className="h-8 rounded-md border bg-background px-2 text-sm" aria-label="Filtro">
-            <option value="tutti">Tutti ({righe.length})</option>
-            <option value="da-inviare">Da mandare al portale ({riassunto.totale})</option>
-            <option value="nuovo">Nuovi ({riassunto.nuovi})</option>
-            <option value="esaurito">Esauriti ({riassunto.esauriti})</option>
-            <option value="archiviare">Da archiviare ({riassunto.archiviati})</option>
-            <option value="personalizzati">Con celle modificate a mano</option>
-          </select>
-          <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-            <Checkbox
-              checked={tutti ? true : scelti.length > 0 ? "indeterminate" : false}
-              onCheckedChange={(v) => selezionaTutti(v === true)}
-              aria-label="Seleziona tutti quelli mostrati"
-            />
-            Tutti
-          </label>
+        <div className="px-4 py-3">
+          <BarraFiltri
+            className=""
+            ricerca={cerca}
+            onRicerca={setCerca}
+            segnaposto="Cerca sku, artista, opera…"
+            chips={chips}
+            onAzzera={() => { setFiltro("tutti"); setTagScelti([]); }}
+            strumenti={
+              <label className="ml-auto flex h-9 items-center gap-2 rounded-md border px-3 text-sm">
+                <Checkbox
+                  checked={tutti ? true : scelti.length > 0 ? "indeterminate" : false}
+                  onCheckedChange={(v) => selezionaTutti(v === true)}
+                  aria-label="Seleziona tutti quelli mostrati"
+                />
+                Seleziona tutti
+              </label>
+            }
+          >
+            <CampoFiltro etichetta="Stato">
+              <select value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)} className="h-9 w-full rounded-md border bg-background px-2 text-sm" aria-label="Filtro stato">
+                <option value="tutti">Tutti ({righe.length})</option>
+                <option value="da-inviare">Da mandare al portale ({riassunto.totale})</option>
+                <option value="nuovo">Nuovi ({riassunto.nuovi})</option>
+                <option value="esaurito">Esauriti ({riassunto.esauriti})</option>
+                <option value="archiviare">Da archiviare ({riassunto.archiviati})</option>
+                <option value="personalizzati">Con celle modificate a mano</option>
+              </select>
+            </CampoFiltro>
+            <CampoFiltro etichetta="Tag">
+              <FiltroTag tag={tagDisponibili} valore={tagScelti} onChange={setTagScelti} />
+            </CampoFiltro>
+          </BarraFiltri>
         </div>
+
+        {scelti.length > 0 && (
+          <BarraSelezione n={scelti.length} totale={mostrate.length} onDeseleziona={() => setSelezionati(new Set())} className="rounded-none border-y">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={() => esegui(() => ripristinaCellePortaleAction(scelti.map((x) => x.skuId), canaleId), () => setSelezionati(new Set()))}
+            >
+              Ripristina valori automatici
+            </Button>
+            <Button type="button" variant="outline" disabled={pending} onClick={() => esegui(() => sospendiAction(scelti.map((x) => x.skuId), canaleId), () => setSelezionati(new Set()))}>
+              Sospendi (pezzi a 0)
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={() => esegui(() => ritiraDaPortaliAction(scelti.map((x) => x.skuId), [canaleId], true), () => setSelezionati(new Set()))}
+            >
+              Escludi da questo portale
+            </Button>
+          </BarraSelezione>
+        )}
 
         <div className="hidden items-center gap-3 border-t bg-muted/40 px-4 py-2 text-[11px] uppercase tracking-wide text-muted-foreground md:grid grid-cols-[1.25rem_6rem_minmax(6rem,1fr)_7.5rem_6.5rem_8rem_6rem_8.5rem]">
           <span />
@@ -398,33 +444,6 @@ export function TabellaPortale({
           </div>
         )}
 
-        {scelti.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 border-t bg-sky-500/10 px-4 py-2">
-            <span className="text-sm font-medium">{scelti.length} selezionati</span>
-            <span className="flex-1" />
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={pending}
-              onClick={() => esegui(() => ritiraDaPortaliAction(scelti.map((x) => x.skuId), [canaleId], true), () => setSelezionati(new Set()))}
-            >
-              Escludi da questo portale
-            </Button>
-            <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => esegui(() => sospendiAction(scelti.map((x) => x.skuId), canaleId), () => setSelezionati(new Set()))}>
-              Sospendi (pezzi a 0)
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={pending}
-              onClick={() => esegui(() => ripristinaCellePortaleAction(scelti.map((x) => x.skuId), canaleId), () => setSelezionati(new Set()))}
-            >
-              Ripristina valori automatici
-            </Button>
-          </div>
-        )}
       </div>
     </section>
   );

@@ -13,8 +13,8 @@
         "title": "BATCH_ — Posterclub",
         "width": 1440,
         "height": 900,
-        "minWidth": 1000,
-        "minHeight": 700,
+        "minWidth": 640,
+        "minHeight": 480,
         "url": "about:blank",
         "visible": false
       }

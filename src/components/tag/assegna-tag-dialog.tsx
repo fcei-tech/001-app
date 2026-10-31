@@ -59,8 +59,8 @@ export function AssegnaTagSelezione({
 
   return (
     <>
-      <Button type="button" size="sm" variant="outline" onClick={() => setAperto(true)}>
-        <TagIcon /> Tag…
+      <Button type="button" variant="outline" onClick={() => setAperto(true)}>
+        <TagIcon /> Tag
       </Button>
       <Dialog open={aperto} onOpenChange={(o) => { setAperto(o); if (!o) setErrore(null); }}>
         <DialogContent>

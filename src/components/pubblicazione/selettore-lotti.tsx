@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -18,10 +18,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FiltroTag } from "@/components/tag/filtro-tag";
+import { BarraFiltri, CampoFiltro, type ChipFiltro } from "@/components/filtri/barra-filtri";
+import { MenuOrdina } from "@/components/filtri/menu-ordina";
+import { MenuViste } from "@/components/filtri/menu-viste";
 import type { TagBreve } from "@/db/tag-queries";
 import { leggiTagParam, scriviTagParam } from "@/lib/tag-filtro";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, TriangleAlert, RotateCcw } from "lucide-react";
+import { Columns3, ArrowUp, ArrowDown, ArrowUpDown, TriangleAlert, RotateCcw } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 import { aggiungiLottiABatch } from "@/app/pubblicazione/actions";
 import { useSelezioneMultipla } from "@/lib/selezione-multipla";
@@ -233,7 +236,6 @@ export function SelettoreLottiBatch({
   canaleId,
   basePath,
   filtriIniziali,
-  filtriAttivi,
   ordinaAttuale,
   direzioneAttuale,
 }: {
@@ -255,7 +257,6 @@ export function SelettoreLottiBatch({
   const router = useRouter();
   const [filtri, setFiltri] = useState(filtriIniziali);
   const ordinamentoCorrente: ColonnaOrdinabile = ordinaAttuale ?? "skuCode";
-  const ordinamentoAttivo = Boolean(ordinaAttuale);
   const colonne = useSyncExternalStore(sottoscriviColonne, leggiColonneSalvate, () => COLONNE_DI_DEFAULT);
   // Selezione multipla stile file-manager (shift+click estende a un
   // intervallo) - 2026-09-25, punto 3 del backlog UX FINALIZZATO, vedi
@@ -279,12 +280,48 @@ export function SelettoreLottiBatch({
     scriviColonneSalvate(COLONNE_DI_DEFAULT);
   }
 
+  // Testo e numeri si applicano da soli dopo una breve pausa di scrittura (o
+  // subito con Invio); i menu si applicano al clic.
+  const chiaveTestoDi = (f: typeof filtri) =>
+    [f.q, f.prezzoEbayMin, f.prezzoEbayMax, f.prezzoCatawikiMin, f.prezzoCatawikiMax, f.riservaCatawikiMin, f.riservaCatawikiMax, f.quantitaMin, f.quantitaMax].join("|");
+  const testoApplicato = useRef(chiaveTestoDi(filtriIniziali));
+  const chiaveTesto = chiaveTestoDi(filtri);
+  useEffect(() => {
+    if (chiaveTesto === testoApplicato.current) return;
+    const t = setTimeout(() => applicaFiltri(filtri), 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chiaveTesto]);
+
+  function cambia(patch: Partial<typeof filtri>) {
+    const nuovi = { ...filtri, ...patch };
+    setFiltri(nuovi);
+    applicaFiltri(nuovi);
+  }
+
+  function applicaVista(qs: string) {
+    const p = new URLSearchParams(qs);
+    const g = (k: string, d = "") => p.get(k) ?? d;
+    const nuovi: typeof filtri = {
+      q: g("q"), tipo: g("tipo", "tutti"), condizione: g("condizione", "tutti"), proprieta: g("proprieta", "tutti"),
+      confoto: g("confoto") === "si" ? "si" : "no",
+      prezzoEbayMin: g("prezzoEbayMin"), prezzoEbayMax: g("prezzoEbayMax"),
+      prezzoCatawikiMin: g("prezzoCatawikiMin"), prezzoCatawikiMax: g("prezzoCatawikiMax"),
+      riservaCatawikiMin: g("riservaCatawikiMin"), riservaCatawikiMax: g("riservaCatawikiMax"),
+      quantitaMin: g("quantitaMin"), quantitaMax: g("quantitaMax"), tag: g("tag"),
+    };
+    setFiltri(nuovi);
+    testoApplicato.current = chiaveTestoDi(nuovi);
+    router.push(qs ? `${basePath}?${qs}` : basePath, { scroll: false });
+  }
+
   function applicaFiltri(
     f: typeof filtri,
     ordinaOverride?: ColonnaOrdinabile,
     direzioneOverride?: "asc" | "desc",
     azzeraOrdinamento?: boolean
   ) {
+    testoApplicato.current = chiaveTestoDi(f);
     const params = new URLSearchParams();
     if (f.q) params.set("q", f.q);
     if (f.tipo !== "tutti") params.set("tipo", f.tipo);
@@ -325,7 +362,7 @@ export function SelettoreLottiBatch({
       riservaCatawikiMin: "", riservaCatawikiMax: "", quantitaMin: "", quantitaMax: "", tag: "",
     };
     setFiltri(vuoti);
-    applicaFiltri(vuoti, undefined, undefined, true);
+    applicaFiltri(vuoti);
   }
 
   function gestisciOrdinamento(chiave: ColonnaOrdinabile) {
@@ -342,137 +379,139 @@ export function SelettoreLottiBatch({
   const tuttiSelezionati = righe.length > 0 && righe.every((r) => selezionati.has(r.id));
   const alcuniSelezionati = !tuttiSelezionati && righe.some((r) => selezionati.has(r.id));
 
+  const nomeDi = (elenco: { id: number; nome: string }[], id: string) => elenco.find((x) => String(x.id) === id)?.nome ?? id;
+  const chips: ChipFiltro[] = [];
+  if (filtri.tipo !== "tutti") chips.push({ id: "tipo", etichetta: "Tipo", valore: nomeDi(tipi, filtri.tipo), rimuovi: () => cambia({ tipo: "tutti" }) });
+  if (filtri.condizione !== "tutti") chips.push({ id: "condizione", etichetta: "Condizione", valore: filtri.condizione, rimuovi: () => cambia({ condizione: "tutti" }) });
+  if (filtri.proprieta !== "tutti") chips.push({ id: "proprieta", etichetta: "Proprietario", valore: nomeDi(proprietari, filtri.proprieta), rimuovi: () => cambia({ proprieta: "tutti" }) });
+  if (filtri.confoto === "si") chips.push({ id: "confoto", etichetta: "Foto", valore: "Solo con foto salvate", rimuovi: () => cambia({ confoto: "no" }) });
+  for (const t of tagDisponibili.filter((x) => leggiTagParam(filtri.tag).includes(x.id))) {
+    chips.push({ id: `tag-${t.id}`, etichetta: "Tag", valore: t.nome, rimuovi: () => cambia({ tag: scriviTagParam(leggiTagParam(filtri.tag).filter((x) => x !== t.id)) }) });
+  }
+  const range = (id: string, etichetta: string, a: "prezzoEbayMin" | "prezzoCatawikiMin" | "riservaCatawikiMin" | "quantitaMin", b: "prezzoEbayMax" | "prezzoCatawikiMax" | "riservaCatawikiMax" | "quantitaMax") => {
+    if (filtri[a] || filtri[b]) chips.push({ id, etichetta, valore: `${filtri[a] || "…"} – ${filtri[b] || "…"}`, rimuovi: () => cambia({ [a]: "", [b]: "" }) });
+  };
+  range("prezzoEbay", "Prezzo eBay", "prezzoEbayMin", "prezzoEbayMax");
+  range("prezzoCatawiki", "Prezzo Catawiki", "prezzoCatawikiMin", "prezzoCatawikiMax");
+  range("riservaCatawiki", "Riserva Catawiki", "riservaCatawikiMin", "riservaCatawikiMax");
+  range("quantita", "Quantità", "quantitaMin", "quantitaMax");
+
   return (
     <div className="flex flex-col gap-4">
-      <form
-        className="flex flex-col gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          applicaFiltri(filtri);
-        }}
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative w-full max-w-sm">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={filtri.q}
-              onChange={(e) => setFiltri((f) => ({ ...f, q: e.target.value }))}
-              placeholder="Cerca artista, opera, sku o tag..."
-              className="pl-8"
+      <BarraFiltri
+        className=""
+        ricerca={filtri.q}
+        onRicerca={(v) => setFiltri((f) => ({ ...f, q: v }))}
+        onInvio={() => applicaFiltri(filtri)}
+        segnaposto="Cerca artista, opera, sku o tag..."
+        chips={chips}
+        onAzzera={azzeraFiltri}
+        strumenti={
+          <>
+            <MenuOrdina
+              voci={[{ chiave: "skuCode", etichetta: "SKU" }, ...colonneVisibili.map((c) => ({ chiave: c.chiaveOrdinamento, etichetta: c.etichetta }))]}
+              attuale={ordinaAttuale}
+              direzione={direzioneAttuale}
+              onScegli={(k) => gestisciOrdinamento(k as ColonnaOrdinabile)}
+              onAzzera={() => applicaFiltri(filtri, undefined, undefined, true)}
             />
-          </div>
-
-          <FiltroTag
-            tag={tagDisponibili}
-            valore={leggiTagParam(filtri.tag)}
-            onChange={(ids) => {
-              const nuovi = { ...filtri, tag: scriviTagParam(ids) };
-              setFiltri(nuovi);
-              applicaFiltri(nuovi);
-            }}
-          />
-
-          <Select value={filtri.tipo} onValueChange={(v) => setFiltri((f) => ({ ...f, tipo: v }))}>
-            <SelectTrigger className="w-40" aria-label="Tipo"><SelectValue placeholder="Tipo" /></SelectTrigger>
+            <MenuViste chiave={`selettore-${canaleId}`} onApplica={applicaVista} ignora={["aggiunti", "confermato"]} />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" title="Scegli quali colonne vedere nella tabella">
+                  <Columns3 /> Colonne
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="max-h-96 overflow-y-auto">
+                <DropdownMenuLabel>Colonne visibili</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {COLONNE.map((c) => (
+                  <DropdownMenuCheckboxItem
+                    key={c.id}
+                    checked={colonne[c.id]}
+                    onCheckedChange={(v) => impostaColonna(c.id, v === true)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {c.etichetta}
+                  </DropdownMenuCheckboxItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); ripristinaColonne(); }}>
+                  <RotateCcw /> Ripristina colonne predefinite
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+      >
+        <CampoFiltro etichetta="Tag">
+          <FiltroTag tag={tagDisponibili} valore={leggiTagParam(filtri.tag)} onChange={(ids) => cambia({ tag: scriviTagParam(ids) })} />
+        </CampoFiltro>
+        <CampoFiltro etichetta="Tipo">
+          <Select value={filtri.tipo} onValueChange={(v) => cambia({ tipo: v })}>
+            <SelectTrigger aria-label="Tipo"><SelectValue placeholder="Tutti" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="tutti">Tutti i tipi</SelectItem>
+              <SelectItem value="tutti">Tutti</SelectItem>
               {tipi.map((t) => <SelectItem key={t.id} value={String(t.id)}>{t.nome}</SelectItem>)}
             </SelectContent>
           </Select>
-
-          <Select value={filtri.condizione} onValueChange={(v) => setFiltri((f) => ({ ...f, condizione: v }))}>
-            <SelectTrigger className="w-36" aria-label="Condizione"><SelectValue placeholder="Condizione" /></SelectTrigger>
+        </CampoFiltro>
+        <CampoFiltro etichetta="Condizione">
+          <Select value={filtri.condizione} onValueChange={(v) => cambia({ condizione: v })}>
+            <SelectTrigger aria-label="Condizione"><SelectValue placeholder="Tutte" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="tutti">Tutte le condizioni</SelectItem>
+              <SelectItem value="tutti">Tutte</SelectItem>
               {CONDIZIONI.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
             </SelectContent>
           </Select>
-
-          <Select value={filtri.proprieta} onValueChange={(v) => setFiltri((f) => ({ ...f, proprieta: v }))}>
-            <SelectTrigger className="w-36" aria-label="Proprietario"><SelectValue placeholder="Proprietario" /></SelectTrigger>
+        </CampoFiltro>
+        <CampoFiltro etichetta="Proprietario">
+          <Select value={filtri.proprieta} onValueChange={(v) => cambia({ proprieta: v })}>
+            <SelectTrigger aria-label="Proprietario"><SelectValue placeholder="Tutti" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="tutti">Tutti i proprietari</SelectItem>
+              <SelectItem value="tutti">Tutti</SelectItem>
               {proprietari.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.nome}</SelectItem>)}
             </SelectContent>
           </Select>
-
-          <Select value={filtri.confoto} onValueChange={(v) => setFiltri((f) => ({ ...f, confoto: v }))}>
-            <SelectTrigger className="w-44" aria-label="Foto"><SelectValue placeholder="Foto" /></SelectTrigger>
+        </CampoFiltro>
+        <CampoFiltro etichetta="Foto">
+          <Select value={filtri.confoto} onValueChange={(v) => cambia({ confoto: v })}>
+            <SelectTrigger aria-label="Foto"><SelectValue placeholder="Tutti" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="no">Foto: tutti</SelectItem>
+              <SelectItem value="no">Tutti</SelectItem>
               <SelectItem value="si">Solo con foto salvate</SelectItem>
             </SelectContent>
           </Select>
-
-          <Button type="submit" variant="secondary">Applica filtri</Button>
-          {(filtriAttivi || ordinamentoAttivo) && (
-            <Button type="button" variant="ghost" size="sm" onClick={azzeraFiltri}>
-              <X /> {filtriAttivi && ordinamentoAttivo ? "Azzera filtri e ordinamento" : ordinamentoAttivo ? "Azzera ordinamento" : "Azzera filtri"}
-            </Button>
-          )}
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" size="sm" className="ml-auto">
-                <Columns3 /> Colonne
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="max-h-96 overflow-y-auto">
-              <DropdownMenuLabel>Colonne visibili</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {COLONNE.map((c) => (
-                <DropdownMenuCheckboxItem
-                  key={c.id}
-                  checked={colonne[c.id]}
-                  onCheckedChange={(v) => impostaColonna(c.id, v === true)}
-                  onSelect={(e) => e.preventDefault()}
-                >
-                  {c.etichetta}
-                </DropdownMenuCheckboxItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); ripristinaColonne(); }}>
-                <RotateCcw /> Ripristina colonne predefinite
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        {/* Filtri di profondita' min/max (2026-09-29, richiesta esplicita
-            cliente dopo il test batch #58 - vedi FiltriPickerIniziali sopra):
-            riga separata sotto i filtri categorici, stesso "Applica filtri"
-            del form principale, niente bottone dedicato. */}
-        <div className="flex flex-wrap items-end gap-4">
-          <FiltroRange
-            etichetta="Prezzo eBay (€)"
-            min={filtri.prezzoEbayMin}
-            max={filtri.prezzoEbayMax}
-            onMinChange={(v) => setFiltri((f) => ({ ...f, prezzoEbayMin: v }))}
-            onMaxChange={(v) => setFiltri((f) => ({ ...f, prezzoEbayMax: v }))}
-          />
-          <FiltroRange
-            etichetta="Prezzo Catawiki (€)"
-            min={filtri.prezzoCatawikiMin}
-            max={filtri.prezzoCatawikiMax}
-            onMinChange={(v) => setFiltri((f) => ({ ...f, prezzoCatawikiMin: v }))}
-            onMaxChange={(v) => setFiltri((f) => ({ ...f, prezzoCatawikiMax: v }))}
-          />
-          <FiltroRange
-            etichetta="Riserva Catawiki (€)"
-            min={filtri.riservaCatawikiMin}
-            max={filtri.riservaCatawikiMax}
-            onMinChange={(v) => setFiltri((f) => ({ ...f, riservaCatawikiMin: v }))}
-            onMaxChange={(v) => setFiltri((f) => ({ ...f, riservaCatawikiMax: v }))}
-          />
-          <FiltroRange
-            etichetta="Quantità disponibile"
-            min={filtri.quantitaMin}
-            max={filtri.quantitaMax}
-            onMinChange={(v) => setFiltri((f) => ({ ...f, quantitaMin: v }))}
-            onMaxChange={(v) => setFiltri((f) => ({ ...f, quantitaMax: v }))}
-          />
-        </div>
-      </form>
+        </CampoFiltro>
+        <FiltroRange
+          etichetta="Prezzo eBay (€)"
+          min={filtri.prezzoEbayMin}
+          max={filtri.prezzoEbayMax}
+          onMinChange={(v) => setFiltri((f) => ({ ...f, prezzoEbayMin: v }))}
+          onMaxChange={(v) => setFiltri((f) => ({ ...f, prezzoEbayMax: v }))}
+        />
+        <FiltroRange
+          etichetta="Prezzo Catawiki (€)"
+          min={filtri.prezzoCatawikiMin}
+          max={filtri.prezzoCatawikiMax}
+          onMinChange={(v) => setFiltri((f) => ({ ...f, prezzoCatawikiMin: v }))}
+          onMaxChange={(v) => setFiltri((f) => ({ ...f, prezzoCatawikiMax: v }))}
+        />
+        <FiltroRange
+          etichetta="Riserva Catawiki (€)"
+          min={filtri.riservaCatawikiMin}
+          max={filtri.riservaCatawikiMax}
+          onMinChange={(v) => setFiltri((f) => ({ ...f, riservaCatawikiMin: v }))}
+          onMaxChange={(v) => setFiltri((f) => ({ ...f, riservaCatawikiMax: v }))}
+        />
+        <FiltroRange
+          etichetta="Quantità disponibile"
+          min={filtri.quantitaMin}
+          max={filtri.quantitaMax}
+          onMinChange={(v) => setFiltri((f) => ({ ...f, quantitaMin: v }))}
+          onMaxChange={(v) => setFiltri((f) => ({ ...f, quantitaMax: v }))}
+        />
+      </BarraFiltri>
 
       <form action={aggiungiLottiABatch} className="flex flex-col gap-3">
         <input type="hidden" name="batchId" value={batchId} />

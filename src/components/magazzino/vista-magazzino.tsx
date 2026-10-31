@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +20,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert } from "lucide-react";
+import { Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert, Pencil, Ellipsis, Warehouse, ChevronDown } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 import { aggiornaCampiSkuInline, spostaSkuInDeposito, correggiQuantita, annullaMovimenti, annullaMovimentiMultipli, togliDalRegistro } from "@/app/magazzino/actions";
 import { CasellaRegistro } from "@/components/magazzino/casella-registro";
@@ -38,6 +38,10 @@ import { annullaEsposizioneAction, ritiraDaPortaliAction } from "@/app/pubblicaz
 import type { DaSistemare } from "@/db/portale-queries";
 import { CellTesto, CellSelect, CellMisura } from "@/components/magazzino/editable-cell";
 import { FiltroTag } from "@/components/tag/filtro-tag";
+import { BarraFiltri, CampoFiltro, Scorciatoia, type ChipFiltro } from "@/components/filtri/barra-filtri";
+import { MenuOrdina } from "@/components/filtri/menu-ordina";
+import { MenuViste } from "@/components/filtri/menu-viste";
+import { BarraSelezione } from "@/components/filtri/barra-selezione";
 import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
 import type { TagBreve } from "@/db/tag-queries";
 import { leggiTagParam, scriviTagParam } from "@/lib/tag-filtro";
@@ -426,7 +430,6 @@ export function VistaMagazzino({
   proprietari,
   ubicazioni,
   filtriIniziali,
-  filtriAttivi,
   ordinaAttuale,
   direzioneAttuale,
   daSistemare,
@@ -448,9 +451,6 @@ export function VistaMagazzino({
   const router = useRouter();
   const [filtri, setFiltri] = useState(filtriIniziali);
   const ordinamentoCorrente: ColonnaOrdinabile = ordinaAttuale ?? "skuCode";
-  // true solo con un ordina= esplicito in URL (non il fallback a skuCode) -
-  // controlla la comparsa del pulsante "Azzera ordinamento".
-  const ordinamentoAttivo = Boolean(ordinaAttuale);
   const colonne = useSyncExternalStore(sottoscriviColonne, leggiColonneSalvate, () => COLONNE_DI_DEFAULT);
 
   // Copia locale delle righe per l'aggiornamento ottimistico dell'editing
@@ -484,6 +484,41 @@ export function VistaMagazzino({
   const [canaliBlocco, setCanaliBlocco] = useState<number[]>([]);
 
   const tipiMap = useMemo(() => new Map(tipi.map((t) => [t.id, t.nome])), [tipi]);
+
+  // La ricerca a testo si applica da sola dopo una breve pausa di scrittura
+  // (o subito con Invio); tutti gli altri filtri si applicano al clic.
+  const qApplicata = useRef(filtriIniziali.q);
+  useEffect(() => {
+    if (filtri.q === qApplicata.current) return;
+    const t = setTimeout(() => applicaFiltri(filtri), 450);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtri.q]);
+
+  function cambia(patch: Partial<typeof filtri>) {
+    const nuovi = { ...filtri, ...patch };
+    setFiltri(nuovi);
+    applicaFiltri(nuovi);
+  }
+
+  function applicaVista(qs: string) {
+    const p = new URLSearchParams(qs);
+    const nuovi: typeof filtri = {
+      q: p.get("q") ?? "",
+      tipo: p.get("tipo") ?? "tutti",
+      condizione: p.get("condizione") ?? "tutti",
+      proprieta: p.get("proprieta") ?? "tutti",
+      deposito: p.get("deposito") ?? "tutti",
+      bloccato: p.get("bloccato") ?? "tutti",
+      disponibilita: p.get("disponibilita") ?? "tutti",
+      senzafoto: p.get("senzafoto") === "si" ? "si" : "no",
+      mancanti: p.get("mancanti") === "si" ? "si" : "no",
+      tag: p.get("tag") ?? "",
+    };
+    setFiltri(nuovi);
+    qApplicata.current = nuovi.q;
+    router.push(qs ? `/?${qs}` : "/", { scroll: false });
+  }
 
   // Selezione multipla stile file-manager (shift+click estende a un
   // intervallo) - 2026-09-25, punto 3 del backlog UX FINALIZZATO, vedi
@@ -628,6 +663,7 @@ export function VistaMagazzino({
     direzioneOverride?: "asc" | "desc",
     azzeraOrdinamento?: boolean
   ) {
+    qApplicata.current = f.q;
     const params = new URLSearchParams();
     if (f.q) params.set("q", f.q);
     if (f.tipo !== "tutti") params.set("tipo", f.tipo);
@@ -654,13 +690,13 @@ export function VistaMagazzino({
     router.push(qs ? `/?${qs}` : "/", { scroll: false });
   }
 
-  // Azzera sia i filtri sia l'ordinamento in un solo click - prima azzerava
-  // solo i filtri e non compariva nemmeno se era attivo solo un ordinamento,
-  // costringendo a ricliccare la colonna piu' volte per tornare al default.
+  // "Azzera tutto" toglie tutti i filtri (ricerca compresa); l'ordinamento ha
+  // la sua voce "Togli l'ordinamento" nel menu Ordina.
   function azzeraFiltri() {
     const vuoti: typeof filtri = { q: "", tipo: "tutti", condizione: "tutti", proprieta: "tutti", deposito: "tutti", bloccato: "tutti", disponibilita: "tutti", senzafoto: "no", mancanti: "no", tag: "" };
     setFiltri(vuoti);
-    applicaFiltri(vuoti, undefined, undefined, true);
+    setSoloDaSistemare(false);
+    applicaFiltri(vuoti);
   }
 
   // Ciclo a tre stati sulla stessa intestazione: asc -> desc -> azzerato
@@ -774,6 +810,18 @@ export function VistaMagazzino({
     return true; // altri campi testo/numero: anche vuoto e' un valore valido (es. svuotare Note in blocco)
   })();
 
+  function apriModifica(c: CampoEditabileInline) {
+    setCampoBulk(c);
+    setValoreBulk(c === "bloccatoVendita" ? false : "");
+    setDialogBulkAperto(true);
+  }
+
+  function chiudiModifica() {
+    setDialogBulkAperto(false);
+    setCampoBulk("");
+    setValoreBulk("");
+  }
+
   async function confermaBulk() {
     if (!campoBulk) return;
     const ids = Array.from(selezionati);
@@ -786,149 +834,158 @@ export function VistaMagazzino({
     setValoreBulk("");
   }
 
+  const nomeDi = (elenco: { id: number; nome: string }[], id: string) => elenco.find((x) => String(x.id) === id)?.nome ?? id;
+  const chips: ChipFiltro[] = [];
+  if (filtri.tipo !== "tutti") chips.push({ id: "tipo", etichetta: "Tipo", valore: nomeDi(tipi, filtri.tipo), rimuovi: () => cambia({ tipo: "tutti" }) });
+  if (filtri.condizione !== "tutti") chips.push({ id: "condizione", etichetta: "Condizione", valore: filtri.condizione, rimuovi: () => cambia({ condizione: "tutti" }) });
+  if (filtri.proprieta !== "tutti") chips.push({ id: "proprieta", etichetta: "Proprietario", valore: nomeDi(proprietari, filtri.proprieta), rimuovi: () => cambia({ proprieta: "tutti" }) });
+  if (filtri.deposito !== "tutti") chips.push({ id: "deposito", etichetta: "Deposito", valore: nomeDi(ubicazioni, filtri.deposito), rimuovi: () => cambia({ deposito: "tutti" }) });
+  if (filtri.disponibilita !== "tutti") chips.push({ id: "disponibilita", etichetta: "Disponibilità", valore: filtri.disponibilita === "esaurito" ? "Esaurito" : "Disponibile", rimuovi: () => cambia({ disponibilita: "tutti" }) });
+  if (filtri.bloccato !== "tutti") chips.push({ id: "bloccato", etichetta: "Bloccato", valore: filtri.bloccato === "si" ? "Sì" : "No", rimuovi: () => cambia({ bloccato: "tutti" }) });
+  if (filtri.senzafoto === "si") chips.push({ id: "senzafoto", etichetta: "Foto", valore: "Senza foto", rimuovi: () => cambia({ senzafoto: "no" }) });
+  if (filtri.mancanti === "si") chips.push({ id: "mancanti", etichetta: "Dati mancanti", valore: "Sì", rimuovi: () => cambia({ mancanti: "no" }) });
+  for (const t of tagDisponibili.filter((x) => leggiTagParam(filtri.tag).includes(x.id))) {
+    chips.push({ id: `tag-${t.id}`, etichetta: "Tag", valore: t.nome, rimuovi: () => cambia({ tag: scriviTagParam(leggiTagParam(filtri.tag).filter((x) => x !== t.id)) }) });
+  }
+  if (soloDaSistemare) chips.push({ id: "da-sistemare", etichetta: "Portali", valore: "Da sistemare", rimuovi: () => setSoloDaSistemare(false) });
+
   return (
     <>
-      <form
-        className="mb-4 flex flex-col gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          applicaFiltri(filtri);
-        }}
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative w-full max-w-sm">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={filtri.q}
-              onChange={(e) => setFiltri((f) => ({ ...f, q: e.target.value }))}
-              placeholder="Cerca artista, opera, sku o tag..."
-              className="pl-8"
+      <BarraFiltri
+        ricerca={filtri.q}
+        onRicerca={(v) => setFiltri((f) => ({ ...f, q: v }))}
+        onInvio={() => applicaFiltri(filtri)}
+        segnaposto="Cerca artista, opera, sku o tag..."
+        chips={chips}
+        onAzzera={azzeraFiltri}
+        strumenti={
+          <>
+            <MenuOrdina
+              voci={[{ chiave: "skuCode", etichetta: "SKU" }, ...colonneVisibili.map((c) => ({ chiave: MAPPA_ORDINABILI[c.id], etichetta: c.etichetta }))]}
+              attuale={ordinaAttuale}
+              direzione={direzioneAttuale}
+              onScegli={(k) => gestisciOrdinamento(k as ColonnaOrdinabile)}
+              onAzzera={() => applicaFiltri(filtri, undefined, undefined, true)}
             />
-          </div>
-
-          <FiltroTag
-            tag={tagDisponibili}
-            valore={leggiTagParam(filtri.tag)}
-            onChange={(ids) => {
-              const nuovi = { ...filtri, tag: scriviTagParam(ids) };
-              setFiltri(nuovi);
-              applicaFiltri(nuovi);
-            }}
-          />
-
-          <Select value={filtri.tipo} onValueChange={(v) => setFiltri((f) => ({ ...f, tipo: v }))}>
-            <SelectTrigger className="w-40" aria-label="Tipo"><SelectValue placeholder="Tipo" /></SelectTrigger>
+            <MenuViste chiave="magazzino" onApplica={applicaVista} />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" title="Scegli quali colonne vedere nella tabella">
+                  <Columns3 /> Colonne
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="max-h-96 overflow-y-auto">
+                <DropdownMenuLabel>Colonne visibili</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {COLONNE.map((c) => (
+                  <DropdownMenuCheckboxItem
+                    key={c.id}
+                    checked={colonne[c.id]}
+                    onCheckedChange={(v) => impostaColonna(c.id, v === true)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {c.etichetta}
+                  </DropdownMenuCheckboxItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); ripristinaColonne(); }}>
+                  <RotateCcw /> Ripristina colonne predefinite
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+        veloci={
+          <>
+            {canaliStatici.length > 0 && (nDaSistemare > 0 || soloDaSistemare) && (
+              <Scorciatoia attiva={soloDaSistemare} onClick={() => setSoloDaSistemare((v) => !v)} titolo="Sku da caricare, togliere o abbassare su un portale statico">
+                Da sistemare ({nDaSistemare})
+              </Scorciatoia>
+            )}
+            <Scorciatoia attiva={filtri.senzafoto === "si"} onClick={() => cambia({ senzafoto: filtri.senzafoto === "si" ? "no" : "si" })}>Senza foto</Scorciatoia>
+            <Scorciatoia attiva={filtri.mancanti === "si"} onClick={() => cambia({ mancanti: filtri.mancanti === "si" ? "no" : "si" })} titolo="Sku a cui manca qualcosa per la pubblicazione">Dati mancanti</Scorciatoia>
+            <Scorciatoia attiva={filtri.bloccato === "si"} onClick={() => cambia({ bloccato: filtri.bloccato === "si" ? "tutti" : "si" })}>Bloccati</Scorciatoia>
+          </>
+        }
+      >
+        <CampoFiltro etichetta="Tag">
+          <FiltroTag tag={tagDisponibili} valore={leggiTagParam(filtri.tag)} onChange={(ids) => cambia({ tag: scriviTagParam(ids) })} />
+        </CampoFiltro>
+        <CampoFiltro etichetta="Tipo">
+          <Select value={filtri.tipo} onValueChange={(v) => cambia({ tipo: v })}>
+            <SelectTrigger aria-label="Tipo"><SelectValue placeholder="Tutti" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="tutti">Tutti i tipi</SelectItem>
+              <SelectItem value="tutti">Tutti</SelectItem>
               {tipi.map((t) => <SelectItem key={t.id} value={String(t.id)}>{t.nome}</SelectItem>)}
             </SelectContent>
           </Select>
-
-          <Select value={filtri.condizione} onValueChange={(v) => setFiltri((f) => ({ ...f, condizione: v }))}>
-            <SelectTrigger className="w-36" aria-label="Condizione"><SelectValue placeholder="Condizione" /></SelectTrigger>
+        </CampoFiltro>
+        <CampoFiltro etichetta="Condizione">
+          <Select value={filtri.condizione} onValueChange={(v) => cambia({ condizione: v })}>
+            <SelectTrigger aria-label="Condizione"><SelectValue placeholder="Tutte" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="tutti">Tutte le condizioni</SelectItem>
+              <SelectItem value="tutti">Tutte</SelectItem>
               {CONDIZIONI.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
             </SelectContent>
           </Select>
-
-          <Select value={filtri.proprieta} onValueChange={(v) => setFiltri((f) => ({ ...f, proprieta: v }))}>
-            <SelectTrigger className="w-36" aria-label="Proprietario"><SelectValue placeholder="Proprietario" /></SelectTrigger>
+        </CampoFiltro>
+        <CampoFiltro etichetta="Proprietario">
+          <Select value={filtri.proprieta} onValueChange={(v) => cambia({ proprieta: v })}>
+            <SelectTrigger aria-label="Proprietario"><SelectValue placeholder="Tutti" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="tutti">Tutti i proprietari</SelectItem>
+              <SelectItem value="tutti">Tutti</SelectItem>
               {proprietari.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.nome}</SelectItem>)}
             </SelectContent>
           </Select>
-
-          <Select value={filtri.deposito} onValueChange={(v) => setFiltri((f) => ({ ...f, deposito: v }))}>
-            <SelectTrigger className="w-40" aria-label="Deposito"><SelectValue placeholder="Deposito" /></SelectTrigger>
+        </CampoFiltro>
+        <CampoFiltro etichetta="Deposito">
+          <Select value={filtri.deposito} onValueChange={(v) => cambia({ deposito: v })}>
+            <SelectTrigger aria-label="Deposito"><SelectValue placeholder="Tutti" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="tutti">Tutti i depositi</SelectItem>
+              <SelectItem value="tutti">Tutti</SelectItem>
               {ubicazioni.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.nome}</SelectItem>)}
             </SelectContent>
           </Select>
-
-          <Select value={filtri.bloccato} onValueChange={(v) => setFiltri((f) => ({ ...f, bloccato: v }))}>
-            <SelectTrigger className="w-44" aria-label="Bloccato vendita"><SelectValue placeholder="Bloccato vendita" /></SelectTrigger>
+        </CampoFiltro>
+        <CampoFiltro etichetta="Disponibilità">
+          <Select value={filtri.disponibilita} onValueChange={(v) => cambia({ disponibilita: v })}>
+            <SelectTrigger aria-label="Disponibilità"><SelectValue placeholder="Tutte" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="tutti">Bloccato: tutti</SelectItem>
-              <SelectItem value="si">Solo bloccati</SelectItem>
-              <SelectItem value="no">Solo non bloccati</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={filtri.disponibilita} onValueChange={(v) => setFiltri((f) => ({ ...f, disponibilita: v }))}>
-            <SelectTrigger className="w-44" aria-label="Disponibilita'"><SelectValue placeholder="Disponibilita'" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="tutti">Disponibilita&apos;: tutti</SelectItem>
+              <SelectItem value="tutti">Tutte</SelectItem>
               <SelectItem value="disponibile">Disponibile (&gt;0)</SelectItem>
               <SelectItem value="esaurito">Esaurito (=0)</SelectItem>
             </SelectContent>
           </Select>
-
-          <Select value={filtri.senzafoto} onValueChange={(v) => setFiltri((f) => ({ ...f, senzafoto: v }))}>
-            <SelectTrigger className="w-40" aria-label="Foto"><SelectValue placeholder="Foto" /></SelectTrigger>
+        </CampoFiltro>
+        <CampoFiltro etichetta="Bloccato per la vendita">
+          <Select value={filtri.bloccato} onValueChange={(v) => cambia({ bloccato: v })}>
+            <SelectTrigger aria-label="Bloccato per la vendita"><SelectValue placeholder="Tutti" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="no">Foto: tutti</SelectItem>
+              <SelectItem value="tutti">Tutti</SelectItem>
+              <SelectItem value="si">Solo bloccati</SelectItem>
+              <SelectItem value="no">Solo non bloccati</SelectItem>
+            </SelectContent>
+          </Select>
+        </CampoFiltro>
+        <CampoFiltro etichetta="Foto">
+          <Select value={filtri.senzafoto} onValueChange={(v) => cambia({ senzafoto: v })}>
+            <SelectTrigger aria-label="Foto"><SelectValue placeholder="Tutti" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="no">Tutti</SelectItem>
               <SelectItem value="si">Solo senza foto</SelectItem>
             </SelectContent>
           </Select>
-
-          {/* "Solo con dati mancanti" (2026-09-29) - vedi colonna
-              "datiMancanti" e src/lib/campi-mancanti-pubblicazione.ts. */}
-          <Select value={filtri.mancanti} onValueChange={(v) => setFiltri((f) => ({ ...f, mancanti: v }))}>
-            <SelectTrigger className="w-52" aria-label="Dati mancanti"><SelectValue placeholder="Dati mancanti" /></SelectTrigger>
+        </CampoFiltro>
+        <CampoFiltro etichetta="Dati mancanti">
+          <Select value={filtri.mancanti} onValueChange={(v) => cambia({ mancanti: v })}>
+            <SelectTrigger aria-label="Dati mancanti"><SelectValue placeholder="Tutti" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="no">Dati mancanti: tutti</SelectItem>
+              <SelectItem value="no">Tutti</SelectItem>
               <SelectItem value="si">Solo con dati mancanti</SelectItem>
             </SelectContent>
           </Select>
-
-          {canaliStatici.length > 0 && (nDaSistemare > 0 || soloDaSistemare) && (
-            <Button
-              type="button"
-              variant={soloDaSistemare ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSoloDaSistemare((v) => !v)}
-              title="Sku da caricare, togliere o abbassare su un portale statico"
-            >
-              Da sistemare su un portale ({nDaSistemare})
-            </Button>
-          )}
-          <Button type="submit" variant="secondary">Applica filtri</Button>
-          {(filtriAttivi || ordinamentoAttivo) && (
-            <Button type="button" variant="ghost" size="sm" onClick={azzeraFiltri}>
-              <X /> {filtriAttivi && ordinamentoAttivo ? "Azzera filtri e ordinamento" : ordinamentoAttivo ? "Azzera ordinamento" : "Azzera filtri"}
-            </Button>
-          )}
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" size="sm" className="ml-auto">
-                <Columns3 /> Colonne
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="max-h-96 overflow-y-auto">
-              <DropdownMenuLabel>Colonne visibili</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {COLONNE.map((c) => (
-                <DropdownMenuCheckboxItem
-                  key={c.id}
-                  checked={colonne[c.id]}
-                  onCheckedChange={(v) => impostaColonna(c.id, v === true)}
-                  onSelect={(e) => e.preventDefault()}
-                >
-                  {c.etichetta}
-                </DropdownMenuCheckboxItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); ripristinaColonne(); }}>
-                <RotateCcw /> Ripristina colonne predefinite
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </form>
+        </CampoFiltro>
+      </BarraFiltri>
 
       {errore && (
         <div className="mb-4 flex items-center justify-between rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -952,98 +1009,52 @@ export function VistaMagazzino({
       )}
 
       {selezionati.size > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
-          <span className="text-sm font-medium">{selezionati.size} selezionati</span>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setSelezionati(new Set())}>Deseleziona</Button>
-
-          <span className="mx-1 h-5 w-px bg-border" />
-
+        <BarraSelezione n={selezionati.size} totale={righeMostrate.length} onDeseleziona={() => setSelezionati(new Set())}>
           <AssegnaTagSelezione
             tag={tagDisponibili}
             skuIds={Array.from(selezionati)}
             onEsito={(e) => { setErrore(null); setInfoOk(e.testo); }}
           />
 
-          <span className="mx-1 h-5 w-px bg-border" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline">
+                <Pencil /> Modifica <ChevronDown className="opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-96 overflow-y-auto">
+              <DropdownMenuLabel>Cambia in tutti gli sku selezionati</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {CAMPI_BULK.map((c) => (
+                <DropdownMenuItem key={c} onSelect={() => apriModifica(c)}>{ETICHETTE_CAMPI[c]}…</DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          <Select value={campoBulk} onValueChange={(v) => { setCampoBulk(v as CampoEditabileInline); setValoreBulk(v === "bloccatoVendita" ? false : ""); }}>
-            <SelectTrigger className="h-8 w-48" aria-label="Campo da modificare"><SelectValue placeholder="Modifica campo..." /></SelectTrigger>
-            <SelectContent>
-              {CAMPI_BULK.map((c) => <SelectItem key={c} value={c}>{ETICHETTE_CAMPI[c]}</SelectItem>)}
-            </SelectContent>
-          </Select>
-
-          {campoBulk === "condizione" && (
-            <Select value={String(valoreBulk)} onValueChange={(v) => setValoreBulk(v)}>
-              <SelectTrigger className="h-8 w-24" aria-label="Valore"><SelectValue placeholder="Valore" /></SelectTrigger>
-              <SelectContent>{CONDIZIONI.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-            </Select>
-          )}
-          {campoBulk === "tipoId" && (
-            <Select value={String(valoreBulk)} onValueChange={(v) => setValoreBulk(Number(v))}>
-              <SelectTrigger className="h-8 w-40" aria-label="Valore"><SelectValue placeholder="Valore" /></SelectTrigger>
-              <SelectContent>{tipi.map((t) => <SelectItem key={t.id} value={String(t.id)}>{t.nome}</SelectItem>)}</SelectContent>
-            </Select>
-          )}
-          {campoBulk === "bloccatoVendita" && (
-            <Select value={valoreBulk ? "si" : "no"} onValueChange={(v) => setValoreBulk(v === "si")}>
-              <SelectTrigger className="h-8 w-32" aria-label="Valore"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="si">Bloccato</SelectItem>
-                <SelectItem value="no">Non bloccato</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
-          {campoBulk !== "" && campoBulk !== "condizione" && campoBulk !== "tipoId" && campoBulk !== "bloccatoVendita" && (
-            <Input
-              value={typeof valoreBulk === "string" ? valoreBulk : ""}
-              onChange={(e) => setValoreBulk(e.target.value)}
-              placeholder="Nuovo valore..."
-              className="h-8 w-48"
-            />
-          )}
-
-          {campoBulk !== "" && (
-            <Button type="button" size="sm" disabled={!bulkPronto} onClick={() => setDialogBulkAperto(true)}>
-              Applica a {selezionati.size} sku
-            </Button>
-          )}
-
-          <span className="mx-1 h-5 w-px bg-border" />
-
-          <Select value={depositoBulk} onValueChange={setDepositoBulk}>
-            <SelectTrigger className="h-8 w-52" aria-label="Deposito di destinazione"><SelectValue placeholder="Sposta nel deposito..." /></SelectTrigger>
-            <SelectContent>
-              {depositiDestinazione.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.nome}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          {depositoBulk !== "" && (
-            <Button type="button" size="sm" disabled={spostaInCorso} onClick={() => setDialogSpostaAperto(true)}>
-              {spostaInCorso ? "Sposto…" : `Sposta ${selezionati.size} sku`}
-            </Button>
-          )}
+          <Button type="button" variant="outline" disabled={spostaInCorso} onClick={() => setDialogSpostaAperto(true)}>
+            <Warehouse /> {spostaInCorso ? "Sposto…" : "Sposta in deposito"}
+          </Button>
 
           {canaliStatici.length > 0 && (
-            <>
-              <span className="mx-1 h-5 w-px bg-border" />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="ghost" size="sm">Altre azioni</Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-72">
-                  <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => setDialogBloccoAperto("blocca")}>
-                    <span className="font-medium">Ritira da portali…</span>
-                    <span className="text-xs text-muted-foreground">Toglie questi sku dai portali che scegli (anche più insieme).</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => setDialogBloccoAperto("sblocca")}>
-                    <span className="font-medium">Rimetti in vendita su portali…</span>
-                    <span className="text-xs text-muted-foreground">Questi sku tornano disponibili sui portali che scegli.</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" aria-label="Altre azioni">
+                  <Ellipsis /> Altro
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => setDialogBloccoAperto("blocca")}>
+                  <span className="font-medium">Ritira da portali…</span>
+                  <span className="text-xs text-muted-foreground">Toglie questi sku dai portali che scegli (anche più insieme).</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => setDialogBloccoAperto("sblocca")}>
+                  <span className="font-medium">Rimetti in vendita su portali…</span>
+                  <span className="text-xs text-muted-foreground">Questi sku tornano disponibili sui portali che scegli.</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
-        </div>
+        </BarraSelezione>
       )}
 
       <div className="rounded-xl border overflow-x-auto">
@@ -1136,19 +1147,25 @@ export function VistaMagazzino({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={dialogSpostaAperto} onOpenChange={setDialogSpostaAperto}>
+      <Dialog open={dialogSpostaAperto} onOpenChange={(a) => { setDialogSpostaAperto(a); if (!a) setDepositoBulk(""); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Sposta in un deposito</DialogTitle>
+            <DialogTitle>Sposta {selezionati.size} sku in un deposito</DialogTitle>
             <DialogDescription>
-              Sposti <strong>tutti i pezzi</strong> di {selezionati.size} sku nel deposito <strong>{nomeDepositoBulk}</strong>, mantenendo il proprietario.
-              I pezzi che si trovano in una casa d&apos;asta restano dove sono. Confermi?
+              Sposti <strong>tutti i pezzi</strong> degli sku selezionati nel deposito scelto, mantenendo il proprietario.
+              I pezzi che si trovano in una casa d&apos;asta restano dove sono.
             </DialogDescription>
           </DialogHeader>
+          <Select value={depositoBulk} onValueChange={setDepositoBulk}>
+            <SelectTrigger aria-label="Deposito di destinazione"><SelectValue placeholder="Scegli il deposito..." /></SelectTrigger>
+            <SelectContent>
+              {depositiDestinazione.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.nome}</SelectItem>)}
+            </SelectContent>
+          </Select>
           <CasellaRegistro id="registro-bulk" checked={registroBulk} onCheckedChange={setRegistroBulk} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDialogSpostaAperto(false)}>Annulla</Button>
-            <Button type="button" onClick={confermaSposta}>Conferma spostamento</Button>
+            <Button type="button" disabled={depositoBulk === ""} onClick={confermaSposta}>Sposta {selezionati.size} sku</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1184,17 +1201,47 @@ export function VistaMagazzino({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={dialogBulkAperto} onOpenChange={setDialogBulkAperto}>
+      <Dialog open={dialogBulkAperto} onOpenChange={(a) => { if (!a) chiudiModifica(); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Modifica in blocco</DialogTitle>
+            <DialogTitle>{campoBulk ? `${ETICHETTE_CAMPI[campoBulk]}: modifica ${selezionati.size} sku` : "Modifica in blocco"}</DialogTitle>
             <DialogDescription>
-              Stai per modificare {selezionati.size} sku: <strong>{campoBulk ? ETICHETTE_CAMPI[campoBulk] : ""}</strong> → <strong>{etichettaValoreBulk()}</strong>. Confermi?
+              Il nuovo valore viene scritto in tutti i {selezionati.size} sku selezionati. Puoi annullare subito dopo.
             </DialogDescription>
           </DialogHeader>
+          {campoBulk === "condizione" && (
+            <Select value={String(valoreBulk)} onValueChange={(v) => setValoreBulk(v)}>
+              <SelectTrigger aria-label="Nuovo valore"><SelectValue placeholder="Scegli la condizione..." /></SelectTrigger>
+              <SelectContent>{CONDIZIONI.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+            </Select>
+          )}
+          {campoBulk === "tipoId" && (
+            <Select value={String(valoreBulk)} onValueChange={(v) => setValoreBulk(Number(v))}>
+              <SelectTrigger aria-label="Nuovo valore"><SelectValue placeholder="Scegli il tipo..." /></SelectTrigger>
+              <SelectContent>{tipi.map((t) => <SelectItem key={t.id} value={String(t.id)}>{t.nome}</SelectItem>)}</SelectContent>
+            </Select>
+          )}
+          {campoBulk === "bloccatoVendita" && (
+            <Select value={valoreBulk ? "si" : "no"} onValueChange={(v) => setValoreBulk(v === "si")}>
+              <SelectTrigger aria-label="Nuovo valore"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="si">Bloccato</SelectItem>
+                <SelectItem value="no">Non bloccato</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          {campoBulk !== "" && campoBulk !== "condizione" && campoBulk !== "tipoId" && campoBulk !== "bloccatoVendita" && (
+            <Input
+              value={typeof valoreBulk === "string" ? valoreBulk : ""}
+              onChange={(e) => setValoreBulk(e.target.value)}
+              placeholder="Nuovo valore..."
+              aria-label="Nuovo valore"
+              autoFocus
+            />
+          )}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDialogBulkAperto(false)}>Annulla</Button>
-            <Button type="button" onClick={confermaBulk}>Conferma modifica</Button>
+            <Button type="button" variant="outline" onClick={chiudiModifica}>Annulla</Button>
+            <Button type="button" disabled={!bulkPronto} onClick={confermaBulk}>Applica a {selezionati.size} sku</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
