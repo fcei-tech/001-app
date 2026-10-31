@@ -12,6 +12,8 @@ import { modificaSku } from "@/app/magazzino/actions";
 import { EliminaSkuButton } from "./elimina-sku-button";
 import { CampiPrezzi } from "@/components/magazzino/campi-prezzi";
 import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
+import { EditorTagSku } from "@/components/tag/editor-tag-sku";
+import type { TagBreve } from "@/db/tag-queries";
 
 const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"];
 
@@ -52,8 +54,12 @@ export function SchedaSkuForm({
   tipi,
   disponibile,
   esito,
+  tagDisponibili,
+  tagIdsSku,
 }: {
   item: ItemForm;
+  tagDisponibili: TagBreve[];
+  tagIdsSku: number[];
   tipi: { id: number; nome: string }[];
   disponibile: number;
   esito?: string;
@@ -178,8 +184,9 @@ export function SchedaSkuForm({
                 </Select>
               </div>
               <div className="flex flex-col gap-1.5 sm:col-span-2">
-                <Label htmlFor="tag">Tag (testo libero)</Label>
-                <Input id="tag" name="tag" defaultValue={item.tag ?? ""} />
+                <Label>Tag</Label>
+                <EditorTagSku skuId={item.id} tag={tagDisponibili} iniziali={tagIdsSku} />
+                <p className="text-xs text-muted-foreground">Ogni click salva subito. L&apos;elenco dei tag si gestisce in Archivi &gt; Tag.</p>
               </div>
               <div className="flex flex-col gap-1.5 sm:col-span-2">
                 <Label htmlFor="note">Note</Label>

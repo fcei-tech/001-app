@@ -191,7 +191,7 @@ export async function modificaSku(formData: FormData) {
       anno: testoOVuoto(formData.get("anno")),
       condizione: condizioneRaw as (typeof CONDIZIONI)[number],
       tipoId: Number(formData.get("tipoId")),
-      tag: testoOVuoto(formData.get("tag")),
+      // I tag non si salvano da qui (2026-10-30): sono un elenco, vedi Archivi > Tag.
       note: testoOVuoto(formData.get("note")),
       bloccatoVendita: formData.get("bloccatoVendita") === "on",
       valoreCarico: numeroOVuoto(formData.get("valoreCarico")),

@@ -420,6 +420,34 @@ export const overridePortale = pgTable(
   (table) => [primaryKey({ columns: [table.skuId, table.canaleId] })]
 );
 
+// Tag degli sku (2026-10-30): elenco scelto da menu, gestito in Archivi > Tag.
+// "interno" = solo di lavoro (res, no res): non deve mai finire sui portali.
+// "soggetto" = tema dello sku (Animali, Sport...). vaiSuShopify e' un
+// interruttore pronto per dopo (all'inizio sempre spento): nessun file lo legge.
+export const tag = pgTable("tag", {
+  id: serial("id").primaryKey(),
+  nome: text("nome").notNull().unique(),
+  tipo: text("tipo").notNull().default("soggetto"),
+  vaiSuShopify: boolean("va_su_shopify").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Un tag puo' essere su molti sku, uno sku puo' avere molti tag (anche
+// "res" e "no res" insieme: sku polivalenti).
+export const skuTag = pgTable(
+  "sku_tag",
+  {
+    skuId: integer("sku_id")
+      .notNull()
+      .references(() => sku.id),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => tag.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.skuId, table.tagId] }), index("sku_tag_tag_idx").on(table.tagId)]
+);
+
 // Ultimo file generato per un portale: "Ho caricato il file" registra
 // esattamente queste righe (anche dopo aver chiuso e riaperto l'app).
 export const filePortale = pgTable("file_portale", {

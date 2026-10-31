@@ -5,6 +5,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { UpdateChecker } from "@/components/update-checker";
 import { UnsavedChangesProvider } from "@/components/unsaved-changes-provider";
+import { Benvenuto } from "@/components/benvenuto";
 
 export const metadata: Metadata = {
   title: "BATCH_",
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <UnsavedChangesProvider>
             {children}
             <UpdateChecker />
+            <Benvenuto />
           </UnsavedChangesProvider>
         </ThemeProvider>
       </body>

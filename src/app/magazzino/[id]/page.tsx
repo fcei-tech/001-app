@@ -15,6 +15,7 @@ import { SchedaSkuForm } from "./scheda-form";
 import { PortaliSku } from "./portali-sku";
 import { Consolida } from "@/components/sistema/consolida";
 import { getStatoPortaliSku } from "@/db/esposizione-queries";
+import { getTagBrevi, getTagIdsDiSku } from "@/db/tag-queries";
 
 function formatData(d: Date) {
   return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
@@ -46,7 +47,7 @@ export default async function ModificaSkuPage({
               ? "fotoeliminata"
               : undefined;
 
-  const [item, tipi, ubicazioni, proprietari, movimenti, foto, giacenza, disponibile, impegnato, statoPortali] = await Promise.all([
+  const [item, tipi, ubicazioni, proprietari, movimenti, foto, giacenza, disponibile, impegnato, statoPortali, tagDisponibili, tagIdsSku] = await Promise.all([
     getSkuById(skuId),
     getTipiOggetto(),
     getUbicazioniAttive(),
@@ -57,6 +58,8 @@ export default async function ModificaSkuPage({
     getDisponibileSku(skuId),
     getImpegnatoPerSku(skuId),
     getStatoPortaliSku(skuId),
+    getTagBrevi(),
+    getTagIdsDiSku(skuId),
   ]);
 
   if (!item) notFound();
@@ -66,7 +69,7 @@ export default async function ModificaSkuPage({
     <div className="min-h-full flex flex-col">
       <Header />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
-        <SchedaSkuForm item={item} tipi={tipi} disponibile={disponibile} esito={esito} />
+        <SchedaSkuForm item={item} tipi={tipi} disponibile={disponibile} esito={esito} tagDisponibili={tagDisponibili} tagIdsSku={tagIdsSku} />
 
         <Card className="mb-6">
           <CardHeader>

@@ -20,6 +20,8 @@ import {
   storicoPortale,
   overridePortale,
   filePortale,
+  tag,
+  skuTag,
 } from "./schema";
 
 // Backup/ripristino MANUALE dei dati dell'app in un file JSON sul Mac.
@@ -41,6 +43,8 @@ const TABELLE: PgTable[] = [
   overridePortale,
   filePortale,
   storicoPortale,
+  tag,
+  skuTag,
 ];
 
 const nomeTabella = (t: PgTable) => getTableConfig(t).name;

@@ -9,6 +9,8 @@ import {
   movimentiMagazzino,
   proprietari,
   sku,
+  skuTag,
+  tag,
   tipiOggetto,
   ubicazioni,
 } from "./schema";
@@ -27,7 +29,10 @@ export type RigaMagazzino = {
   condizione: string;
   tipo: string;
   tipoId: number;
+  // Nomi dei tag dello sku, es. "res, Sport" (2026-10-30: non piu' il testo
+  // libero di sku.tag, ma l'elenco dei tag assegnati da Archivi > Tag).
   tag: string | null;
+  tagIds: number[];
   note: string | null;
   bloccatoVendita: boolean;
   valoreCarico: string | null;
@@ -88,6 +93,8 @@ export type ColonnaOrdinabile =
 
 export type FiltriMagazzino = {
   ricerca?: string;
+  // Tag scelti (id): lo sku deve averli TUTTI.
+  tagIds?: number[];
   tipoId?: number;
   condizione?: string;
   // id del proprietario (tabella proprietari) - il nome del parametro URL
@@ -184,6 +191,18 @@ const giacenzeSql = () => sql<GiacenzaRiga[]>`coalesce((
   inner join proprietari p on p.id = s.pid
 ), '[]'::json)`;
 const numeroFotoSql = () => sql`(select count(*) from foto_sku fs where fs.sku_id = ${sku.id})`;
+// Tag dello sku (2026-10-30): nomi in una stringa e id in un array, da
+// subquery correlate (nessun left join: non deve moltiplicare le righe dei
+// movimenti). Stringa letterale "sku"."id" per lo stesso motivo di impegnatoSql.
+const tagNomiSql = () => sql<string | null>`(
+  select string_agg(t.nome, ', ' order by lower(t.nome))
+  from sku_tag st inner join tag t on t.id = st.tag_id
+  where st.sku_id = "sku"."id"
+)`;
+const tagIdsSql = () => sql<number[]>`coalesce((
+  select array_agg(st.tag_id order by st.tag_id)
+  from sku_tag st where st.sku_id = "sku"."id"
+), '{}'::int[])`;
 
 // Conteggio campi mancanti (2026-09-29) - stessa identica logica di
 // campiMancanti() in src/lib/campi-mancanti-pubblicazione.ts, riscritta in
@@ -250,8 +269,21 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
       or(
         ilike(sku.artista, `%${filtri.ricerca}%`),
         ilike(sku.opera, `%${filtri.ricerca}%`),
-        ilike(sku.skuCode, `%${filtri.ricerca}%`)
+        ilike(sku.skuCode, `%${filtri.ricerca}%`),
+        exists(
+          db
+            .select({ uno: sql`1` })
+            .from(skuTag)
+            .innerJoin(tag, eq(tag.id, skuTag.tagId))
+            .where(and(eq(skuTag.skuId, sku.id), ilike(tag.nome, `%${filtri.ricerca}%`)))
+        )
       )
+    );
+  }
+  // Filtro per tag: lo sku deve avere TUTTI i tag scelti.
+  for (const tagId of filtri.tagIds ?? []) {
+    condizioniWhere.push(
+      exists(db.select({ uno: sql`1` }).from(skuTag).where(and(eq(skuTag.skuId, sku.id), eq(skuTag.tagId, tagId))))
     );
   }
   if (filtri.tipoId) condizioniWhere.push(eq(sku.tipoId, filtri.tipoId));
@@ -333,7 +365,7 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
     prezzoEbay: sku.prezzoEbay,
     prezzoCatawiki: sku.prezzoCatawiki,
     riservaCatawiki: sku.riservaCatawiki,
-    tag: sku.tag,
+    tag: tagNomiSql(),
     note: sku.note,
     stato: sku.bloccatoVendita,
     creato: sku.createdAt,
@@ -356,7 +388,8 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
       condizione: sku.condizione,
       tipo: tipiOggetto.nome,
       tipoId: sku.tipoId,
-      tag: sku.tag,
+      tag: tagNomiSql(),
+      tagIds: tagIdsSql(),
       note: sku.note,
       bloccatoVendita: sku.bloccatoVendita,
       valoreCarico: sku.valoreCarico,

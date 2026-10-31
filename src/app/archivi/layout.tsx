@@ -12,6 +12,7 @@ export default function ArchiviLayout({ children }: { children: React.ReactNode 
             { href: "/archivi/proprietari", etichetta: "Proprietari" },
             { href: "/archivi/depositi", etichetta: "Depositi" },
             { href: "/archivi/portali", etichetta: "Portali" },
+            { href: "/archivi/tag", etichetta: "Tag" },
             { href: "/archivi/regole-prezzi", etichetta: "Regole prezzi" },
           ]}
         />

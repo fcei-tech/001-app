@@ -17,6 +17,9 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { FiltroTag } from "@/components/tag/filtro-tag";
+import type { TagBreve } from "@/db/tag-queries";
+import { leggiTagParam, scriviTagParam } from "@/lib/tag-filtro";
 import { TableEmpty } from "@/components/ui/table-empty";
 import { Search, Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, TriangleAlert, RotateCcw } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
@@ -96,7 +99,7 @@ const COLONNE: DefinizioneColonna[] = [
   { id: "prezzoEbay", etichetta: "Prezzo eBay", defaultVisibile: true, allineaDestra: true, chiaveOrdinamento: "prezzoEbay", render: (r) => formatEuro(r.prezzoEbay) },
   { id: "prezzoCatawiki", etichetta: "Prezzo Catawiki", defaultVisibile: true, allineaDestra: true, chiaveOrdinamento: "prezzoCatawiki", render: (r) => formatEuro(r.prezzoCatawiki) },
   { id: "riservaCatawiki", etichetta: "Riserva Catawiki", defaultVisibile: true, allineaDestra: true, chiaveOrdinamento: "riservaCatawiki", render: (r) => formatEuro(r.riservaCatawiki) },
-  { id: "tag", etichetta: "Tag", defaultVisibile: false, chiaveOrdinamento: "tag", render: (r) => r.tag || "—" },
+  { id: "tag", etichetta: "Tag", defaultVisibile: true, chiaveOrdinamento: "tag", render: (r) => r.tag || "—" },
   { id: "note", etichetta: "Note", defaultVisibile: false, chiaveOrdinamento: "note", render: (r) => r.note || "—" },
 ];
 
@@ -217,10 +220,13 @@ export type FiltriPickerIniziali = {
   riservaCatawikiMax: string;
   quantitaMin: string;
   quantitaMax: string;
+  // Tag scelti come filtro: id separati da virgola ("" = nessuno).
+  tag: string;
 };
 
 export function SelettoreLottiBatch({
   righe,
+  tagDisponibili,
   tipi,
   proprietari,
   batchId,
@@ -232,6 +238,7 @@ export function SelettoreLottiBatch({
   direzioneAttuale,
 }: {
   righe: RigaMagazzino[];
+  tagDisponibili: TagBreve[];
   tipi: { id: number; nome: string }[];
   proprietari: { id: number; nome: string }[];
   batchId: number;
@@ -292,6 +299,7 @@ export function SelettoreLottiBatch({
     if (f.riservaCatawikiMax) params.set("riservaCatawikiMax", f.riservaCatawikiMax);
     if (f.quantitaMin) params.set("quantitaMin", f.quantitaMin);
     if (f.quantitaMax) params.set("quantitaMax", f.quantitaMax);
+    if (f.tag) params.set("tag", f.tag);
     if (!azzeraOrdinamento) {
       const ordinaFinale = ordinaOverride ?? ordinaAttuale;
       const direzioneFinale = ordinaOverride ? (direzioneOverride ?? "asc") : direzioneAttuale;
@@ -314,7 +322,7 @@ export function SelettoreLottiBatch({
     const vuoti: typeof filtri = {
       q: "", tipo: "tutti", condizione: "tutti", proprieta: "tutti", confoto: "no",
       prezzoEbayMin: "", prezzoEbayMax: "", prezzoCatawikiMin: "", prezzoCatawikiMax: "",
-      riservaCatawikiMin: "", riservaCatawikiMax: "", quantitaMin: "", quantitaMax: "",
+      riservaCatawikiMin: "", riservaCatawikiMax: "", quantitaMin: "", quantitaMax: "", tag: "",
     };
     setFiltri(vuoti);
     applicaFiltri(vuoti, undefined, undefined, true);
@@ -349,10 +357,20 @@ export function SelettoreLottiBatch({
             <Input
               value={filtri.q}
               onChange={(e) => setFiltri((f) => ({ ...f, q: e.target.value }))}
-              placeholder="Cerca artista, opera o sku..."
+              placeholder="Cerca artista, opera, sku o tag..."
               className="pl-8"
             />
           </div>
+
+          <FiltroTag
+            tag={tagDisponibili}
+            valore={leggiTagParam(filtri.tag)}
+            onChange={(ids) => {
+              const nuovi = { ...filtri, tag: scriviTagParam(ids) };
+              setFiltri(nuovi);
+              applicaFiltri(nuovi);
+            }}
+          />
 
           <Select value={filtri.tipo} onValueChange={(v) => setFiltri((f) => ({ ...f, tipo: v }))}>
             <SelectTrigger className="w-40" aria-label="Tipo"><SelectValue placeholder="Tipo" /></SelectTrigger>

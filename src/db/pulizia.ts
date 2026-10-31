@@ -1,6 +1,6 @@
 import { inArray, sql } from "drizzle-orm";
 import { db } from "./index";
-import { batchLotti, batchPubblicazione, bloccoSkuCanale, esposizioneCanale, movimentiMagazzino, silenziamentiErrore, sku, storicoPortale, overridePortale, filePortale } from "./schema";
+import { batchLotti, batchPubblicazione, bloccoSkuCanale, esposizioneCanale, movimentiMagazzino, silenziamentiErrore, sku, storicoPortale, overridePortale, filePortale, skuTag } from "./schema";
 
 // Pulizia dati prima del go-live. Ogni voce e' scelta a parte; le foto
 // (foto_sku) e le tabelle di base (proprietari, depositi, portali, tipi,
@@ -149,6 +149,7 @@ export async function eseguiPulizia(s: SceltaPulizia): Promise<EsitoPulizia> {
         await tx.delete(esposizioneCanale).where(inArray(esposizioneCanale.skuId, parte));
         await tx.delete(bloccoSkuCanale).where(inArray(bloccoSkuCanale.skuId, parte));
         await tx.delete(silenziamentiErrore).where(inArray(silenziamentiErrore.skuId, parte));
+        await tx.delete(skuTag).where(inArray(skuTag.skuId, parte));
         await tx.delete(sku).where(inArray(sku.id, parte));
       }
       esito.skuEliminati = ids.length;

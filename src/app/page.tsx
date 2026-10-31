@@ -6,6 +6,8 @@ import { Plus, FileSpreadsheet, Images } from "lucide-react";
 import { getCanaliStatici } from "@/db/esposizione-queries";
 import { getDaSistemarePerSku } from "@/db/portale-queries";
 import { VistaMagazzino } from "@/components/magazzino/vista-magazzino";
+import { getTagBrevi } from "@/db/tag-queries";
+import { leggiTagParam } from "@/lib/tag-filtro";
 
 // Whitelist di validazione del parametro URL ?ordina= (2026-09-23, estesa a
 // tutte le colonne per regola permanente - vedi ColonnaOrdinabile in
@@ -33,6 +35,8 @@ type SearchParams = {
   // vedi src/lib/campi-mancanti-pubblicazione.ts e campiMancantiCountSql in
   // src/db/queries.ts.
   mancanti?: string;
+  // Filtro per tag: id separati da virgola (lo sku deve averli tutti).
+  tag?: string;
 };
 
 export const dynamic = "force-dynamic";
@@ -49,18 +53,20 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
   const disponibilita = sp.disponibilita === "disponibile" || sp.disponibilita === "esaurito" ? sp.disponibilita : undefined;
   const senzaFoto = sp.senzafoto === "si";
   const soloDatiMancanti = sp.mancanti === "si";
+  const tagIds = leggiTagParam(sp.tag);
   const ordina = sp.ordina && (COLONNE_ORDINABILI as string[]).includes(sp.ordina) ? (sp.ordina as ColonnaOrdinabile) : undefined;
   const direzione = sp.direzione === "desc" ? "desc" : sp.direzione === "asc" ? "asc" : undefined;
 
-  const filtriAttivi = Boolean(q || tipoId || condizione || proprietarioId || ubicazioneId || bloccato || disponibilita || senzaFoto || soloDatiMancanti);
+  const filtriAttivi = Boolean(q || tipoId || condizione || proprietarioId || ubicazioneId || bloccato || disponibilita || senzaFoto || soloDatiMancanti || tagIds.length > 0);
 
-  const [righe, tipi, proprietari, ubicazioni, daSistemare, canaliStatici] = await Promise.all([
-    getMagazzino({ ricerca: q, tipoId, condizione, proprietarioId, ubicazioneId, bloccato, disponibilita, senzaFoto, soloDatiMancanti, ordina, direzione }),
+  const [righe, tipi, proprietari, ubicazioni, daSistemare, canaliStatici, tagDisponibili] = await Promise.all([
+    getMagazzino({ ricerca: q, tagIds, tipoId, condizione, proprietarioId, ubicazioneId, bloccato, disponibilita, senzaFoto, soloDatiMancanti, ordina, direzione }),
     getTipiOggetto(),
     getProprietariAttivi(),
     getUbicazioniAttive(),
     getDaSistemarePerSku(),
     getCanaliStatici(),
+    getTagBrevi(),
   ]);
 
   return (
@@ -86,6 +92,7 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
           righe={righe}
           daSistemare={daSistemare}
           canaliStatici={canaliStatici.map((c) => ({ id: c.id, nome: c.nome }))}
+          tagDisponibili={tagDisponibili}
           tipi={tipi}
           proprietari={proprietari}
           ubicazioni={ubicazioni}
@@ -100,6 +107,7 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
             disponibilita: disponibilita ?? "tutti",
             senzafoto: senzaFoto ? "si" : "no",
             mancanti: soloDatiMancanti ? "si" : "no",
+            tag: tagIds.join(","),
           }}
           ordinaAttuale={ordina}
           direzioneAttuale={direzione ?? "asc"}

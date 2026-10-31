@@ -37,6 +37,10 @@ import {
 import { annullaEsposizioneAction, ritiraDaPortaliAction } from "@/app/pubblicazione/esposizione-actions";
 import type { DaSistemare } from "@/db/portale-queries";
 import { CellTesto, CellSelect, CellMisura } from "@/components/magazzino/editable-cell";
+import { FiltroTag } from "@/components/tag/filtro-tag";
+import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
+import type { TagBreve } from "@/db/tag-queries";
+import { leggiTagParam, scriviTagParam } from "@/lib/tag-filtro";
 import { campiMancanti, ETICHETTA_CAMPO_MANCANTE, SPIEGAZIONE_CAMPO_MANCANTE } from "@/lib/campi-mancanti-pubblicazione";
 
 const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"];
@@ -93,7 +97,8 @@ const ETICHETTE_CAMPI: Record<CampoEditabileInline, string> = {
 // Campi proposti per la modifica in blocco. Esclude larghezza/altezza
 // singole: modificarle in blocco su piu' sku e' un caso raro, per ora si fa
 // riga per riga con CellMisura (si puo' aggiungere in futuro se serve).
-const CAMPI_BULK = CAMPI_EDITABILI_INLINE.filter((c) => c !== "larghezza" && c !== "altezza");
+// "tag" escluso (2026-10-30): i tag si assegnano col bottone "Tag…" della barra di selezione.
+const CAMPI_BULK = CAMPI_EDITABILI_INLINE.filter((c) => c !== "larghezza" && c !== "altezza" && c !== "tag");
 
 type RenderCtx = {
   tipi: { id: number; nome: string }[];
@@ -275,8 +280,9 @@ const COLONNE: DefinizioneColonna[] = [
     render: (r, ctx) => <CellTesto valore={r.riservaCatawiki} numerico allineaDestra visualizza={formatEuro} onSalva={(v) => ctx.salvaTesto(r, "riservaCatawiki", v)} />,
   },
   {
-    id: "tag", etichetta: "Tag", defaultVisibile: false,
-    render: (r, ctx) => <CellTesto valore={r.tag} onSalva={(v) => ctx.salvaTesto(r, "tag", v)} />,
+    id: "tag", etichetta: "Tag", defaultVisibile: true,
+    // Sola lettura (2026-10-30): i tag si cambiano dalla scheda sku o col bottone "Tag…".
+    render: (r) => <span className="text-sm">{r.tag || <span className="text-muted-foreground">—</span>}</span>,
   },
   {
     id: "note", etichetta: "Note", defaultVisibile: false,
@@ -410,6 +416,8 @@ export type FiltriIniziali = {
   senzafoto: string;
   // "Solo con dati mancanti" (2026-09-29) - vedi colonna "datiMancanti" sopra.
   mancanti: string;
+  // Tag scelti come filtro: id separati da virgola ("" = nessuno).
+  tag: string;
 };
 
 export function VistaMagazzino({
@@ -423,7 +431,9 @@ export function VistaMagazzino({
   direzioneAttuale,
   daSistemare,
   canaliStatici,
+  tagDisponibili,
 }: {
+  tagDisponibili: TagBreve[];
   daSistemare: Record<number, DaSistemare[]>;
   canaliStatici: { id: number; nome: string }[];
   righe: RigaMagazzino[];
@@ -628,6 +638,7 @@ export function VistaMagazzino({
     if (f.disponibilita !== "tutti") params.set("disponibilita", f.disponibilita);
     if (f.senzafoto === "si") params.set("senzafoto", "si");
     if (f.mancanti === "si") params.set("mancanti", "si");
+    if (f.tag) params.set("tag", f.tag);
     if (!azzeraOrdinamento) {
       const ordinaFinale = ordinaOverride ?? ordinaAttuale;
       const direzioneFinale = ordinaOverride ? (direzioneOverride ?? "asc") : direzioneAttuale;
@@ -647,7 +658,7 @@ export function VistaMagazzino({
   // solo i filtri e non compariva nemmeno se era attivo solo un ordinamento,
   // costringendo a ricliccare la colonna piu' volte per tornare al default.
   function azzeraFiltri() {
-    const vuoti: typeof filtri = { q: "", tipo: "tutti", condizione: "tutti", proprieta: "tutti", deposito: "tutti", bloccato: "tutti", disponibilita: "tutti", senzafoto: "no", mancanti: "no" };
+    const vuoti: typeof filtri = { q: "", tipo: "tutti", condizione: "tutti", proprieta: "tutti", deposito: "tutti", bloccato: "tutti", disponibilita: "tutti", senzafoto: "no", mancanti: "no", tag: "" };
     setFiltri(vuoti);
     applicaFiltri(vuoti, undefined, undefined, true);
   }
@@ -790,10 +801,20 @@ export function VistaMagazzino({
             <Input
               value={filtri.q}
               onChange={(e) => setFiltri((f) => ({ ...f, q: e.target.value }))}
-              placeholder="Cerca artista, opera o sku..."
+              placeholder="Cerca artista, opera, sku o tag..."
               className="pl-8"
             />
           </div>
+
+          <FiltroTag
+            tag={tagDisponibili}
+            valore={leggiTagParam(filtri.tag)}
+            onChange={(ids) => {
+              const nuovi = { ...filtri, tag: scriviTagParam(ids) };
+              setFiltri(nuovi);
+              applicaFiltri(nuovi);
+            }}
+          />
 
           <Select value={filtri.tipo} onValueChange={(v) => setFiltri((f) => ({ ...f, tipo: v }))}>
             <SelectTrigger className="w-40" aria-label="Tipo"><SelectValue placeholder="Tipo" /></SelectTrigger>
@@ -934,6 +955,14 @@ export function VistaMagazzino({
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
           <span className="text-sm font-medium">{selezionati.size} selezionati</span>
           <Button type="button" variant="ghost" size="sm" onClick={() => setSelezionati(new Set())}>Deseleziona</Button>
+
+          <span className="mx-1 h-5 w-px bg-border" />
+
+          <AssegnaTagSelezione
+            tag={tagDisponibili}
+            skuIds={Array.from(selezionati)}
+            onEsito={(e) => { setErrore(null); setInfoOk(e.testo); }}
+          />
 
           <span className="mx-1 h-5 w-px bg-border" />
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { readConfig } from "@/lib/app-config";
 import { ShopifyForm } from "@/app/impostazioni/shopify-form";
+import { InterruttoreBenvenuto } from "@/components/sistema/interruttore-benvenuto";
 
 // Legge la configurazione a ogni richiesta. Al browser arrivano SOLO stati
 // ("collegato si/no", nome del server, nome del negozio): mai password,
@@ -44,6 +45,18 @@ export default function CollegamentiPage() {
           <Link href="/configura-database" className="underline underline-offset-4">
             Cambia stringa di connessione
           </Link>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Finestra iniziale</CardTitle>
+          <CardDescription>
+            All&apos;apertura dell&apos;app compare l&apos;elenco di cosa c&apos;è da fare su portali e aste. Vale solo per questo Mac.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <InterruttoreBenvenuto />
         </CardContent>
       </Card>
 

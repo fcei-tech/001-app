@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CellTesto } from "@/components/magazzino/editable-cell";
+import { FiltroTag } from "@/components/tag/filtro-tag";
+import type { TagBreve } from "@/db/tag-queries";
 import {
   confermaFileAction,
   generaFilePortaleAction,
@@ -112,16 +114,22 @@ export function TabellaPortale({
   nomePortale,
   righe,
   file,
+  tagDisponibili,
+  tagPerSku,
 }: {
   canaleId: number;
   nomePortale: string;
   righe: RigaPortale[];
+  tagDisponibili: TagBreve[];
+  // id sku -> id dei tag dello sku; il filtro tiene gli sku che hanno TUTTI i tag scelti.
+  tagPerSku: Record<number, number[]>;
   file: { nomi: string[]; creatoAtTesto: string; righe: number } | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [cerca, setCerca] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("tutti");
+  const [tagScelti, setTagScelti] = useState<number[]>([]);
   const [mostraTutte, setMostraTutte] = useState(false);
   const [esito, setEsito] = useState<{ ok: boolean; testo: string; dettaglio?: string[] } | null>(null);
   const conFile = nomePortale === "Shopify" || nomePortale === "eBay";
@@ -135,13 +143,17 @@ export function TabellaPortale({
     return righe
       .filter((r) => {
         if (q && !`${r.skuCode} ${r.artista} ${r.opera}`.toLowerCase().includes(q)) return false;
+        if (tagScelti.length > 0) {
+          const suoi = tagPerSku[r.skuId] ?? [];
+          if (!tagScelti.every((t) => suoi.includes(t))) return false;
+        }
         if (filtro === "da-inviare") return r.stato !== "online";
         if (filtro === "personalizzati") return r.pezziOverride !== null || r.condizioneOverride !== null || r.descrizioneOverride !== null;
         if (filtro === "nuovo" || filtro === "esaurito" || filtro === "archiviare") return r.stato === filtro;
         return true;
       })
       .sort((a, b) => ORDINE[a.stato] - ORDINE[b.stato] || a.skuCode.localeCompare(b.skuCode));
-  }, [righe, cerca, filtro]);
+  }, [righe, cerca, filtro, tagScelti, tagPerSku]);
 
   const mostrate = mostraTutte ? filtrate : filtrate.slice(0, LIMITE_RIGHE);
   const { selezionati, setSelezionati, gestisciSeleziona, segnalaShift, selezionaTutti } =
@@ -286,6 +298,7 @@ export function TabellaPortale({
       <div className="rounded-xl border">
         <div className="flex flex-wrap items-center gap-2 px-4 py-2">
           <Input value={cerca} onChange={(e) => setCerca(e.target.value)} placeholder="Cerca sku, artista, opera…" className="h-8 w-64" aria-label="Cerca" />
+          <FiltroTag tag={tagDisponibili} valore={tagScelti} onChange={setTagScelti} />
           <select value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)} className="h-8 rounded-md border bg-background px-2 text-sm" aria-label="Filtro">
             <option value="tutti">Tutti ({righe.length})</option>
             <option value="da-inviare">Da mandare al portale ({riassunto.totale})</option>

@@ -8,6 +8,7 @@ import { getCanaleById, getBatchPerCanale } from "@/db/pubblicazione-queries";
 import { getRitiratiCanale, getStoricoCanale } from "@/db/esposizione-queries";
 import { getFilePortale, getTabellaCanale } from "@/db/portale-queries";
 import { TabellaPortale } from "@/components/pubblicazione/tabella-portale";
+import { getTagBrevi, getTagIdsPerSku } from "@/db/tag-queries";
 import { AllineaPortale } from "@/components/pubblicazione/allinea-portale";
 import { RitiratiPortale } from "@/components/pubblicazione/ritirati-portale";
 import { StoricoPortale } from "@/components/pubblicazione/storico-portale";
@@ -43,6 +44,8 @@ export default async function CanalePubblicazionePage({
   const fileUltimo = canale.tipo === "statico" ? await getFilePortale(canale.id) : null;
   const ritirati = canale.tipo === "statico" ? await getRitiratiCanale(canale.id) : [];
   const storico = canale.tipo === "statico" ? await getStoricoCanale(canale.id) : [];
+  const tagDisponibili = canale.tipo === "statico" ? await getTagBrevi() : [];
+  const tagPerSku = canale.tipo === "statico" ? await getTagIdsPerSku() : {};
 
   const colore = coloreCanale(canale.nome);
   const fasce = fasceCanale(canale.nome);
@@ -112,6 +115,8 @@ export default async function CanalePubblicazionePage({
             canaleId={canale.id}
             nomePortale={canale.nome}
             righe={tabella}
+            tagDisponibili={tagDisponibili}
+            tagPerSku={tagPerSku}
             file={fileUltimo ? { nomi: fileUltimo.nomeFile.split("|"), creatoAtTesto: formatData(fileUltimo.creatoAt), righe: fileUltimo.righe } : null}
           />
         )}
