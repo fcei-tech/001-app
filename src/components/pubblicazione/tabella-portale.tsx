@@ -10,7 +10,9 @@ import { CellTesto } from "@/components/magazzino/editable-cell";
 import { FiltroTag } from "@/components/tag/filtro-tag";
 import { BarraFiltri, CampoFiltro, type ChipFiltro } from "@/components/filtri/barra-filtri";
 import { BarraSelezione } from "@/components/filtri/barra-selezione";
-import { MenuOrdina } from "@/components/filtri/menu-ordina";
+import { TitoloColonnaOrdinabile } from "@/components/filtri/titolo-colonna-ordinabile";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ChevronDown } from "lucide-react";
 import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
 import type { TagBreve } from "@/db/tag-queries";
 import {
@@ -35,7 +37,7 @@ import {
 import { prezziDiversi } from "@/lib/esposizione";
 import { pl } from "@/lib/plurale";
 
-type Filtro = "tutti" | "da-inviare" | "nuovo" | "esaurito" | "archiviare" | "personalizzati";
+type Filtro = "tutti" | "da-inviare" | "nuovo" | "modificato" | "esaurito" | "archiviare" | "personalizzati";
 
 const euro = (n: number | null) => (n === null ? "—" : `${n.toFixed(2).replace(".", ",")} €`);
 
@@ -155,7 +157,7 @@ export function TabellaPortale({
         }
         if (filtro === "da-inviare") return r.stato !== "online";
         if (filtro === "personalizzati") return r.pezziOverride !== null || r.condizioneOverride !== null || r.descrizioneOverride !== null;
-        if (filtro === "nuovo" || filtro === "esaurito" || filtro === "archiviare") return r.stato === filtro;
+        if (filtro === "nuovo" || filtro === "modificato" || filtro === "esaurito" || filtro === "archiviare") return r.stato === filtro;
         return true;
       })
       .sort((a, b) => {
@@ -177,10 +179,13 @@ export function TabellaPortale({
   const nFile = scelti.length > 0 ? sceltiDaInviare : riassunto.totale;
 
   const chips: ChipFiltro[] = [];
-  const NOMI_FILTRO: Record<string, string> = { "da-inviare": "Da mandare al portale", nuovo: "Nuovi", esaurito: "Esauriti", archiviare: "Da archiviare", personalizzati: "Con celle modificate a mano" };
-  if (filtro !== "tutti") chips.push({ id: "stato", etichetta: "Stato", valore: NOMI_FILTRO[filtro] ?? filtro, rimuovi: () => setFiltro("tutti") });
   for (const t of tagDisponibili.filter((x) => tagScelti.includes(x.id))) {
     chips.push({ id: `tag-${t.id}`, etichetta: "Tag", valore: t.nome, rimuovi: () => setTagScelti(tagScelti.filter((x) => x !== t.id)) });
+  }
+
+  // Clic sul titolo di colonna: crescente, poi decrescente, poi ordine predefinito.
+  function ordinaPer(chiave: string) {
+    setOrdinamento((o) => (o && o.chiave === chiave ? (o.dir === "asc" ? { chiave, dir: "desc" } : null) : { chiave, dir: "asc" }));
   }
 
   function esegui(fn: () => Promise<{ ok: boolean; errore?: string; messaggio?: string }>, dopo?: () => void) {
@@ -239,24 +244,49 @@ export function TabellaPortale({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {conFile && (
-            <>
-              <Button type="button" disabled={pending || nFile === 0} onClick={scaricaFile}>
-                {pending ? "…" : `Scarica file ${nomePortale} (${nFile})`}
-              </Button>
-              <Button type="button" variant="secondary" disabled={pending || !file} onClick={() => esegui(() => confermaFileAction(canaleId), () => setScaricati([]))}>
-                Ho caricato il file
-              </Button>
-            </>
+          {conFile && file ? (
+            // File già scaricato: il passo successivo è dire che l'hai caricato sul portale.
+            <Button type="button" disabled={pending} onClick={() => esegui(() => confermaFileAction(canaleId), () => setScaricati([]))}>
+              {pending ? "…" : "Ho caricato il file"}
+            </Button>
+          ) : conFile ? (
+            <Button type="button" disabled={pending || nFile === 0} onClick={scaricaFile}>
+              {pending ? "…" : `Scarica file ${nomePortale} (${nFile})`}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              disabled={pending || nFile === 0}
+              onClick={() => esegui(() => segnaFattoAction(canaleId, scelti.map((x) => x.skuId)), () => setSelezionati(new Set()))}
+            >
+              {pending ? "…" : `Segna come fatto (${nFile})`}
+            </Button>
           )}
-          <Button
-            type="button"
-            variant={soloSegna ? "default" : "ghost"}
-            disabled={pending || nFile === 0}
-            onClick={() => esegui(() => segnaFattoAction(canaleId, scelti.map((x) => x.skuId)), () => setSelezionati(new Set()))}
-          >
-            {pending ? "…" : `Segna come fatto (${nFile})`}
-          </Button>
+          {conFile && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" disabled={pending}>
+                  Altre azioni <ChevronDown className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80">
+                {file && (
+                  <DropdownMenuItem className="flex-col items-start gap-0.5" disabled={nFile === 0} onSelect={scaricaFile}>
+                    <span className="font-medium">Genera un nuovo file ({nFile})</span>
+                    <span className="text-xs text-muted-foreground">Sostituisce il file già pronto con uno nuovo.</span>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  className="flex-col items-start gap-0.5"
+                  disabled={nFile === 0}
+                  onSelect={() => esegui(() => segnaFattoAction(canaleId, scelti.map((x) => x.skuId)), () => setSelezionati(new Set()))}
+                >
+                  <span className="font-medium">Segna come fatto, senza file ({nFile})</span>
+                  <span className="text-xs text-muted-foreground">Per modifiche che hai già fatto a mano sul portale.</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
       {conFile && (scaricati.length > 0 || file) && (
@@ -307,14 +337,6 @@ export function TabellaPortale({
         </div>
       )}
 
-      <div className="mb-2 flex flex-wrap gap-4 text-xs text-muted-foreground">
-        <span><span className="mr-1.5 inline-block size-3 rounded-sm border align-[-2px]" />online</span>
-        <span><span className="mr-1.5 inline-block size-3 rounded-sm bg-amber-400/40 align-[-2px]" />da modificare</span>
-        <span><span className="mr-1.5 inline-block size-3 rounded-sm bg-emerald-500/30 align-[-2px]" />nuovo</span>
-        <span><span className="mr-1.5 inline-block size-3 rounded-sm bg-orange-400/40 align-[-2px]" />esaurito</span>
-        <span><span className="mr-1.5 inline-block size-3 rounded-sm bg-red-500/30 align-[-2px]" />da archiviare</span>
-      </div>
-
       <div className="rounded-xl border">
         <div className="px-4 py-3">
           <BarraFiltri
@@ -323,50 +345,47 @@ export function TabellaPortale({
             onRicerca={setCerca}
             segnaposto="Cerca sku, artista, opera…"
             chips={chips}
-            onAzzera={() => { setFiltro("tutti"); setTagScelti([]); }}
-            strumenti={
-              <>
-              <MenuOrdina
-                voci={[
-                  { chiave: "stato", etichetta: "Stato" },
-                  { chiave: "skuCode", etichetta: "SKU" },
-                  { chiave: "opera", etichetta: "Opera" },
-                  { chiave: "prezzo", etichetta: "Prezzo" },
-                ]}
-                attuale={ordinamento?.chiave}
-                direzione={ordinamento?.dir ?? "asc"}
-                onScegli={(k) =>
-                  setOrdinamento((o) =>
-                    o && o.chiave === k ? (o.dir === "asc" ? { chiave: k, dir: "desc" } : null) : { chiave: k, dir: "asc" }
-                  )
-                }
-                onAzzera={() => setOrdinamento(null)}
-              />
-              <label className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm">
-                <Checkbox
-                  checked={tutti ? true : scelti.length > 0 ? "indeterminate" : false}
-                  onCheckedChange={(v) => selezionaTutti(v === true)}
-                  aria-label="Seleziona tutti quelli mostrati"
-                />
-                Seleziona tutti
-              </label>
-              </>
-            }
+            onAzzera={() => setTagScelti([])}
           >
-            <CampoFiltro etichetta="Stato">
-              <select value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)} className="h-9 w-full rounded-md border bg-background px-2 text-sm" aria-label="Filtro stato">
-                <option value="tutti">Tutti ({righe.length})</option>
-                <option value="da-inviare">Da mandare al portale ({riassunto.totale})</option>
-                <option value="nuovo">Nuovi ({riassunto.nuovi})</option>
-                <option value="esaurito">Esauriti ({riassunto.esauriti})</option>
-                <option value="archiviare">Da archiviare ({riassunto.archiviati})</option>
-                <option value="personalizzati">Con celle modificate a mano</option>
-              </select>
-            </CampoFiltro>
             <CampoFiltro etichetta="Tag">
               <FiltroTag tag={tagDisponibili} valore={tagScelti} onChange={setTagScelti} />
             </CampoFiltro>
           </BarraFiltri>
+          <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Filtro per stato">
+            {(
+              [
+                ["tutti", "Tutti", righe.length, ""],
+                ["da-inviare", "Da mandare", riassunto.totale, ""],
+                ["nuovo", "Nuovi", riassunto.nuovi, "bg-emerald-500/40"],
+                ["modificato", "Da modificare", riassunto.modificati, "bg-amber-400/50"],
+                ["esaurito", "Esauriti", riassunto.esauriti, "bg-orange-400/50"],
+                ["archiviare", "Da archiviare", riassunto.archiviati, "bg-red-500/40"],
+              ] as [Filtro, string, number, string][]
+            ).map(([k, nome, n, colore]) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={filtro === k}
+                onClick={() => setFiltro(k)}
+                className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors ${
+                  filtro === k ? "border-primary bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                }`}
+              >
+                {colore && <span className={`size-2.5 rounded-full ${colore}`} />}
+                {nome} <span className="opacity-70">{n}</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              aria-pressed={filtro === "personalizzati"}
+              onClick={() => setFiltro(filtro === "personalizzati" ? "tutti" : "personalizzati")}
+              className={`inline-flex h-7 items-center rounded-full border px-3 text-xs transition-colors ${
+                filtro === "personalizzati" ? "border-primary bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              }`}
+            >
+              Modificati a mano
+            </button>
+          </div>
         </div>
 
         {scelti.length > 0 && (
@@ -406,14 +425,18 @@ export function TabellaPortale({
         )}
 
         <div className="hidden items-center gap-3 border-t bg-muted/40 px-4 py-2 text-[11px] uppercase tracking-wide text-muted-foreground md:grid grid-cols-[1.25rem_6rem_minmax(6rem,1fr)_7.5rem_6.5rem_8rem_6rem_8.5rem]">
-          <span />
-          <span>Sku</span>
-          <span className="min-w-0 flex-1">Opera</span>
+          <Checkbox
+            checked={tutti ? true : scelti.length > 0 ? "indeterminate" : false}
+            onCheckedChange={(v) => selezionaTutti(v === true)}
+            aria-label="Seleziona tutti quelli mostrati"
+          />
+          <TitoloColonnaOrdinabile etichetta="Sku" attiva={ordinamento?.chiave === "skuCode"} direzione={ordinamento?.dir ?? "asc"} onClick={() => ordinaPer("skuCode")} />
+          <TitoloColonnaOrdinabile etichetta="Opera" attiva={ordinamento?.chiave === "opera"} direzione={ordinamento?.dir ?? "asc"} onClick={() => ordinaPer("opera")} />
           <span>Pezzi ora → dopo</span>
-          <span className="text-right">Prezzo</span>
+          <TitoloColonnaOrdinabile etichetta="Prezzo" allineaDestra attiva={ordinamento?.chiave === "prezzo"} direzione={ordinamento?.dir ?? "asc"} onClick={() => ordinaPer("prezzo")} />
           <span>Condizione</span>
           <span>Descrizione</span>
-          <span>Stato</span>
+          <TitoloColonnaOrdinabile etichetta="Stato" attiva={ordinamento?.chiave === "stato"} direzione={ordinamento?.dir ?? "asc"} onClick={() => ordinaPer("stato")} />
         </div>
 
         {mostrate.length === 0 ? (

@@ -28,6 +28,21 @@ import { useRef, useState } from "react";
 export function useSelezioneMultipla<T extends string | number>(idsVisibili: T[]) {
   const [selezionati, setSelezionati] = useState<Set<T>>(new Set());
   const ultimoIndice = useRef<number | null>(null);
+
+  // Se l'elenco visibile cambia (filtro, ricerca, righe che spariscono dopo
+  // un'azione), le righe selezionate che non si vedono più escono dalla
+  // selezione: i contatori e le azioni in blocco valgono solo per ciò che
+  // vedi. (Aggiornamento di stato durante il render, con guardia: il modo
+  // previsto da React per derivare stato da ciò che cambia.)
+  const firma = idsVisibili.join("|");
+  const [firmaPrec, setFirmaPrec] = useState(firma);
+  if (firma !== firmaPrec) {
+    setFirmaPrec(firma);
+    const visibili = new Set<T>(idsVisibili);
+    if ([...selezionati].some((id) => !visibili.has(id))) {
+      setSelezionati(new Set([...selezionati].filter((id) => visibili.has(id))));
+    }
+  }
   const shiftPremuto = useRef(false);
 
   function segnalaShift(e: { shiftKey: boolean }) {

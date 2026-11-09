@@ -1,0 +1,1 @@
+ALTER TABLE "batch_pubblicazione" ADD COLUMN "nome" text;

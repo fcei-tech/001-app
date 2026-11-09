@@ -23,7 +23,7 @@ import { cambiaStatoBatchAction } from "@/app/pubblicazione/actions";
 // come Error non catturato (stesso comportamento gia' in uso altrove nel
 // software per azioni singole, es. aggiungiLottiABatch).
 const ETICHETTE: Record<string, string> = {
-  bozza: "In preparazione",
+  bozza: "Bozza",
   confermato: "Pronto",
   pubblicato: "Inviato",
 };

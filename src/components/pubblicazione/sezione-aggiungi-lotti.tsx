@@ -48,11 +48,11 @@ export function SezioneAggiungiLotti({
         <Button type="button" variant="outline" size="sm" onClick={() => setAperta((v) => !v)} className="shrink-0">
           {aperta ? (
             <>
-              <ChevronUp /> Comprimi
+              <ChevronUp /> Nascondi elenco
             </>
           ) : (
             <>
-              <ChevronDown /> Mostra{numeroLottiNelBatch > 0 ? ` (${numeroLottiNelBatch} già nel batch)` : ""}
+              <ChevronDown /> Mostra elenco{numeroLottiNelBatch > 0 ? ` (${numeroLottiNelBatch} già nel batch)` : ""}
             </>
           )}
         </Button>

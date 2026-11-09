@@ -74,6 +74,48 @@ export async function creaBatch(canaleId: number) {
   return batch;
 }
 
+// Nome scelto dall'utente per un batch (vuoto = torna a "Batch #N").
+export async function rinominaBatch(batchId: number, nome: string) {
+  const pulito = nome.trim().slice(0, 80);
+  await db
+    .update(batchPubblicazione)
+    .set({ nome: pulito === "" ? null : pulito, updatedAt: new Date() })
+    .where(eq(batchPubblicazione.id, batchId));
+}
+
+// Duplica un batch: nuovo batch in bozza nello stesso canale con le stesse
+// impostazioni e gli stessi lotti (override compresi). Non copia stato lotto,
+// consegne, snapshot: il nuovo batch riparte da zero, come uno appena creato.
+export async function duplicaBatch(batchId: number) {
+  const origine = await db.query.batchPubblicazione.findFirst({
+    where: (b, { eq }) => eq(b.id, batchId),
+    with: { canale: true, lotti: true },
+  });
+  if (!origine) throw new Error("Batch non trovato");
+  const statoIniziale: "attivo" | "candidato" = origine.canale.tipo === "asta_fisica" ? "candidato" : "attivo";
+  return db.transaction(async (tx) => {
+    const [nuovo] = await tx
+      .insert(batchPubblicazione)
+      .values({
+        canaleId: origine.canaleId,
+        nome: `${origine.nome?.trim() || `Batch #${origine.id}`} (copia)`.slice(0, 80),
+        impostazioniBatch: origine.impostazioniBatch,
+      })
+      .returning();
+    if (origine.lotti.length > 0) {
+      await tx.insert(batchLotti).values(
+        origine.lotti.map((l) => ({
+          batchId: nuovo.id,
+          skuId: l.skuId,
+          statoRiga: statoIniziale,
+          override: l.override,
+        }))
+      );
+    }
+    return nuovo;
+  });
+}
+
 export async function getBatchPerCanale(canaleId: number) {
   return db.query.batchPubblicazione.findMany({
     where: (b, { eq }) => eq(b.canaleId, canaleId),

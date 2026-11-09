@@ -253,6 +253,8 @@ export const batchPubblicazione = pgTable(
       .notNull()
       .references(() => canali.id),
     stato: batchStatoEnum("stato").notNull().default("bozza"),
+    // Nome scelto dall'utente (facoltativo): se vuoto si mostra "Batch #N".
+    nome: text("nome"),
     impostazioniBatch: jsonb("impostazioni_batch").notNull().default({}),
     snapshot: jsonb("snapshot"),
     createdAt: timestamp("created_at").notNull().defaultNow(),

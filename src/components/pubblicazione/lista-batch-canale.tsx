@@ -25,13 +25,14 @@ import { eliminaBatchMultiploAction, cambiaStatoBatchMultiploAction } from "@/ap
 // applicare la stessa operazione a tutte le righe selezionate in un colpo,
 // con un unico avviso/dialog consolidato invece di uno per batch.
 const ETICHETTE_STATO: Record<string, { label: string; variant: "secondary" | "success" | "outline" }> = {
-  bozza: { label: "In preparazione", variant: "secondary" },
+  bozza: { label: "Bozza", variant: "secondary" },
   confermato: { label: "Pronto", variant: "success" },
   pubblicato: { label: "Inviato", variant: "outline" },
 };
 
 export type RigaBatch = {
   id: number;
+  nome: string | null;
   creatoIlFormattato: string;
   stato: "bozza" | "confermato" | "pubblicato";
   numeroLotti: number;
@@ -112,7 +113,7 @@ export function ListaBatchCanale({
               <SelectValue placeholder="Cambia stato in…" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="bozza">In preparazione</SelectItem>
+              <SelectItem value="bozza">Bozza</SelectItem>
               <SelectItem value="confermato">Pronto</SelectItem>
               <SelectItem value="pubblicato">Inviato</SelectItem>
             </SelectContent>
@@ -167,12 +168,13 @@ export function ListaBatchCanale({
                   <Checkbox
                     checked={selezionati.has(r.id)}
                     onCheckedChange={(v) => gestisciSeleziona(r.id, v === true)}
-                    aria-label={`Seleziona batch del ${r.creatoIlFormattato}`}
+                    aria-label={`Seleziona ${r.nome ?? `batch #${r.id}`}`}
                   />
                 </TableCell>
                 <TableCell className="p-0">
                   <Link href={`/pubblicazione/${canaleId}/${r.id}`} className="block px-4 py-2">
-                    {r.creatoIlFormattato}
+                    {r.nome ? <span className="font-medium">{r.nome}</span> : <>Batch #{r.id}</>}
+                    <span className="ml-2 text-xs text-muted-foreground">{r.creatoIlFormattato}</span>
                   </Link>
                 </TableCell>
                 <TableCell>
@@ -261,8 +263,8 @@ export function ListaBatchCanale({
             </DialogTitle>
             <DialogDescription>
               {statoBulk === "bozza"
-                ? "I batch selezionati torneranno in preparazione: la disponibilita' dei lotti gia' confermati/pubblicati (canali esclusivi) tornera' libera."
-                : "I batch selezionati che erano in preparazione consumeranno disponibilita' se il canale e' esclusivo. Un batch senza lotti non puo' uscire da bozza - verra' segnalato tra gli errori."}
+                ? "I batch selezionati torneranno in bozza: la disponibilita' dei lotti gia' confermati/pubblicati (canali esclusivi) tornera' libera."
+                : "I batch selezionati che erano in bozza consumeranno disponibilita' se il canale e' esclusivo. Un batch senza lotti non puo' uscire da bozza - verra' segnalato tra gli errori."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

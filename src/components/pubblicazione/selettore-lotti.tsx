@@ -19,7 +19,6 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FiltroTag } from "@/components/tag/filtro-tag";
 import { BarraFiltri, CampoFiltro, type ChipFiltro } from "@/components/filtri/barra-filtri";
-import { MenuOrdina } from "@/components/filtri/menu-ordina";
 import { MenuViste } from "@/components/filtri/menu-viste";
 import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
 import type { TagBreve } from "@/db/tag-queries";
@@ -411,13 +410,6 @@ export function SelettoreLottiBatch({
         onAzzera={azzeraFiltri}
         strumenti={
           <>
-            <MenuOrdina
-              voci={[{ chiave: "skuCode", etichetta: "SKU" }, ...colonneVisibili.map((c) => ({ chiave: c.chiaveOrdinamento, etichetta: c.etichetta }))]}
-              attuale={ordinaAttuale}
-              direzione={direzioneAttuale}
-              onScegli={(k) => gestisciOrdinamento(k as ColonnaOrdinabile)}
-              onAzzera={() => applicaFiltri(filtri, undefined, undefined, true)}
-            />
             <MenuViste chiave={`selettore-${canaleId}`} onApplica={applicaVista} ignora={["aggiunti", "confermato"]} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

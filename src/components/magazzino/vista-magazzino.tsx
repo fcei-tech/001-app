@@ -39,7 +39,6 @@ import type { DaSistemare } from "@/db/portale-queries";
 import { CellTesto, CellSelect, CellMisura } from "@/components/magazzino/editable-cell";
 import { FiltroTag } from "@/components/tag/filtro-tag";
 import { BarraFiltri, CampoFiltro, Scorciatoia, type ChipFiltro } from "@/components/filtri/barra-filtri";
-import { MenuOrdina } from "@/components/filtri/menu-ordina";
 import { MenuViste } from "@/components/filtri/menu-viste";
 import { BarraSelezione } from "@/components/filtri/barra-selezione";
 import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
@@ -864,13 +863,6 @@ export function VistaMagazzino({
         onAzzera={azzeraFiltri}
         strumenti={
           <>
-            <MenuOrdina
-              voci={[{ chiave: "skuCode", etichetta: "SKU" }, ...colonneVisibili.map((c) => ({ chiave: MAPPA_ORDINABILI[c.id], etichetta: c.etichetta }))]}
-              attuale={ordinaAttuale}
-              direzione={direzioneAttuale}
-              onScegli={(k) => gestisciOrdinamento(k as ColonnaOrdinabile)}
-              onAzzera={() => applicaFiltri(filtri, undefined, undefined, true)}
-            />
             <MenuViste chiave="magazzino" onApplica={applicaVista} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

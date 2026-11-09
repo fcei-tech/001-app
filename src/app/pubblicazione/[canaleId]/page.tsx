@@ -50,6 +50,7 @@ export default async function CanalePubblicazionePage({
   const colore = coloreCanale(canale.nome);
   const fasce = fasceCanale(canale.nome);
   const righe: RigaBatch[] = batch.map((b) => ({
+    nome: b.nome,
     id: b.id,
     creatoIlFormattato: formatData(b.createdAt),
     stato: b.stato,

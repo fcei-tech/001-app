@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft } from "lucide-react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,19 +22,18 @@ import {
   rimuoviLottoDaBatch,
   confermaBatchAction,
   accettaLottoAction,
-  cambiaStatoBatchAction,
   annullaAccettazioneAction,
   annullaConsegnaAction,
+  togliLottoDalBatchAction,
 } from "../../actions";
 import { SelettoreLottiBatch } from "@/components/pubblicazione/selettore-lotti";
 import { getTagBrevi } from "@/db/tag-queries";
 import { leggiTagParam } from "@/lib/tag-filtro";
 import { SezioneAggiungiLotti } from "@/components/pubblicazione/sezione-aggiungi-lotti";
-import { EliminaBatchButton } from "@/components/pubblicazione/elimina-batch-button";
+import { MenuAzioniBatch } from "@/components/pubblicazione/menu-azioni-batch";
 import { OverrideLottoForm } from "@/components/pubblicazione/override-lotto-form";
 import { ConsegnaLottoForm } from "@/components/pubblicazione/consegna-lotto-form";
 import { MenuAltreAzioni } from "@/components/menu-altre-azioni";
-import { RientroLottoButton } from "@/components/pubblicazione/rientro-lotto-button";
 import {
   CellaPrezzoCatawiki,
   CellaRiservaCatawiki,
@@ -105,7 +104,61 @@ type SearchParams = {
   quantitaMax?: string;
   // Filtro per tag: id separati da virgola (lo sku deve averli tutti).
   tag?: string;
+  // Ordinamento della tabella "Lotti nel batch" (clic sul titolo della colonna).
+  ordinaLotti?: string;
+  dirLotti?: string;
 };
+
+const COLONNE_ORDINABILI_LOTTI = ["skuCode", "artista", "opera", "stato", "prezzo", "riserva", "condizione"] as const;
+type ColonnaLotti = (typeof COLONNE_ORDINABILI_LOTTI)[number];
+
+// Titolo di colonna cliccabile della tabella lotti: crescente, decrescente, poi
+// ordine di inserimento. Link normale (la pagina è lato server), conserva gli
+// altri parametri dell'indirizzo (filtri del picker compresi).
+function TitoloLotti({
+  etichetta,
+  chiave,
+  attuale,
+  direzione,
+  parametri,
+  base,
+  dataCol,
+  className,
+}: {
+  etichetta: string;
+  chiave: ColonnaLotti;
+  attuale?: ColonnaLotti;
+  direzione: "asc" | "desc";
+  parametri: Record<string, string | undefined>;
+  base: string;
+  dataCol?: string;
+  className?: string;
+}) {
+  const attiva = attuale === chiave;
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(parametri)) if (v && k !== "ordinaLotti" && k !== "dirLotti") q.set(k, v);
+  if (!attiva) {
+    q.set("ordinaLotti", chiave);
+    q.set("dirLotti", "asc");
+  } else if (direzione === "asc") {
+    q.set("ordinaLotti", chiave);
+    q.set("dirLotti", "desc");
+  }
+  const Icona = attiva ? (direzione === "desc" ? ArrowDown : ArrowUp) : ArrowUpDown;
+  return (
+    <TableHead data-col={dataCol} className={className} aria-sort={attiva ? (direzione === "desc" ? "descending" : "ascending") : "none"}>
+      <Link
+        href={`${base}${q.toString() ? `?${q.toString()}` : ""}`}
+        scroll={false}
+        title="Clicca per ordinare"
+        className={`inline-flex items-center gap-1 whitespace-nowrap hover:text-foreground ${attiva ? "font-medium text-foreground" : ""}`}
+      >
+        {etichetta}
+        <Icona className={`size-3.5 ${attiva ? "" : "opacity-40"}`} />
+      </Link>
+    </TableHead>
+  );
+}
 
 // Converte una stringa da URLSearchParams in numero, ignorando valori vuoti
 // o non numerici (stesso principio "whitelist esplicita, mai fidarsi
@@ -202,11 +255,7 @@ export default async function BatchPubblicazionePage({
     : [];
   const risoltaPerLottoId = new Map(righeRisolteCatawiki.map((r) => [r.batchLottoId, r]));
   const motivoGeneraDisabilitato =
-    batch.stato === "pubblicato"
-      ? "Batch gia' inviato - genera un nuovo batch per una nuova esportazione."
-      : batch.stato === "bozza"
-        ? "Segna il batch come Pronto prima di generare il file."
-        : undefined;
+    batch.stato === "pubblicato" ? "Batch gia' inviato - genera un nuovo batch per una nuova esportazione." : undefined;
 
   // Colonne selezionabili della tabella "Lotti nel batch" (2026-09-29): Sku e
   // Azioni restano sempre visibili. Default = colonne presenti prima di questa
@@ -237,6 +286,33 @@ export default async function BatchPubblicazionePage({
         ]
       : []),
   ];
+
+  const ordinaLotti = (COLONNE_ORDINABILI_LOTTI as readonly string[]).includes(sp.ordinaLotti ?? "") ? (sp.ordinaLotti as ColonnaLotti) : undefined;
+  const dirLotti: "asc" | "desc" = sp.dirLotti === "desc" ? "desc" : "asc";
+  const lottiOrdinati = (() => {
+    if (!ordinaLotti) return batch.lotti;
+    const chiave = (l: (typeof batch.lotti)[number]): string | number => {
+      const o = (l.override as OverrideLottoCatawiki | null) ?? null;
+      switch (ordinaLotti) {
+        case "artista": return l.sku.artista.toLowerCase();
+        case "opera": return l.sku.opera.toLowerCase();
+        case "stato": return l.statoRiga;
+        case "prezzo": return Number(o?.prezzo ?? l.sku.prezzoCatawiki ?? 0) || 0;
+        case "riserva": return risoltaPerLottoId.get(l.id)?.riservaFinale ?? 0;
+        case "condizione": return (o?.condizione ?? l.sku.condizione ?? "").toString();
+        default: return l.sku.skuCode;
+      }
+    };
+    const segno = dirLotti === "desc" ? -1 : 1;
+    return [...batch.lotti].sort((a, b) => {
+      const x = chiave(a);
+      const y = chiave(b);
+      const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "it", { numeric: true });
+      return segno * (c || a.sku.skuCode.localeCompare(b.sku.skuCode, "it", { numeric: true }));
+    });
+  })();
+  const parametriLotti: Record<string, string | undefined> = { ...sp };
+  const baseLotti = `/pubblicazione/${canaleId}/${batchId}`;
 
   const tipoId = sp.tipo && sp.tipo !== "tutti" ? Number(sp.tipo) : undefined;
   const condizione = sp.condizione && sp.condizione !== "tutti" ? sp.condizione : undefined;
@@ -302,6 +378,15 @@ export default async function BatchPubblicazionePage({
   ]);
   const saldiPerLottoId = new Map(saldiPerLotto);
 
+  // Voce comune del menu "Altre azioni" di ogni lotto delle aste fisiche: toglie il lotto
+  // dal batch (se era consegnato, riporta anche il pezzo dov'era).
+  const voceTogli = (batchLottoId: number) => ({
+    etichetta: "Rimuovi dal batch",
+    descrizione: "Il lotto esce dal batch (e, se era consegnato, il pezzo torna da noi). Puoi riaggiungerlo dal picker.",
+    azione: togliLottoDalBatchAction,
+    campi: { batchLottoId, batchId: batch.id, canaleId },
+  });
+
   return (
     <div className="min-h-full flex flex-col">
       <Header />
@@ -325,11 +410,14 @@ export default async function BatchPubblicazionePage({
         >
           {fasce && <BarraCanale nomeCanale={batch.canale.nome} />}
           <div className="flex flex-col gap-1">
-            <h1 className="text-xl font-semibold tracking-tight">
-              Batch #{batch.id} — {batch.canale.nome}
+            <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight">
+              <span>{batch.nome ? `${batch.nome}` : `Batch #${batch.id}`} — {batch.canale.nome}</span>
+              <Badge variant={batch.stato === "confermato" ? "success" : batch.stato === "pubblicato" ? "outline" : "secondary"}>
+                {batch.stato === "bozza" ? "Bozza" : batch.stato === "confermato" ? "Pronto" : "Inviato"}
+              </Badge>
             </h1>
             <p className="text-sm text-muted-foreground">
-              Creato il {formatData(batch.createdAt)}
+              {batch.nome ? <>Batch #{batch.id} · </> : null}Creato il {formatData(batch.createdAt)}
               {batch.confermatoAt && <> · pronto dal {formatData(batch.confermatoAt)}</>}
               {numeroLottiConPrenotazione > 0 && (
                 <> · {numeroLottiConPrenotazione} lott{numeroLottiConPrenotazione === 1 ? "o" : "i"} con prenotazione reale</>
@@ -337,80 +425,55 @@ export default async function BatchPubblicazionePage({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <EliminaBatchButton
-              batchId={batch.id}
-              canaleId={Number(canaleId)}
-              numeroLottiConPrenotazione={numeroLottiConPrenotazione}
-              numeroLottiConsegnati={batch.lotti.filter((l) => l.consegnatoAt !== null).length}
-              avvisoRegistroPortale={batch.canale.tipo === "statico" && batch.stato !== "bozza"}
-            />
-            {inBozza && (
-              // Spostato dal fondo pagina qui in alto (2026-09-23 notte,
-              // feedback utente: "voglio i bottoni in alto"), stesso motivo
-              // del bottone "Aggiungi" in SelettoreLottiBatch. Resta il
-              // percorso primario per bozza->confermato; il controllo Cambia
-              // stato qui sotto copre le altre direzioni.
+            {inBozza ? (
+              // Un solo bottone principale per stato: in bozza "Conferma batch";
+              // da Pronto in poi "Genera file" (o la lista, per le aste fisiche).
               <form action={confermaBatchAction}>
                 <input type="hidden" name="batchId" value={batch.id} />
                 <input type="hidden" name="canaleId" value={canaleId} />
                 <Button type="submit" disabled={batch.lotti.length === 0}>
-                  Batch pronto
+                  Conferma batch
                 </Button>
               </form>
+            ) : (
+              <>
+                {isCatawiki && (
+                  // Genera E segna come Inviato in un solo click (2026-09-28):
+                  // la generazione scarica il CSV e porta il batch a Inviato.
+                  <GeneraFileCatawikiButton
+                    batchId={batch.id}
+                    disabled={batch.stato !== "confermato"}
+                    motivoDisabilitato={motivoGeneraDisabilitato}
+                  />
+                )}
+                {batch.canale.nome === "Bidspirit" && (
+                  <GeneraFileBidspiritButton
+                    batchId={batch.id}
+                    disabled={batch.lotti.length === 0}
+                    motivoDisabilitato="Il batch non ha lotti."
+                    giaInviato={batch.stato === "pubblicato"}
+                  />
+                )}
+                {batch.canale.tipo === "asta_fisica" && (
+                  // PDF lista lotti: da Pronto genera e passa a Inviato; da Inviato
+                  // rigenera senza cambiare stato (la Riserva proposta resta modificabile).
+                  <GeneraFileAstaFisicaButton
+                    batchId={batch.id}
+                    disabled={batch.lotti.length === 0}
+                    motivoDisabilitato="Il batch non ha lotti."
+                  />
+                )}
+              </>
             )}
-            {/* Controllo esterno "Cambia stato" (2026-09-25) - transizioni
-                libere in qualsiasi direzione, sostituisce il vecchio bottone
-                "Riporta in bozza" col Select generico a 3 vie. */}
-            <MenuAltreAzioni
-              voci={(
-                [
-                  ["bozza", "Metti In preparazione", "Il batch torna modificabile; la disponibilita' prenotata si libera."],
-                  ["confermato", "Segna come Pronto", "Il batch e' pronto per generare il file / la lista."],
-                  ["pubblicato", "Segna come Inviato", "Il file o la lista sono gia' stati mandati al portale."],
-                ] as const
-              )
-                .filter(([stato]) => stato !== batch.stato)
-                .map(([stato, etichetta, descrizione]) => ({
-                  etichetta,
-                  descrizione,
-                  azione: cambiaStatoBatchAction,
-                  campi: { batchId: batch.id, canaleId, nuovoStato: stato },
-                }))}
+            <MenuAzioniBatch
+              batchId={batch.id}
+              canaleId={Number(canaleId)}
+              stato={batch.stato}
+              nome={batch.nome}
+              numeroLottiConPrenotazione={numeroLottiConPrenotazione}
+              numeroLottiConsegnati={batch.lotti.filter((l) => l.consegnatoAt !== null).length}
+              avvisoRegistroPortale={batch.canale.tipo === "statico" && batch.stato !== "bozza"}
             />
-            {isCatawiki && (
-              // Genera E pubblica in un solo click (2026-09-28) - abilitato
-              // SOLO a batch confermato (vedi generaFileCatawikiAction in
-              // actions.ts, che rifiuta comunque lato server qualsiasi altro
-              // stato, questo e' solo il vincolo lato UI).
-              <GeneraFileCatawikiButton
-                batchId={batch.id}
-                disabled={batch.stato !== "confermato"}
-                motivoDisabilitato={motivoGeneraDisabilitato}
-              />
-            )}
-            {batch.canale.nome === "Bidspirit" && (
-              <GeneraFileBidspiritButton
-                batchId={batch.id}
-                disabled={batch.stato === "bozza" || batch.lotti.length === 0}
-                motivoDisabilitato={
-                  batch.stato === "bozza" ? "Segna il batch come Pronto prima di generare il file." : "Il batch non ha lotti."
-                }
-                giaInviato={batch.stato === "pubblicato"}
-              />
-            )}
-            {batch.canale.tipo === "asta_fisica" && (
-              // PDF lista lotti per le aste fisiche (2026-09-29): abilitato a
-              // batch confermato (genera e pubblica) e a batch pubblicato
-              // (rigenera senza cambiare stato, la Riserva proposta resta
-              // modificabile dopo l'invio) - vedi generaFilePdfAstaFisicaAction.
-              <GeneraFileAstaFisicaButton
-                batchId={batch.id}
-                disabled={batch.stato === "bozza" || batch.lotti.length === 0}
-                motivoDisabilitato={
-                  batch.stato === "bozza" ? "Segna il batch come Pronto prima di generare il PDF." : "Il batch non ha lotti."
-                }
-              />
-            )}
           </div>
         </div>
 
@@ -531,13 +594,13 @@ export default async function BatchPubblicazionePage({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Sku</TableHead>
-                    <TableHead data-col="artista">Artista</TableHead>
-                    <TableHead data-col="opera">Opera</TableHead>
+                    <TitoloLotti etichetta="Sku" chiave="skuCode" attuale={ordinaLotti} direzione={dirLotti} parametri={parametriLotti} base={baseLotti} />
+                    <TitoloLotti etichetta="Artista" chiave="artista" dataCol="artista" attuale={ordinaLotti} direzione={dirLotti} parametri={parametriLotti} base={baseLotti} />
+                    <TitoloLotti etichetta="Opera" chiave="opera" dataCol="opera" attuale={ordinaLotti} direzione={dirLotti} parametri={parametriLotti} base={baseLotti} />
                     <TableHead data-col="misure">Misure</TableHead>
                     <TableHead data-col="supporto">Supporto</TableHead>
                     <TableHead data-col="anno">Anno / epoca</TableHead>
-                    <TableHead data-col="stato">Stato riga</TableHead>
+                    <TitoloLotti etichetta="Stato riga" chiave="stato" dataCol="stato" attuale={ordinaLotti} direzione={dirLotti} parametri={parametriLotti} base={baseLotti} />
                     {mostraOverride && (
                       <TableHead data-col="override">
                         {mostraRiservaProposta ? "Riserva proposta" : "Prezzo / Riserva evento"}
@@ -545,9 +608,9 @@ export default async function BatchPubblicazionePage({
                     )}
                     {isCatawiki && (
                       <>
-                        <TableHead data-col="prezzo" className="text-right">Prezzo</TableHead>
-                        <TableHead data-col="riserva" className="text-right">Riserva</TableHead>
-                        <TableHead data-col="condizione">Condizione</TableHead>
+                        <TitoloLotti etichetta="Prezzo" chiave="prezzo" dataCol="prezzo" className="text-right" attuale={ordinaLotti} direzione={dirLotti} parametri={parametriLotti} base={baseLotti} />
+                        <TitoloLotti etichetta="Riserva" chiave="riserva" dataCol="riserva" className="text-right" attuale={ordinaLotti} direzione={dirLotti} parametri={parametriLotti} base={baseLotti} />
+                        <TitoloLotti etichetta="Condizione" chiave="condizione" dataCol="condizione" attuale={ordinaLotti} direzione={dirLotti} parametri={parametriLotti} base={baseLotti} />
                         <TableHead data-col="descrizione">Descrizione</TableHead>
                         <TableHead data-col="statoExport">Stato export</TableHead>
                       </>
@@ -556,7 +619,7 @@ export default async function BatchPubblicazionePage({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {batch.lotti.map((l) => {
+                  {lottiOrdinati.map((l) => {
                     const statoRiga = ETICHETTE_STATO_RIGA[l.statoRiga] ?? { label: l.statoRiga, variant: "outline" as const };
                     return (
                       <TableRow key={l.id}>
@@ -713,14 +776,17 @@ export default async function BatchPubblicazionePage({
                                 </Button>
                               </form>
                             ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "candidato" ? (
-                              <form action={accettaLottoAction}>
-                                <input type="hidden" name="batchLottoId" value={l.id} />
-                                <input type="hidden" name="batchId" value={batch.id} />
-                                <input type="hidden" name="canaleId" value={canaleId} />
-                                <Button type="submit" variant="secondary" size="sm">
-                                  Accetta
-                                </Button>
-                              </form>
+                              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                <form action={accettaLottoAction}>
+                                  <input type="hidden" name="batchLottoId" value={l.id} />
+                                  <input type="hidden" name="batchId" value={batch.id} />
+                                  <input type="hidden" name="canaleId" value={canaleId} />
+                                  <Button type="submit" variant="secondary" size="sm">
+                                    Accetta
+                                  </Button>
+                                </form>
+                                <MenuAltreAzioni voci={[voceTogli(l.id)]} />
+                              </div>
                             ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "accettato" && !l.consegnatoAt ? (
                               // Accettato, non ancora consegnato: azione principale
                               // "Consegna all'asta"; la correzione "Torna proposto"
@@ -745,27 +811,25 @@ export default async function BatchPubblicazionePage({
                                       azione: annullaAccettazioneAction,
                                       campi: { batchLottoId: l.id, batchId: batch.id, canaleId },
                                     },
+                                    voceTogli(l.id),
                                   ]}
                                 />
                               </div>
                             ) : batch.canale.tipo === "asta_fisica" && l.statoRiga === "accettato" && l.consegnatoAt ? (
                               // Consegnato: azione principale "Rientrato" (l'asta ce lo
-                              // ha restituito: il lotto esce dal batch e la posizione
-                              // fisica torna com'era); la correzione "Consegna errata"
-                              // (ex "Annulla consegna": inverte esattamente lo stesso
-                              // movimento, il lotto resta accettato) sta nel menu.
+                              // ha restituito: il pezzo torna da noi e il lotto resta nel
+                              // batch, di nuovo "da consegnare"). Per toglierlo del tutto
+                              // dal batch c'e' "Rimuovi dal batch" nel menu.
                               <div className="flex flex-wrap items-center justify-end gap-1.5">
-                                <RientroLottoButton batchLottoId={l.id} batchId={batch.id} canaleId={Number(canaleId)} />
-                                <MenuAltreAzioni
-                                  voci={[
-                                    {
-                                      etichetta: "Consegna errata",
-                                      descrizione: "Hai consegnato per errore: il pezzo torna da noi, il lotto resta accettato.",
-                                      azione: annullaConsegnaAction,
-                                      campi: { batchLottoId: l.id, batchId: batch.id, canaleId },
-                                    },
-                                  ]}
-                                />
+                                <form action={annullaConsegnaAction}>
+                                  <input type="hidden" name="batchLottoId" value={l.id} />
+                                  <input type="hidden" name="batchId" value={batch.id} />
+                                  <input type="hidden" name="canaleId" value={canaleId} />
+                                  <Button type="submit" variant="outline" size="sm" title="L'asta ci ha restituito il pezzo: il lotto resta nel batch, da consegnare">
+                                    Rientrato
+                                  </Button>
+                                </form>
+                                <MenuAltreAzioni voci={[voceTogli(l.id)]} />
                               </div>
                             ) : null}
                           </TableCell>

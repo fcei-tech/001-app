@@ -18,6 +18,8 @@ import {
   consegnaLotto as consegnaLottoQuery,
   annullaConsegna as annullaConsegnaQuery,
   rientroLotto as rientroLottoQuery,
+  rinominaBatch as rinominaBatchQuery,
+  duplicaBatch as duplicaBatchQuery,
   segnaBatchPubblicato as segnaBatchPubblicatoQuery,
   type ConsegnaDettagli,
   type OverrideLotto,
@@ -868,12 +870,12 @@ export async function annullaConsegnaAction(formData: FormData) {
   revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
 }
 
-// Rientro: il pezzo torna indietro (invenduto/ritirato) - rimuove il lotto
-// dal batch, invertendo anche il movimento fisico della consegna. Disponibile
-// solo su un lotto gia' consegnato (per un lotto accettato ma mai consegnato
-// c'e' gia' "Annulla accettazione" - non serve un secondo percorso allo
-// stesso risultato).
-export async function rientroLottoAction(formData: FormData) {
+// Toglie un lotto dal batch di un'asta fisica in qualsiasi stato del batch
+// (2026-11-09, cambio di rotta: prima "Rientrato" toglieva il lotto dal batch,
+// ora "Rientrato" lo lascia nel batch da consegnare e questa e' l'azione
+// separata e dichiarata). Se il lotto risultava consegnato, inverte anche il
+// movimento fisico; poi cancella la riga. Il pezzo si puo' riaggiungere dal picker.
+export async function togliLottoDalBatchAction(formData: FormData) {
   const batchLottoId = Number(formData.get("batchLottoId"));
   const batchId = Number(formData.get("batchId"));
   const canaleId = Number(formData.get("canaleId"));
@@ -882,15 +884,16 @@ export async function rientroLottoAction(formData: FormData) {
   const batch = await getBatch(batchId);
   if (!batch) throw new Error("Batch non trovato");
   if (batch.canale.tipo !== "asta_fisica") {
-    throw new Error("Rientro si applica solo alle aste fisiche");
+    throw new Error("Questa azione si applica solo alle aste fisiche");
   }
   const lotto = batch.lotti.find((l) => l.id === batchLottoId);
   if (!lotto) throw new Error("Lotto non trovato in questo batch");
-  if (!lotto.consegnatoAt) {
-    throw new Error("Questo lotto non risulta consegnato - usa Annulla accettazione");
-  }
 
-  await rientroLottoQuery(batchLottoId, lotto.skuId, (lotto.consegnaDettagli as ConsegnaDettagli | null) ?? null);
+  if (lotto.consegnatoAt) {
+    await rientroLottoQuery(batchLottoId, lotto.skuId, (lotto.consegnaDettagli as ConsegnaDettagli | null) ?? null);
+  } else {
+    await rimuoviLottoQuery(batchLottoId);
+  }
   revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
 }
 
@@ -992,4 +995,24 @@ export async function generaFilePdfAstaFisicaAction(batchId: number): Promise<{
     senzaFoto: lotti.map((l, i) => i).filter((i) => lotti[i].fotoUrls.length === 0).map(descrivi),
     passatoAPubblicato,
   };
+}
+
+// Rinomina un batch (qualsiasi canale, qualsiasi stato). Nome vuoto = "Batch #N".
+export async function rinominaBatchAction(formData: FormData) {
+  const batchId = Number(formData.get("batchId"));
+  const canaleId = Number(formData.get("canaleId"));
+  if (!batchId) throw new Error("Batch non valido");
+  await rinominaBatchQuery(batchId, String(formData.get("nome") ?? ""));
+  revalidatePath(`/pubblicazione/${canaleId}`);
+  revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
+}
+
+// Duplica un batch e apre il nuovo (in bozza).
+export async function duplicaBatchAction(formData: FormData) {
+  const batchId = Number(formData.get("batchId"));
+  const canaleId = Number(formData.get("canaleId"));
+  if (!batchId) throw new Error("Batch non valido");
+  const nuovo = await duplicaBatchQuery(batchId);
+  revalidatePath(`/pubblicazione/${canaleId}`);
+  redirect(`/pubblicazione/${canaleId}/${nuovo.id}`);
 }

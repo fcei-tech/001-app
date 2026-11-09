@@ -121,8 +121,8 @@ export function ImpostazioniBatchCatawikiForm({
       </div>
 
       {!disabilitato && (
-        <div className="flex items-center gap-3 sm:col-span-2">
-          <Button type="button" onClick={salva} disabled={pending} size="sm">
+        <div className="sticky bottom-0 z-20 -mx-6 -mb-6 flex items-center gap-3 border-t bg-card/95 px-6 py-3 backdrop-blur sm:col-span-2">
+          <Button type="button" onClick={salva} disabled={pending}>
             {pending ? "Salvo…" : "Salva impostazioni"}
           </Button>
           {salvato && <span className="text-xs text-success">Salvato</span>}

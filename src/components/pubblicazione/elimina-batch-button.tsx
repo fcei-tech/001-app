@@ -21,35 +21,32 @@ import { eliminaBatchAction } from "@/app/pubblicazione/actions";
 // prenotazione reale - numeroLottiConPrenotazione (vedi
 // contaLottiConPrenotazione in src/lib/prenotazione-batch.ts) arriva gia'
 // calcolato dal chiamante, che ha gia' in mano batch+canale.
-export function EliminaBatchButton({
+type PropsDialog = {
+  batchId: number;
+  canaleId: number;
+  numeroLottiConPrenotazione?: number;
+  numeroLottiConsegnati?: number;
+  avvisoRegistroPortale?: boolean;
+  aperto: boolean;
+  onAperto: (v: boolean) => void;
+};
+
+// Solo la finestra di conferma: serve sia al bottone "Elimina batch" sia alla voce
+// "Elimina batch" del menu ⋯ della pagina batch.
+export function EliminaBatchDialog({
   batchId,
   canaleId,
   numeroLottiConPrenotazione = 0,
   numeroLottiConsegnati = 0,
   avvisoRegistroPortale = false,
-}: {
-  batchId: number;
-  canaleId: number;
-  // Quanti lotti di QUESTO batch tengono oggi una prenotazione reale (vedi
-  // contaLottiConPrenotazione) - 0 = nessun avviso aggiuntivo, il testo resta
-  // quello generico.
-  numeroLottiConPrenotazione?: number;
-  // Lotti gia' consegnati (movimento di spostamento gia' scritto): cancellando
-  // il batch si perde il modo di annullare la consegna da qui.
-  numeroLottiConsegnati?: number;
-  // Batch di un portale statico gia' confermato/pubblicato: eliminarlo non
-  // cambia il registro "caricato" del portale.
-  avvisoRegistroPortale?: boolean;
-}) {
-  const [aperto, setAperto] = useState(false);
+  aperto,
+  onAperto,
+}: PropsDialog) {
   const [pending, startTransition] = useTransition();
+  const setAperto = onAperto;
 
   return (
     <>
-      <Button type="button" variant="outline" size="sm" onClick={() => setAperto(true)}>
-        <Trash2 /> Elimina batch
-      </Button>
-
       <Dialog open={aperto} onOpenChange={setAperto}>
         <DialogContent>
           <DialogHeader>
@@ -104,6 +101,18 @@ export function EliminaBatchButton({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+export function EliminaBatchButton(props: Omit<PropsDialog, "aperto" | "onAperto">) {
+  const [aperto, setAperto] = useState(false);
+  return (
+    <>
+      <Button type="button" variant="outline" size="sm" onClick={() => setAperto(true)}>
+        <Trash2 /> Elimina batch
+      </Button>
+      <EliminaBatchDialog {...props} aperto={aperto} onAperto={setAperto} />
     </>
   );
 }

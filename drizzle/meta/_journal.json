@@ -92,6 +92,13 @@
       "when": 1793380746673,
       "tag": "0012_tag",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794233609367,
+      "tag": "0013_nome_batch",
+      "breakpoints": true
     }
   ]
 }

@@ -82,7 +82,7 @@ export default async function PubblicazionePage() {
                                 )
                               ) : c.batchInBozza > 0 ? (
                                 <span className="font-medium text-foreground">
-                                  {c.batchInBozza} batch in preparazione
+                                  {c.batchInBozza} in bozza
                                 </span>
                               ) : c.batchTotali === 0 ? (
                                 "Nessun batch"

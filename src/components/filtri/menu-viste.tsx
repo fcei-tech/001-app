@@ -93,7 +93,7 @@ export function MenuViste({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button type="button" variant="outline" title="Viste salvate: combinazioni di filtri da riaprire con un clic">
-            <Bookmark /> Viste <ChevronDown className="opacity-60" />
+            <Bookmark /> Viste salvate <ChevronDown className="opacity-60" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-56">
