@@ -9,7 +9,7 @@
 import { campiMancanti } from "@/lib/campi-mancanti-pubblicazione";
 import type { RigaMagazzino } from "@/db/queries";
 
-export type IdControllo = "senza_foto" | "senza_prezzo_ebay" | "prezzo_catawiki" | "senza_anno" | "puntini";
+export type IdControllo = "senza_foto" | "senza_prezzo_ebay" | "prezzo_catawiki" | "senza_anno" | "senza_supporto" | "puntini";
 
 export type RigaControllo = { id: number; skuCode: string; artista: string; opera: string; dettaglio?: string };
 
@@ -44,6 +44,7 @@ export function calcolaControlli(righe: RigaMagazzino[], sogliaCatawiki: number)
       return r(x, p === null ? "manca" : `${x.prezzoCatawiki} € (sotto ${sogliaCatawiki} €)`);
     });
   const senzaAnno = base.filter((x) => !x.anno || !x.anno.trim()).map((x) => r(x));
+  const senzaSupporto = base.filter((x) => !x.supporto || !x.supporto.trim()).map((x) => r(x));
   const puntini = base
     .filter((x) => PUNTINI.test(x.artista) || PUNTINI.test(x.opera))
     .map((x) => r(x, PUNTINI.test(x.artista) ? `Artista: ${x.artista}` : `Opera: ${x.opera}`));
@@ -72,6 +73,12 @@ export function calcolaControlli(righe: RigaMagazzino[], sogliaCatawiki: number)
       titolo: "Sku senza anno / epoca",
       spiegazione: "Catawiki scarta i lotti senza anno.",
       righe: senzaAnno,
+    },
+    {
+      id: "senza_supporto",
+      titolo: "Sku senza supporto",
+      spiegazione: "Telato, Cornice o altro: se è telato i testi aggiungono LINEN BACKED. Lo imposti dalla scheda sku o con Modifica in blocco.",
+      righe: senzaSupporto,
     },
     {
       id: "puntini",

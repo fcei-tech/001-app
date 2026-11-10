@@ -93,6 +93,7 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild variant="secondary"><Link href="/importa-excel"><FileSpreadsheet /> Importa da Excel</Link></Button>
+            <Button asChild variant="secondary"><Link href="/importa-schede"><Images /> Schede da telefono</Link></Button>
             <Button asChild variant="secondary"><Link href="/righe-excel"><FileSpreadsheet /> Righe per Excel</Link></Button>
             <Button asChild variant="secondary"><Link href="/importa-foto"><Images /> Importa Foto</Link></Button>
             <Button asChild><Link href="/magazzino/nuovo"><Plus /> Nuovo sku</Link></Button>
