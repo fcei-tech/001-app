@@ -43,6 +43,7 @@ import {
   SilenziaErroreButton,
 } from "@/components/pubblicazione/celle-override-catawiki";
 import { ImpostazioniBatchCatawikiForm } from "@/components/pubblicazione/impostazioni-batch-catawiki-form";
+import { RimuoviLottiMultipli } from "@/components/pubblicazione/rimuovi-lotti-multipli";
 import { AzioneLottiGruppo } from "@/components/pubblicazione/azione-lotti-gruppo";
 import { GeneraFileBidspiritButton } from "@/components/pubblicazione/genera-file-bidspirit-button";
 import { GeneraFileCatawikiButton } from "@/components/pubblicazione/genera-file-catawiki-button";
@@ -592,7 +593,14 @@ export default async function BatchPubblicazionePage({
               <TableEmpty>Nessun lotto ancora aggiunto.</TableEmpty>
             ) : (
               <div data-lotti-tabella>
-              <div className="mb-3 flex justify-end">
+              <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+                {batch.lotti.length > 1 && (inBozza || batch.canale.tipo === "asta_fisica") && (
+                  <RimuoviLottiMultipli
+                    batchId={batch.id}
+                    canaleId={Number(canaleId)}
+                    lotti={batch.lotti.map((l) => ({ id: l.id, skuCode: l.sku.skuCode, artista: l.sku.artista, opera: l.sku.opera, consegnato: l.consegnatoAt !== null }))}
+                  />
+                )}
                 <SelettoreColonneLotti tipoCanale={batch.canale.tipo} colonne={colonneLottiBatch} />
               </div>
               <Table>

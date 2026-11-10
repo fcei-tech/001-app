@@ -21,23 +21,25 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { anteprimaImportExcel, confermaImportExcel } from "./actions";
-import type { AnteprimaImport } from "@/lib/excel-import-plan";
+import type { AnteprimaImport, DecisioniImport } from "@/lib/excel-import-plan";
 
 type Stato =
   | { fase: "scelta_file" }
   | { fase: "analisi_in_corso" }
   | { fase: "anteprima"; anteprima: AnteprimaImport; erroriRighe: string[] }
   | { fase: "conferma_in_corso"; anteprima: AnteprimaImport; erroriRighe: string[] }
-  | { fase: "completato"; skuCreati: number; movimentiCreati: number; skuAggiornati: number }
+  | { fase: "completato"; skuCreati: number; movimentiCreati: number; skuAggiornati: number; rinominati: { vecchio: string; nuovo: string }[] }
   | { fase: "errore"; messaggio: string };
 
 export function ImportExcelFlow() {
   const [file, setFile] = React.useState<File | null>(null);
   const [stato, setStato] = React.useState<Stato>({ fase: "scelta_file" });
+  const [decisioni, setDecisioni] = React.useState<DecisioniImport>({ codici: {}, campi: {} });
 
   async function analizza() {
     if (!file) return;
     setStato({ fase: "analisi_in_corso" });
+    setDecisioni({ codici: {}, campi: {} });
     const formData = new FormData();
     formData.set("file", file);
     const risultato = await anteprimaImportExcel(formData);
@@ -53,6 +55,7 @@ export function ImportExcelFlow() {
     setStato({ fase: "conferma_in_corso", anteprima: stato.anteprima, erroriRighe: stato.erroriRighe });
     const formData = new FormData();
     formData.set("file", file);
+    formData.set("decisioni", JSON.stringify(decisioni));
     const risultato = await confermaImportExcel(formData);
     if (!risultato.ok) {
       setStato({ fase: "errore", messaggio: risultato.errore });
@@ -63,10 +66,12 @@ export function ImportExcelFlow() {
       skuCreati: risultato.skuCreati,
       movimentiCreati: risultato.movimentiCreati,
       skuAggiornati: risultato.skuAggiornati,
+      rinominati: risultato.rinominati,
     });
   }
 
   function ricomincia() {
+    setDecisioni({ codici: {}, campi: {} });
     setFile(null);
     setStato({ fase: "scelta_file" });
   }
@@ -126,11 +131,33 @@ export function ImportExcelFlow() {
         </Card>
       )}
 
+      {stato.fase === "completato" && stato.rinominati.length > 0 && (
+        <Card className="border-warning/40">
+          <CardHeader>
+            <CardTitle className="text-base">Codici da correggere nel tuo file Excel</CardTitle>
+            <CardDescription>
+              Questi sku hanno preso un codice nuovo: nel file Excel cambia la colonna SKU dalla riga con il codice vecchio a quello nuovo.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1 text-sm">
+              {stato.rinominati.map((r) => (
+                <li key={r.nuovo}>
+                  <span className="font-mono text-xs">{r.vecchio}</span> → <span className="font-mono text-xs font-medium">{r.nuovo}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       {(stato.fase === "anteprima" || stato.fase === "conferma_in_corso") && (
         <AnteprimaVista
           anteprima={stato.anteprima}
           erroriRighe={stato.erroriRighe}
           inCorso={stato.fase === "conferma_in_corso"}
+          decisioni={decisioni}
+          onDecisioni={setDecisioni}
           onConferma={conferma}
         />
       )}
@@ -142,17 +169,28 @@ function AnteprimaVista({
   anteprima,
   erroriRighe,
   inCorso,
+  decisioni,
+  onDecisioni,
   onConferma,
 }: {
   anteprima: AnteprimaImport;
   erroriRighe: string[];
   inCorso: boolean;
+  decisioni: DecisioniImport;
+  onDecisioni: (d: DecisioniImport) => void;
   onConferma: () => void;
 }) {
+  const valoriDaMemorizzare = anteprima.valoriExcelDaSalvare.filter((v) => Object.keys(v.valori).length > 0).length;
   const nessunaModifica =
     anteprima.nuoviSku.length === 0 &&
     anteprima.movimenti.length === 0 &&
-    anteprima.aggiornamenti.length === 0;
+    anteprima.aggiornamenti.length === 0 &&
+    anteprima.conflittiCodice.length === 0 &&
+    anteprima.conflittiCampi.length === 0 &&
+    valoriDaMemorizzare === 0;
+  const nonDecisi =
+    anteprima.conflittiCodice.filter((c) => !decisioni.codici[c.skuCode]).length +
+    anteprima.conflittiCampi.filter((c) => !decisioni.campi[c.chiave]).length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -174,12 +212,93 @@ function AnteprimaVista({
           <Badge variant={anteprima.aggiornamenti.length ? "warning" : "secondary"}>
             {anteprima.aggiornamenti.length} sku con campi aggiornati
           </Badge>
+          {anteprima.conflittiCodice.length + anteprima.conflittiCampi.length > 0 && (
+            <Badge variant="warning">{anteprima.conflittiCodice.length + anteprima.conflittiCampi.length} conflitti da decidere</Badge>
+          )}
+          {valoriDaMemorizzare > 0 && <Badge variant="secondary">{valoriDaMemorizzare} sku: memorizzo i valori letti da Excel</Badge>}
           <Badge variant="secondary">{anteprima.skuNonToccatiCount} sku non toccati (assenti dal file)</Badge>
           {erroriRighe.length > 0 && (
             <Badge variant="destructive">{erroriRighe.length} righe scartate</Badge>
           )}
         </CardContent>
       </Card>
+
+      {anteprima.conflittiCodice.length > 0 && (
+        <Card className="border-warning/50">
+          <CardHeader>
+            <CardTitle className="text-base">Codici in conflitto ({anteprima.conflittiCodice.length})</CardTitle>
+            <CardDescription>
+              Questi codici esistono già in BATCH ma con un altro poster. Scegli per ognuno:
+              <strong> Sovrascrivi</strong> (i dati Excel sostituiscono quelli di BATCH),
+              <strong> Rinomina</strong> (la riga Excel diventa un nuovo sku con un codice libero; poi correggi il codice nel file) oppure
+              <strong> Ignora</strong> (la riga viene saltata). Finché non scegli, non si scrive nulla.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="divide-y p-0">
+            {anteprima.conflittiCodice.map((c) => (
+              <div key={c.skuCode} className="flex flex-wrap items-center gap-3 px-6 py-3 text-sm">
+                <span className="font-mono text-xs">{c.skuCode}</span>
+                <div className="min-w-0 flex-1">
+                  <p>In BATCH: <b>{c.esistente.artista}</b> — {c.esistente.opera}</p>
+                  <p>In Excel: <b>{c.excel.artista}</b> — {c.excel.opera}</p>
+                </div>
+                <div className="flex gap-1">
+                  {(["sovrascrivi", "rinomina", "ignora"] as const).map((o) => (
+                    <Button
+                      key={o}
+                      type="button"
+                      size="sm"
+                      variant={decisioni.codici[c.skuCode] === o ? "default" : "outline"}
+                      onClick={() => onDecisioni({ ...decisioni, codici: { ...decisioni.codici, [c.skuCode]: o } })}
+                    >
+                      {o === "sovrascrivi" ? "Sovrascrivi" : o === "rinomina" ? "Rinomina" : "Ignora"}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {anteprima.conflittiCampi.length > 0 && (
+        <Card className="border-warning/50">
+          <CardHeader>
+            <CardTitle className="text-base">Valori cambiati sia in BATCH sia in Excel ({anteprima.conflittiCampi.length})</CardTitle>
+            <CardDescription>
+              Hai modificato il campo in BATCH e nel frattempo è cambiato anche nel file. Scegli quale tenere per ciascuno.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="divide-y p-0">
+            {anteprima.conflittiCampi.map((c) => (
+              <div key={c.chiave} className="flex flex-wrap items-center gap-3 px-6 py-3 text-sm">
+                <span className="font-mono text-xs">{c.skuCode}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-muted-foreground">{c.artista} — {c.opera}</p>
+                  <p>{c.etichetta}: BATCH <b>{c.valoreBatch ?? "vuoto"}</b> · Excel <b>{c.valoreExcel}</b></p>
+                </div>
+                <div className="flex gap-1">
+                  {(["batch", "excel"] as const).map((o) => (
+                    <Button
+                      key={o}
+                      type="button"
+                      size="sm"
+                      variant={decisioni.campi[c.chiave] === o ? "default" : "outline"}
+                      onClick={() => onDecisioni({ ...decisioni, campi: { ...decisioni.campi, [c.chiave]: o } })}
+                    >
+                      {o === "batch" ? "Tieni BATCH" : "Usa Excel"}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="flex gap-2 px-6 py-3">
+              <Button type="button" size="sm" variant="ghost" onClick={() => onDecisioni({ ...decisioni, campi: { ...decisioni.campi, ...Object.fromEntries(anteprima.conflittiCampi.map((c) => [c.chiave, "batch" as const])) } })}>Tieni BATCH per tutti</Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => onDecisioni({ ...decisioni, campi: { ...decisioni.campi, ...Object.fromEntries(anteprima.conflittiCampi.map((c) => [c.chiave, "excel" as const])) } })}>Usa Excel per tutti</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {erroriRighe.length > 0 && (
         <Card className="border-warning/40">
@@ -284,8 +403,9 @@ function AnteprimaVista({
           <CardHeader>
             <CardTitle className="text-base">Campi aggiornati su sku esistenti ({anteprima.aggiornamenti.length})</CardTitle>
             <CardDescription>
-              Solo campi compilati in Excel con un valore diverso da quello attuale. Un campo
-              vuoto in Excel non cancella mai un valore gia&apos; presente.
+              Solo campi che in Excel sono cambiati dall&apos;ultima importazione e che in BATCH non hai
+              toccato. Un campo vuoto in Excel non cancella mai un valore gia&apos; presente; le tue
+              modifiche fatte in BATCH non vengono sovrascritte.
             </CardDescription>
           </CardHeader>
           <CardContent className="max-h-96 overflow-y-auto p-0">
@@ -331,12 +451,16 @@ function AnteprimaVista({
             <p className="text-sm text-muted-foreground">
               Nessuna differenza rispetto ai dati gia&apos; presenti: niente da importare.
             </p>
+          ) : nonDecisi > 0 ? (
+            <p className="text-sm text-warning">
+              Mancano {nonDecisi} {nonDecisi === 1 ? "scelta" : "scelte"} sui conflitti: finché non le fai non si può importare.
+            </p>
           ) : (
             <p className="text-sm text-muted-foreground">
               Confermando, queste modifiche vengono scritte nel Magazzino in un&apos;unica operazione.
             </p>
           )}
-          <Button onClick={onConferma} disabled={inCorso || nessunaModifica} size="lg">
+          <Button onClick={onConferma} disabled={inCorso || nessunaModifica || nonDecisi > 0} size="lg">
             {inCorso ? <Loader2 className="animate-spin" /> : null}
             Conferma e importa
           </Button>

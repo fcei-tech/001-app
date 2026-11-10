@@ -12,6 +12,7 @@ import { GiacenzaSku } from "./giacenza-sku";
 import { etichettaCausale } from "@/lib/giacenza";
 import { FotoForm } from "./foto-form";
 import { SchedaSkuForm } from "./scheda-form";
+import { ValoriExcel } from "./valori-excel";
 import { PortaliSku } from "./portali-sku";
 import { Consolida } from "@/components/sistema/consolida";
 import { getStatoPortaliSku } from "@/db/esposizione-queries";
@@ -74,7 +75,17 @@ export default async function ModificaSkuPage({
     <div className="min-h-full flex flex-col">
       <Header />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
-        <SchedaSkuForm item={item} tipi={tipi} disponibile={disponibile} esito={esito} tagDisponibili={tagDisponibili} tagIdsSku={tagIdsSku} regole={regole} campiPersonalizzati={campiPersonalizzati} valoriCampi={leggiValori(item.campiPersonalizzati)} />
+        <SchedaSkuForm key={String(item.updatedAt)} item={item} tipi={tipi} disponibile={disponibile} esito={esito} tagDisponibili={tagDisponibili} tagIdsSku={tagIdsSku} regole={regole} campiPersonalizzati={campiPersonalizzati} valoriCampi={leggiValori(item.campiPersonalizzati)} />
+
+        <ValoriExcel
+          skuId={item.id}
+          daExcel={(item.valoriExcel ?? {}) as Record<string, string>}
+          attuali={{
+            artista: item.artista, opera: item.opera, larghezza: item.larghezza, altezza: item.altezza,
+            supporto: item.supporto, anno: item.anno, note: item.note, valoreCarico: item.valoreCarico,
+            prezzoEbay: item.prezzoEbay, prezzoCatawiki: item.prezzoCatawiki, riservaCatawiki: item.riservaCatawiki,
+          }}
+        />
 
         <Card className="mb-6">
           <CardHeader>

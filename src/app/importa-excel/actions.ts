@@ -1,7 +1,7 @@
 "use server";
 
 import { estraiRigheGrezze } from "@/lib/excel-import";
-import { calcolaAnteprima, eseguiImport, type AnteprimaImport } from "@/lib/excel-import-plan";
+import { calcolaAnteprima, eseguiImport, type AnteprimaImport, type DecisioniImport } from "@/lib/excel-import-plan";
 
 export type RisultatoAnteprima =
   | { ok: true; anteprima: AnteprimaImport; erroriRighe: string[] }
@@ -40,11 +40,20 @@ export async function anteprimaImportExcel(formData: FormData): Promise<Risultat
 // click esplicito di conferma dell'utente sulla pagina di anteprima.
 export async function confermaImportExcel(
   formData: FormData
-): Promise<{ ok: true; skuCreati: number; movimentiCreati: number; skuAggiornati: number } | { ok: false; errore: string }> {
+): Promise<
+  | { ok: true; skuCreati: number; movimentiCreati: number; skuAggiornati: number; rinominati: { vecchio: string; nuovo: string }[] }
+  | { ok: false; errore: string }
+> {
   try {
     const buffer = await leggiFileDaFormData(formData);
     const { righe } = estraiRigheGrezze(buffer);
-    const anteprima = await calcolaAnteprima(righe);
+    let decisioni: DecisioniImport = { codici: {}, campi: {} };
+    const grezze = formData.get("decisioni");
+    if (typeof grezze === "string" && grezze) {
+      const p = JSON.parse(grezze) as Partial<DecisioniImport>;
+      decisioni = { codici: p.codici ?? {}, campi: p.campi ?? {} };
+    }
+    const anteprima = await calcolaAnteprima(righe, decisioni);
     const risultato = await eseguiImport(anteprima);
     return { ok: true, ...risultato };
   } catch (err) {

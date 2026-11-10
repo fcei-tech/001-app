@@ -902,6 +902,43 @@ export async function togliLottoDalBatchAction(formData: FormData) {
   revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
 }
 
+// Rimozione MULTIPLA di lotti da un batch (Release 10, 2026-11-10): gli sku
+// restano in Magazzino, escono solo dal batch. Stesse regole delle azioni
+// singole: in bozza qualsiasi canale; fuori bozza solo le aste fisiche (e un
+// lotto consegnato torna prima da noi). Un errore su un lotto non ferma gli altri.
+export type EsitoRimozioneMultipla = { ok: boolean; errore?: string; rimossi: number; errori: { skuCode: string; motivo: string }[] };
+
+export async function rimuoviLottiMultipliAction(batchId: number, canaleId: number, batchLottoIds: number[]): Promise<EsitoRimozioneMultipla> {
+  try {
+    const batch = await getBatch(batchId);
+    if (!batch) return { ok: false, errore: "Batch non trovato", rimossi: 0, errori: [] };
+    const inBozza = batch.stato === "bozza";
+    if (!inBozza && batch.canale.tipo !== "asta_fisica") {
+      return { ok: false, errore: "Un batch gia' confermato si modifica solo per le aste fisiche", rimossi: 0, errori: [] };
+    }
+    let rimossi = 0;
+    const errori: { skuCode: string; motivo: string }[] = [];
+    for (const id of batchLottoIds) {
+      const lotto = batch.lotti.find((l) => l.id === id);
+      if (!lotto) continue;
+      try {
+        if (lotto.consegnatoAt && batch.canale.tipo === "asta_fisica") {
+          await rientroLottoQuery(id, lotto.skuId, (lotto.consegnaDettagli as ConsegnaDettagli | null) ?? null);
+        } else {
+          await rimuoviLottoQuery(id);
+        }
+        rimossi++;
+      } catch (e) {
+        errori.push({ skuCode: lotto.sku.skuCode, motivo: e instanceof Error ? e.message : "Errore sconosciuto" });
+      }
+    }
+    revalidatePath(`/pubblicazione/${canaleId}/${batchId}`);
+    return { ok: true, rimossi, errori };
+  } catch (e) {
+    return { ok: false, errore: e instanceof Error ? e.message : "Errore sconosciuto", rimossi: 0, errori: [] };
+  }
+}
+
 // Genera il PDF "lista lotti" per una casa d'asta fisica (2026-09-29) - vale
 // per TUTTI i canali con tipo asta_fisica (Cambi, Bolaffi, Wannenes, Libero,
 // e qualsiasi canale futuro dello stesso tipo), nessun nome cablato. Il PDF

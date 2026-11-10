@@ -43,6 +43,7 @@ import { FiltroTag } from "@/components/tag/filtro-tag";
 import { BarraFiltri, CampoFiltro, Scorciatoia, type ChipFiltro } from "@/components/filtri/barra-filtri";
 import { MenuViste } from "@/components/filtri/menu-viste";
 import { BarraSelezione } from "@/components/filtri/barra-selezione";
+import { EliminaSkuMultipli } from "@/components/magazzino/elimina-sku-multipli";
 import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
 import type { TagBreve } from "@/db/tag-queries";
 import { leggiTagParam, scriviTagParam } from "@/lib/tag-filtro";
@@ -518,6 +519,7 @@ export function VistaMagazzino({
     [soloDaSistemare, righeLocal, daSistemare]
   );
   // Blocco su portale in blocco (Altre azioni)
+  const [dialogEliminaAperto, setDialogEliminaAperto] = useState(false);
   const [dialogBloccoAperto, setDialogBloccoAperto] = useState<"blocca" | "sblocca" | null>(null);
   const [canaliBlocco, setCanaliBlocco] = useState<number[]>([]);
 
@@ -563,6 +565,7 @@ export function VistaMagazzino({
   // src/lib/selezione-multipla.ts.
   const { selezionati, setSelezionati, gestisciSeleziona, segnalaShift, selezionaTutti } =
     useSelezioneMultipla<number>(righeMostrate.map((r) => r.id));
+  const idsSelezionati = useMemo(() => Array.from(selezionati), [selezionati]);
   const [errore, setErrore] = useState<string | null>(null);
   const [undoSlot, setUndoSlot] = useState<UndoSlot | null>(null);
 
@@ -1121,27 +1124,40 @@ export function VistaMagazzino({
             <Warehouse /> {spostaInCorso ? "Sposto…" : "Sposta in deposito"}
           </Button>
 
-          {canaliStatici.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline" aria-label="Altre azioni">
-                  <Ellipsis /> Altro
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-72">
-                <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => setDialogBloccoAperto("blocca")}>
-                  <span className="font-medium">Ritira da portali…</span>
-                  <span className="text-xs text-muted-foreground">Toglie questi sku dai portali che scegli (anche più insieme).</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => setDialogBloccoAperto("sblocca")}>
-                  <span className="font-medium">Rimetti in vendita su portali…</span>
-                  <span className="text-xs text-muted-foreground">Questi sku tornano disponibili sui portali che scegli.</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" aria-label="Altre azioni">
+                <Ellipsis /> Altro
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72">
+              {canaliStatici.length > 0 && (
+                <>
+                  <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => setDialogBloccoAperto("blocca")}>
+                    <span className="font-medium">Ritira da portali…</span>
+                    <span className="text-xs text-muted-foreground">Toglie questi sku dai portali che scegli (anche più insieme).</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => setDialogBloccoAperto("sblocca")}>
+                    <span className="font-medium">Rimetti in vendita su portali…</span>
+                    <span className="text-xs text-muted-foreground">Questi sku tornano disponibili sui portali che scegli.</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              <DropdownMenuItem className="flex-col items-start gap-0.5 text-destructive focus:text-destructive" onSelect={() => setDialogEliminaAperto(true)}>
+                <span className="font-medium">Elimina sku…</span>
+                <span className="text-xs text-muted-foreground">Cancella gli sku per intero (con anteprima e backup).</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </BarraSelezione>
       )}
+      <EliminaSkuMultipli
+        aperto={dialogEliminaAperto}
+        onChiudi={() => setDialogEliminaAperto(false)}
+        skuIds={idsSelezionati}
+        onFatto={(t) => { setErrore(null); setInfoOk(t); setSelezionati(new Set()); }}
+      />
 
       <div className="max-h-[calc(100vh-12rem)] min-h-64 overflow-auto rounded-xl border">
         {righeMostrate.length === 0 ? (

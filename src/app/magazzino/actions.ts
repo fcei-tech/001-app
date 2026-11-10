@@ -2,10 +2,12 @@
 
 import { getCampiPersonalizzati, impostaCampoInBlocco, impostaValoriSku, ripristinaCampoInBlocco, type PrecedenteCampoBlocco } from "@/db/campi-personalizzati-queries";
 import { normalizzaValoreCampo } from "@/lib/campi-personalizzati";
+import { prenotaBlocco, prossimoSkuLibero, rilasciaBlocco, getBlocchiConUso } from "@/db/codici-sku-queries";
+import { DIMENSIONE_BLOCCO_STANDARD } from "@/lib/codici-sku";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { bloccoSkuCanale, esposizioneCanale, fotoSku, movimentiMagazzino, proprietari, sku, storicoPortale, overridePortale, ubicazioni } from "@/db/schema";
+import { batchLotti, bloccoSkuCanale, esposizioneCanale, fotoSku, movimentiMagazzino, proprietari, silenziamentiErrore, sku, skuTag, storicoPortale, overridePortale, ubicazioni } from "@/db/schema";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { cercaCandidatiDuplicati, getDisponibileSku, getImpegnatoPerSku } from "@/db/queries";
 import { CAUSALE_CORREZIONE, CAUSALE_MODIFICA } from "@/lib/giacenza";
@@ -87,12 +89,7 @@ function numeroOVuoto(v: FormDataEntryValue | null): string | null {
 }
 
 async function prossimoSkuCode(): Promise<string> {
-  const [{ max }] = await db
-    .select({ max: sql<number>`coalesce(max(cast(substring(${sku.skuCode} from 3) as integer)), 0)`.mapWith(Number) })
-    .from(sku)
-    .where(sql`${sku.skuCode} ~ '^Z-[0-9]+$'`);
-  const prossimo = (max ?? 0) + 1;
-  return `Z-${String(prossimo).padStart(5, "0")}`;
+  return prossimoSkuLibero();
 }
 
 export async function creaNuovoSku(formData: FormData) {
@@ -527,6 +524,8 @@ export async function eliminaSku(formData: FormData) {
 
   await db.transaction(async (tx) => {
     await tx.delete(fotoSku).where(eq(fotoSku.skuId, id));
+    await tx.delete(skuTag).where(eq(skuTag.skuId, id));
+    await tx.delete(silenziamentiErrore).where(eq(silenziamentiErrore.skuId, id));
     await tx.delete(storicoPortale).where(eq(storicoPortale.skuId, id));
     await tx.delete(overridePortale).where(eq(overridePortale.skuId, id));
     await tx.delete(esposizioneCanale).where(eq(esposizioneCanale.skuId, id));
@@ -539,6 +538,85 @@ export async function eliminaSku(formData: FormData) {
   redirect("/?skueliminato=1");
 }
 
+
+// --- Eliminazione MULTIPLA di sku (Release 10, 2026-11-10) ----------------
+// Due passi: anteprima (cosa si puo' eliminare e cosa no, con il motivo) e
+// conferma. Uno sku inserito in un batch NON si elimina (prima va tolto dal
+// batch). Prima di cancellare si scrive un backup su disco.
+export type VoceAnteprimaEliminazione = {
+  id: number;
+  skuCode: string;
+  artista: string;
+  opera: string;
+  foto: number;
+  movimenti: number;
+  pezzi: number;
+  eliminabile: boolean;
+  motivo?: string;
+};
+
+export async function anteprimaEliminaSku(skuIds: number[]): Promise<{ ok: boolean; errore?: string; voci: VoceAnteprimaEliminazione[] }> {
+  try {
+    if (!skuIds.length) return { ok: false, errore: "Nessuno sku selezionato", voci: [] };
+    const righe = await db.select({ id: sku.id, skuCode: sku.skuCode, artista: sku.artista, opera: sku.opera }).from(sku).where(inArray(sku.id, skuIds));
+    const foto = await db.select({ skuId: fotoSku.skuId, n: sql<number>`count(*)::int` }).from(fotoSku).where(inArray(fotoSku.skuId, skuIds)).groupBy(fotoSku.skuId);
+    const mov = await db
+      .select({ skuId: movimentiMagazzino.skuId, n: sql<number>`count(*)::int`, pezzi: sql<number>`coalesce(sum(${movimentiMagazzino.quantitaDelta}),0)::int` })
+      .from(movimentiMagazzino)
+      .where(inArray(movimentiMagazzino.skuId, skuIds))
+      .groupBy(movimentiMagazzino.skuId);
+    const lotti = await db.select({ skuId: batchLotti.skuId, n: sql<number>`count(*)::int` }).from(batchLotti).where(inArray(batchLotti.skuId, skuIds)).groupBy(batchLotti.skuId);
+    const mf = new Map(foto.map((r) => [r.skuId, r.n]));
+    const mm = new Map(mov.map((r) => [r.skuId, r]));
+    const ml = new Map(lotti.map((r) => [r.skuId, r.n]));
+    const voci: VoceAnteprimaEliminazione[] = righe
+      .map((r) => {
+        const nl = ml.get(r.id) ?? 0;
+        return {
+          id: r.id,
+          skuCode: r.skuCode,
+          artista: r.artista,
+          opera: r.opera,
+          foto: mf.get(r.id) ?? 0,
+          movimenti: mm.get(r.id)?.n ?? 0,
+          pezzi: mm.get(r.id)?.pezzi ?? 0,
+          eliminabile: nl === 0,
+          motivo: nl > 0 ? `E' in ${nl} ${nl === 1 ? "batch" : "batch"}: toglilo prima dal batch` : undefined,
+        };
+      })
+      .sort((a, b) => a.skuCode.localeCompare(b.skuCode));
+    return { ok: true, voci };
+  } catch (e) {
+    return { ok: false, errore: e instanceof Error ? e.message : "Errore sconosciuto", voci: [] };
+  }
+}
+
+export async function eliminaSkuMultipli(skuIds: number[]): Promise<{ ok: boolean; errore?: string; eliminati: number; saltati: number; backup?: string }> {
+  try {
+    const ant = await anteprimaEliminaSku(skuIds);
+    if (!ant.ok) return { ok: false, errore: ant.errore, eliminati: 0, saltati: 0 };
+    const ids = ant.voci.filter((v) => v.eliminabile).map((v) => v.id);
+    const saltati = ant.voci.length - ids.length;
+    if (!ids.length) return { ok: false, errore: "Nessuno sku eliminabile fra quelli scelti", eliminati: 0, saltati };
+    const { scriviBackupSuDisco } = await import("@/db/backup");
+    const b = await scriviBackupSuDisco();
+    await db.transaction(async (tx) => {
+      await tx.delete(fotoSku).where(inArray(fotoSku.skuId, ids));
+      await tx.delete(skuTag).where(inArray(skuTag.skuId, ids));
+      await tx.delete(silenziamentiErrore).where(inArray(silenziamentiErrore.skuId, ids));
+      await tx.delete(storicoPortale).where(inArray(storicoPortale.skuId, ids));
+      await tx.delete(overridePortale).where(inArray(overridePortale.skuId, ids));
+      await tx.delete(esposizioneCanale).where(inArray(esposizioneCanale.skuId, ids));
+      await tx.delete(bloccoSkuCanale).where(inArray(bloccoSkuCanale.skuId, ids));
+      await tx.delete(movimentiMagazzino).where(inArray(movimentiMagazzino.skuId, ids));
+      await tx.delete(sku).where(inArray(sku.id, ids));
+    });
+    revalidatePath("/");
+    return { ok: true, eliminati: ids.length, saltati, backup: b.percorso };
+  } catch (e) {
+    return { ok: false, errore: e instanceof Error ? e.message : "Errore sconosciuto", eliminati: 0, saltati: 0 };
+  }
+}
 
 // --- Spostamenti fra depositi (Release 2) ---------------------------------
 // Uno spostamento e' SEMPRE una coppia di movimenti (uscita dal deposito di
@@ -848,4 +926,54 @@ export async function annullaMovimentiMultipli(
   } catch (e) {
     return { ok: false, errore: `Annulla non riuscito: ${e instanceof Error ? e.message : "errore"}` };
   }
+}
+
+
+// --- Codici sku: prossimo libero e blocchi prenotati (Release 10) ----------
+export async function getStatoCodiciSku() {
+  const [prossimo, blocchi] = await Promise.all([prossimoSkuLibero(), getBlocchiConUso()]);
+  return { prossimo, blocchi };
+}
+
+export async function prenotaCodiciAction(quanti: number): Promise<{ ok: boolean; errore?: string; da?: string; a?: string }> {
+  try {
+    const n = Math.floor(Number(quanti) || DIMENSIONE_BLOCCO_STANDARD);
+    if (n < 1 || n > 500) return { ok: false, errore: "Scegli da 1 a 500 codici" };
+    const b = await prenotaBlocco(n);
+    revalidatePath("/");
+    return { ok: true, da: `Z-${String(b.da).padStart(5, "0")}`, a: `Z-${String(b.a).padStart(5, "0")}` };
+  } catch (e) {
+    return { ok: false, errore: e instanceof Error ? e.message : "Errore sconosciuto" };
+  }
+}
+
+export async function rilasciaCodiciAction(id: string): Promise<{ ok: boolean; errore?: string }> {
+  try {
+    await rilasciaBlocco(id);
+    revalidatePath("/");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, errore: e instanceof Error ? e.message : "Errore sconosciuto" };
+  }
+}
+
+
+// --- Regola dei tre valori: "Ripristina valore da Excel" (Release 10) -------
+const CAMPI_RIPRISTINABILI = ["artista", "opera", "larghezza", "altezza", "supporto", "anno", "note", "valoreCarico", "prezzoEbay", "prezzoCatawiki", "riservaCatawiki"] as const;
+
+export async function ripristinaDaExcelAction(formData: FormData) {
+  const id = Number(formData.get("id"));
+  const campo = String(formData.get("campo") ?? "");
+  if (!id || !(CAMPI_RIPRISTINABILI as readonly string[]).includes(campo)) throw new Error("Richiesta non valida");
+  const riga = await db.query.sku.findFirst({ where: eq(sku.id, id) });
+  const valoriExcel = (riga?.valoriExcel ?? {}) as Record<string, string>;
+  const valore = valoriExcel[campo];
+  if (!riga || valore === undefined) throw new Error("Nessun valore da Excel per questo campo");
+  await db
+    .update(sku)
+    .set({ [campo]: valore, updatedAt: new Date() })
+    .where(eq(sku.id, id));
+  revalidatePath(`/magazzino/${id}`);
+  revalidatePath("/");
+  redirect(`/magazzino/${id}?salvato=1`);
 }

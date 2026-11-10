@@ -171,6 +171,15 @@ export const sku = pgTable("sku", {
   // Chiave assente = vuoto.
   campiPersonalizzati: jsonb("campi_personalizzati").notNull().default({}),
 
+  // Ultimo valore letto da STOCK FP / STOCK FOGLI CV per ciascun campo
+  // (Release 10, "regola dei tre valori"): { campo: valore }. Serve a capire,
+  // alla reimportazione, se a cambiare e' stato Excel, BATCH o entrambi, e al
+  // pulsante "Ripristina valore da Excel". Vuoto = mai importato.
+  valoriExcel: jsonb("valori_excel").notNull().default({}),
+  // Quando lo sku e' stato "riportato" su Excel (importato da li' oppure
+  // segnato dopo aver scaricato il file righe). Null = ancora da riportare.
+  riportatoExcelAt: timestamp("riportato_excel_at"),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

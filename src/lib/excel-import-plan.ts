@@ -9,14 +9,25 @@
 // - sku creati/gestiti nel software ma assenti da questo file NON vengono
 //   mai toccati/orfanati
 // - un campo (prezzo, anagrafica) non compilato in Excel non cancella mai
-//   un valore gia' presente nel software - si aggiorna un campo SOLO se il
-//   valore Excel e' non vuoto e diverso da quello attuale
+//   un valore gia' presente nel software
+// - REGOLA DEI TRE VALORI (Release 10, 2026-11-10, CAMBIO DI ROTTA rispetto
+//   a "aggiorna se Excel non vuoto e diverso"): per ogni sku si ricorda
+//   l'ultimo valore letto da Excel (sku.valoriExcel). Alla reimportazione, per
+//   ciascun campo: Excel invariato dall'ultimo import -> resta il valore di
+//   BATCH; Excel cambiato e campo non toccato in BATCH -> si aggiorna;
+//   cambiati entrambi (e diversi) -> CONFLITTO, lo decide l'utente in anteprima
+//   (di base: tieni BATCH)
+// - CODICE GIA' PRESENTE ma con artista/opera diversi (stesso codice usato per
+//   un altro poster): conflitto di codice, l'utente sceglie per ciascuno
+//   Sovrascrivi / Rinomina (nuovo codice libero) / Ignora; finche' non e'
+//   deciso non si scrive nulla
 // - va sempre mostrata un'anteprima completa PRIMA di scrivere, con
 //   conferma esplicita dell'utente (nessuna scrittura silenziosa)
 
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { movimentiMagazzino, proprietari, sku } from "@/db/schema";
+import { impostazioniApp, movimentiMagazzino, proprietari, sku } from "@/db/schema";
+import { CHIAVE_CODICI_PRENOTATI, formattaCodice, normalizzaBlocchi, primoNumeroLibero } from "./codici-sku";
 import type { ProprietaImport, RigaGrezza } from "./excel-import";
 
 type SkuEsistente = {
@@ -33,11 +44,14 @@ type SkuEsistente = {
   prezzoEbay: string | null;
   prezzoCatawiki: string | null;
   riservaCatawiki: string | null;
+  valoriExcel: unknown;
 };
 
 export type OperazioneNuovoSku = {
   tipo: "nuovo_sku";
   skuCode: string;
+  // Valorizzato se lo sku nasce da "Rinomina": il codice vero si assegna in scrittura.
+  rinominaDa?: string;
   artista: string;
   opera: string;
   larghezza: string | null;
@@ -76,10 +90,41 @@ export type OperazioneAggiornamentoCampi = {
   campi: CampoCambiato[];
 };
 
+export type ConflittoCampo = {
+  chiave: string; // `${skuCode}:${campo}`
+  skuId: number;
+  skuCode: string;
+  artista: string;
+  opera: string;
+  campo: string;
+  etichetta: string;
+  valoreBatch: string | null;
+  valoreExcel: string;
+};
+
+export type ConflittoCodice = {
+  skuCode: string;
+  esistente: { artista: string; opera: string };
+  excel: { artista: string; opera: string };
+};
+
+export type DecisioniImport = {
+  codici: Record<string, "sovrascrivi" | "rinomina" | "ignora">;
+  campi: Record<string, "excel" | "batch">;
+};
+
+export type ScritturaValoriExcel = { skuId: number; valori: Record<string, string> };
+
 export type AnteprimaImport = {
   nuoviSku: OperazioneNuovoSku[];
   movimenti: OperazioneMovimento[];
   aggiornamenti: OperazioneAggiornamentoCampi[];
+  conflittiCampi: ConflittoCampo[];
+  conflittiCodice: ConflittoCodice[];
+  // Codici scelti con "Rinomina": il vecchio resta nel file Excel, lo sku nuovo ha un codice libero.
+  rinominati: { vecchio: string }[];
+  // Interno: valori Excel da memorizzare per sku (regola dei tre valori).
+  valoriExcelDaSalvare: ScritturaValoriExcel[];
   skuNonToccatiCount: number;
   righeLetteCount: number;
 };
@@ -169,6 +214,7 @@ async function caricaContestoDb() {
       prezzoEbay: sku.prezzoEbay,
       prezzoCatawiki: sku.prezzoCatawiki,
       riservaCatawiki: sku.riservaCatawiki,
+      valoriExcel: sku.valoriExcel,
     })
     .from(sku);
   const mappaSku = new Map<string, SkuEsistente>(tuttiSku.map((s) => [s.skuCode, s]));
@@ -211,8 +257,55 @@ const ETICHETTE_CAMPI: Record<string, string> = {
   riservaCatawiki: "Riserva Catawiki",
 };
 
-export async function calcolaAnteprima(righe: RigaGrezza[]): Promise<AnteprimaImport> {
+function normalizzaTesto(t: string | null | undefined): string {
+  return (t ?? "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function bigrammi(t: string): Map<string, number> {
+  const m = new Map<string, number>();
+  const x = ` ${t} `;
+  for (let i = 0; i < x.length - 1; i++) {
+    const b = x.slice(i, i + 2);
+    m.set(b, (m.get(b) ?? 0) + 1);
+  }
+  return m;
+}
+
+// Somiglianza 0..1 fra due testi (coefficiente di Dice sui bigrammi).
+export function somiglianzaTesti(a: string | null | undefined, b: string | null | undefined): number {
+  const x = normalizzaTesto(a);
+  const y = normalizzaTesto(b);
+  if (x === y) return 1;
+  if (!x || !y) return 1; // un lato vuoto non e' una prova di poster diverso
+  const bx = bigrammi(x);
+  const by = bigrammi(y);
+  let comuni = 0;
+  let tx = 0;
+  let ty = 0;
+  for (const v of bx.values()) tx += v;
+  for (const v of by.values()) ty += v;
+  for (const [k, v] of bx) comuni += Math.min(v, by.get(k) ?? 0);
+  return (2 * comuni) / (tx + ty);
+}
+
+const SOGLIA_STESSO_POSTER = 0.5;
+
+function valoriExcelDi(s: SkuEsistente): Record<string, string> {
+  const v = s.valoriExcel;
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, string>) : {};
+}
+
+function uguali(decimale: boolean, a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return decimale ? !decimaleDiverso(a, b) : !testoDiverso(a, b);
+}
+
+export async function calcolaAnteprima(righe: RigaGrezza[], decisioni?: DecisioniImport): Promise<AnteprimaImport> {
   const { mappaSku, mappaQuantita } = await caricaContestoDb();
+  const conflittiCampi: ConflittoCampo[] = [];
+  const conflittiCodice: ConflittoCodice[] = [];
+  const rinominati: { vecchio: string }[] = [];
+  const valoriExcelDaSalvare: ScritturaValoriExcel[] = [];
 
   const perSku = new Map<string, RigaGrezza[]>();
   for (const r of righe) {
@@ -228,16 +321,48 @@ export async function calcolaAnteprima(righe: RigaGrezza[]): Promise<AnteprimaIm
   for (const [skuCode, righeSku] of perSku) {
     const esistente = mappaSku.get(skuCode);
 
-    if (!esistente) {
+    // Conflitto di codice: stesso codice, ma artista/opera di un altro poster.
+    let forzaExcel = false;
+    let comeRinomina = false;
+    if (esistente) {
+      const valoriRiga = unisciValoriCampi(righeSku);
+      const exArtista = valoriRiga.get("artista")?.valore ?? null;
+      const exOpera = valoriRiga.get("opera")?.valore ?? null;
+      const salvati = valoriExcelDi(esistente);
+      const excelInvariato =
+        (exArtista === null || salvati.artista === exArtista) && (exOpera === null || salvati.opera === exOpera);
+      const diverso =
+        !excelInvariato &&
+        (somiglianzaTesti(exArtista, esistente.artista) < SOGLIA_STESSO_POSTER ||
+          somiglianzaTesti(exOpera, esistente.opera) < SOGLIA_STESSO_POSTER);
+      if (diverso) {
+        const scelta = decisioni?.codici[skuCode];
+        if (!scelta) {
+          conflittiCodice.push({
+            skuCode,
+            esistente: { artista: esistente.artista, opera: esistente.opera },
+            excel: { artista: exArtista ?? "", opera: exOpera ?? "" },
+          });
+          continue;
+        }
+        if (scelta === "ignora") continue;
+        if (scelta === "sovrascrivi") forzaExcel = true;
+        if (scelta === "rinomina") comeRinomina = true;
+      }
+    }
+
+    if (!esistente || comeRinomina) {
       // Sku mai visto: stessa fusione FP+CV usata per gli aggiornamenti
       // (vedi unisciValoriCampi), cosi' uno sku presente su entrambi i
       // fogli fin dal primo import nasce gia' con tutti i dati disponibili
       // invece di richiedere un aggiornamento al giro successivo.
       const valori = unisciValoriCampi(righeSku);
       const campo = (nome: string): string | null => valori.get(nome)?.valore ?? null;
+      if (comeRinomina) rinominati.push({ vecchio: skuCode });
       nuoviSku.push({
         tipo: "nuovo_sku",
-        skuCode,
+        skuCode: comeRinomina ? `__rinomina__${skuCode}` : skuCode,
+        rinominaDa: comeRinomina ? skuCode : undefined,
         artista: campo("artista")!,
         opera: campo("opera")!,
         larghezza: campo("larghezza"),
@@ -282,13 +407,40 @@ export async function calcolaAnteprima(righe: RigaGrezza[]): Promise<AnteprimaIm
     // cliente) - unisciValoriCampi gia' ignora i valori nulli.
     const valoriFinali = unisciValoriCampi(righeSku);
     const campi: CampoCambiato[] = [];
+    const salvati = valoriExcelDi(esistente);
+    const nuoviSalvati: Record<string, string> = {};
     for (const [campo, { decimale, valore }] of valoriFinali) {
       const attuale = esistente[campo as keyof SkuEsistente] as string | null;
-      const cambiato = decimale ? decimaleDiverso(attuale, valore) : testoDiverso(attuale, valore);
-      if (cambiato) {
+      // Ultimo valore letto da Excel; per gli sku mai importati con questa
+      // regola si parte dal valore attuale (= comportamento di prima).
+      const ultimo = (salvati[campo] ?? null) !== null ? salvati[campo] : attuale;
+      if (salvati[campo] !== valore) nuoviSalvati[campo] = valore;
+      if (uguali(decimale, ultimo, valore)) continue; // Excel invariato: resta BATCH
+      if (uguali(decimale, attuale, valore)) continue; // gia' uguale
+      const batchToccato = !uguali(decimale, attuale, ultimo);
+      if (forzaExcel || !batchToccato) {
         campi.push({ campo, etichetta: ETICHETTE_CAMPI[campo], da: attuale, a: valore });
+        continue;
+      }
+      // Cambiati entrambi e diversi: lo decide l'utente (di base tieni BATCH).
+      const chiave = `${skuCode}:${campo}`;
+      const scelta = decisioni?.campi[chiave];
+      if (scelta === "excel") campi.push({ campo, etichetta: ETICHETTE_CAMPI[campo], da: attuale, a: valore });
+      else if (scelta !== "batch") {
+        conflittiCampi.push({
+          chiave,
+          skuId: esistente.id,
+          skuCode,
+          artista: esistente.artista,
+          opera: esistente.opera,
+          campo,
+          etichetta: ETICHETTE_CAMPI[campo],
+          valoreBatch: attuale,
+          valoreExcel: valore,
+        });
       }
     }
+    valoriExcelDaSalvare.push({ skuId: esistente.id, valori: nuoviSalvati });
 
     if (campi.length > 0) {
       aggiornamenti.push({
@@ -309,6 +461,10 @@ export async function calcolaAnteprima(righe: RigaGrezza[]): Promise<AnteprimaIm
     nuoviSku,
     movimenti,
     aggiornamenti,
+    conflittiCampi,
+    conflittiCodice,
+    rinominati,
+    valoriExcelDaSalvare,
     skuNonToccatiCount,
     righeLetteCount: righe.length,
   };
@@ -321,7 +477,11 @@ export async function eseguiImport(anteprima: AnteprimaImport): Promise<{
   skuCreati: number;
   movimentiCreati: number;
   skuAggiornati: number;
+  rinominati: { vecchio: string; nuovo: string }[];
 }> {
+  if (anteprima.conflittiCampi.length > 0 || anteprima.conflittiCodice.length > 0) {
+    throw new Error("Ci sono conflitti non ancora decisi: scegli per ciascuno cosa fare.");
+  }
   const tipoPoster = await db.query.tipiOggetto.findFirst({
     where: (t, { eq: eqFn }) => eqFn(t.nome, "Poster"),
   });
@@ -348,13 +508,36 @@ export async function eseguiImport(anteprima: AnteprimaImport): Promise<{
   if (!depositoDefault) throw new Error("Nessun deposito aziendale attivo per registrare i movimenti di import.");
 
   let movimentiCreati = 0;
+  const rinominatiFatti: { vecchio: string; nuovo: string }[] = [];
+  const adesso = new Date();
+  const CAMPI_EXCEL = ["artista", "opera", "larghezza", "altezza", "supporto", "anno", "note", "valoreCarico", "prezzoEbay", "prezzoCatawiki", "riservaCatawiki"] as const;
 
   await db.transaction(async (tx) => {
-    for (const op of anteprima.nuoviSku) {
+    // I "rinominati" per ultimi: il codice libero si calcola dopo aver creato
+    // gli sku con codice proprio del file.
+    const ordinati = [...anteprima.nuoviSku].sort((a, b) => Number(!!a.rinominaDa) - Number(!!b.rinominaDa));
+    for (const op of ordinati) {
+      let skuCodeFinale = op.skuCode;
+      if (op.rinominaDa) {
+        const [{ max }] = await tx
+          .select({ max: sql<number>`coalesce(max(cast(substring(${sku.skuCode} from 3) as integer)), 0)`.mapWith(Number) })
+          .from(sku)
+          .where(sql`${sku.skuCode} ~ '^Z-[0-9]+$'`);
+        const riga = await tx.query.impostazioniApp.findFirst({ where: eq(impostazioniApp.chiave, CHIAVE_CODICI_PRENOTATI) });
+        skuCodeFinale = formattaCodice(primoNumeroLibero(max ?? 0, normalizzaBlocchi(riga?.valore)));
+        rinominatiFatti.push({ vecchio: op.rinominaDa, nuovo: skuCodeFinale });
+      }
+      const valoriExcel: Record<string, string> = {};
+      for (const c of CAMPI_EXCEL) {
+        const v = op[c];
+        if (v !== null && v !== undefined) valoriExcel[c] = v;
+      }
       const [nuovo] = await tx
         .insert(sku)
         .values({
-          skuCode: op.skuCode,
+          valoriExcel,
+          riportatoExcelAt: adesso,
+          skuCode: skuCodeFinale,
           artista: op.artista,
           opera: op.opera,
           larghezza: op.larghezza,
@@ -403,11 +586,24 @@ export async function eseguiImport(anteprima: AnteprimaImport): Promise<{
         .set({ ...set, updatedAt: new Date() })
         .where(eq(sku.id, op.skuId));
     }
+
+    // Regola dei tre valori: memorizza l'ultimo valore letto da Excel e
+    // segna come "riportati" gli sku che nel file ci sono davvero.
+    for (const w of anteprima.valoriExcelDaSalvare) {
+      await tx
+        .update(sku)
+        .set({
+          valoriExcel: sql`${sku.valoriExcel} || ${JSON.stringify(w.valori)}::jsonb`,
+          riportatoExcelAt: sql`coalesce(${sku.riportatoExcelAt}, now())`,
+        })
+        .where(eq(sku.id, w.skuId));
+    }
   });
 
   return {
     skuCreati: anteprima.nuoviSku.length,
     movimentiCreati,
     skuAggiornati: anteprima.aggiornamenti.length,
+    rinominati: rinominatiFatti,
   };
 }

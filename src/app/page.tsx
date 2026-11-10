@@ -9,6 +9,9 @@ import { getCanaliStatici } from "@/db/esposizione-queries";
 import { getDaSistemarePerSku } from "@/db/portale-queries";
 import { VistaMagazzino } from "@/components/magazzino/vista-magazzino";
 import { getTagBrevi } from "@/db/tag-queries";
+import { CodiciSku } from "@/components/magazzino/codici-sku";
+import { getBlocchiConUso, prossimoSkuLibero } from "@/db/codici-sku-queries";
+import { DIMENSIONE_BLOCCO_STANDARD } from "@/lib/codici-sku";
 import { leggiTagParam } from "@/lib/tag-filtro";
 
 // Whitelist di validazione del parametro URL ?ordina= (2026-09-23, estesa a
@@ -63,7 +66,7 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
 
   const regolePrezzi = await getRegolePrezzi();
   const campiPersonalizzati = await getCampiPersonalizzati();
-  const [righe, tipi, proprietari, ubicazioni, daSistemare, canaliStatici, tagDisponibili] = await Promise.all([
+  const [righe, tipi, proprietari, ubicazioni, daSistemare, canaliStatici, tagDisponibili, prossimoLibero, blocchiCodici] = await Promise.all([
     getMagazzino({ ricerca: q, tagIds, tipoId, condizione, proprietarioId, ubicazioneId, bloccato, disponibilita, senzaFoto, soloDatiMancanti, ordina, direzione }),
     getTipiOggetto(),
     getProprietariAttivi(),
@@ -71,6 +74,8 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
     getDaSistemarePerSku(),
     getCanaliStatici(),
     getTagBrevi(),
+    prossimoSkuLibero(),
+    getBlocchiConUso(),
   ]);
 
   return (
@@ -84,9 +89,11 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
           <div className="flex flex-col gap-1">
             <h1 className="text-xl font-semibold tracking-tight">Magazzino</h1>
             <p className="text-sm text-muted-foreground">{righe.length} sku {filtriAttivi ? "con questi filtri" : "totali"}</p>
+            <CodiciSku prossimo={prossimoLibero} blocchi={blocchiCodici} dimensioneStandard={DIMENSIONE_BLOCCO_STANDARD} />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild variant="secondary"><Link href="/importa-excel"><FileSpreadsheet /> Importa da Excel</Link></Button>
+            <Button asChild variant="secondary"><Link href="/righe-excel"><FileSpreadsheet /> Righe per Excel</Link></Button>
             <Button asChild variant="secondary"><Link href="/importa-foto"><Images /> Importa Foto</Link></Button>
             <Button asChild><Link href="/magazzino/nuovo"><Plus /> Nuovo sku</Link></Button>
           </div>
