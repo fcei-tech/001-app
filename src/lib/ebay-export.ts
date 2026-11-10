@@ -117,8 +117,9 @@ export function prezzoEbayTesto(x: number): string {
   const centesimi = Math.round(x * 100);
   return centesimi % 100 === 0 ? String(centesimi / 100) : (centesimi / 100).toFixed(2);
 }
-export function minimoOffertaTesto(prezzo: number): string {
-  return prezzoEbayTesto(prezzo * EBAY_CONFIG.minimoBestOffer);
+// percentuale = offerta minima in % del prezzo (regola modificabile, standard 50).
+export function minimoOffertaTesto(prezzo: number, percentuale: number = EBAY_CONFIG.minimoBestOffer * 100): string {
+  return prezzoEbayTesto((prezzo * percentuale) / 100);
 }
 
 export type MotivoScartoEbay = "prezzo_mancante" | "zero_foto" | "titolo_lungo";
@@ -146,7 +147,7 @@ function csvEbay(intestazione: readonly string[], righe: string[][]): string {
 
 export type NuovoEbay = { sku: SkuPerEbay; quantita: number; prezzo: number; foto: string[]; testo?: TestoEbay | null };
 
-export function generaCsvEbayAdd(nuovi: NuovoEbay[]): string {
+export function generaCsvEbayAdd(nuovi: NuovoEbay[], percentualeOffertaMinima?: number): string {
   const c = EBAY_CONFIG;
   const col = (n: (typeof EBAY_HEADER)[number]) => EBAY_HEADER.indexOf(n);
   const righe = nuovi.map((n) => {
@@ -162,7 +163,7 @@ export function generaCsvEbayAdd(nuovi: NuovoEbay[]): string {
     r[col("*Duration")] = c.duration;
     r[col("*StartPrice")] = prezzoEbayTesto(n.prezzo);
     r[col("BestOfferEnabled")] = c.bestOfferEnabled;
-    r[col("MinimumBestOfferPrice")] = minimoOffertaTesto(n.prezzo);
+    r[col("MinimumBestOfferPrice")] = minimoOffertaTesto(n.prezzo, percentualeOffertaMinima);
     r[col("*Quantity")] = String(n.quantita);
     r[col("*Location")] = c.location;
     r[col("ShippingProfileName")] = c.shippingProfileName;
@@ -174,10 +175,10 @@ export function generaCsvEbayAdd(nuovi: NuovoEbay[]): string {
 }
 
 export type ReviseEbay = { itemId: string; skuCode: string; pezzi: number; prezzo: number };
-export function generaCsvEbayRevise(rev: ReviseEbay[]): string {
+export function generaCsvEbayRevise(rev: ReviseEbay[], percentualeOffertaMinima?: number): string {
   return csvEbay(
     EBAY_HEADER_REVISE,
-    rev.map((r) => ["Revise", r.itemId, r.skuCode, prezzoEbayTesto(r.prezzo), minimoOffertaTesto(r.prezzo), String(r.pezzi)])
+    rev.map((r) => ["Revise", r.itemId, r.skuCode, prezzoEbayTesto(r.prezzo), minimoOffertaTesto(r.prezzo, percentualeOffertaMinima), String(r.pezzi)])
   );
 }
 

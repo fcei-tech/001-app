@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { getRegolePrezzi } from "@/db/impostazioni-app-queries";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft } from "lucide-react";
 import { Header } from "@/components/header";
@@ -53,6 +54,7 @@ import { BarraCanale } from "@/components/pubblicazione/barra-canale";
 import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
 import {
   risolviBatchCatawiki,
+  opzioniDaRegole,
   IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
   ETICHETTA_ERRORE_VALIDAZIONE,
   type ImpostazioniBatchCatawiki,
@@ -229,6 +231,7 @@ export default async function BatchPubblicazionePage({
     ...IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
     ...((batch.impostazioniBatch ?? {}) as Partial<ImpostazioniBatchCatawiki>),
   };
+  const regolePrezzi = await getRegolePrezzi();
   const [fotoMappaCatawiki, silenziamentiMappa] = isCatawiki
     ? await Promise.all([
         getFotoPerSkuIds(batch.lotti.map((l) => l.skuId)),
@@ -250,7 +253,8 @@ export default async function BatchPubblicazionePage({
             numeroFoto: fotoMappaCatawiki.get(l.skuId)?.length ?? 0,
           })
         ),
-        impostazioniCatawiki
+        impostazioniCatawiki,
+        opzioniDaRegole(regolePrezzi)
       )
     : [];
   const risoltaPerLottoId = new Map(righeRisolteCatawiki.map((r) => [r.batchLottoId, r]));

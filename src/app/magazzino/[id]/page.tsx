@@ -16,6 +16,9 @@ import { PortaliSku } from "./portali-sku";
 import { Consolida } from "@/components/sistema/consolida";
 import { getStatoPortaliSku } from "@/db/esposizione-queries";
 import { getTagBrevi, getTagIdsDiSku } from "@/db/tag-queries";
+import { getRegolePrezzi } from "@/db/impostazioni-app-queries";
+import { getCampiPersonalizzati } from "@/db/campi-personalizzati-queries";
+import { leggiValori } from "@/lib/campi-personalizzati";
 
 function formatData(d: Date) {
   return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
@@ -33,6 +36,8 @@ export default async function ModificaSkuPage({
   const { id } = await params;
   const skuId = Number(id);
   const sp = await searchParams;
+  const regole = await getRegolePrezzi();
+  const campiPersonalizzati = await getCampiPersonalizzati();
   const esito = sp.creato
     ? "creato"
     : sp.carico
@@ -69,7 +74,7 @@ export default async function ModificaSkuPage({
     <div className="min-h-full flex flex-col">
       <Header />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
-        <SchedaSkuForm item={item} tipi={tipi} disponibile={disponibile} esito={esito} tagDisponibili={tagDisponibili} tagIdsSku={tagIdsSku} />
+        <SchedaSkuForm item={item} tipi={tipi} disponibile={disponibile} esito={esito} tagDisponibili={tagDisponibili} tagIdsSku={tagIdsSku} regole={regole} campiPersonalizzati={campiPersonalizzati} valoriCampi={leggiValori(item.campiPersonalizzati)} />
 
         <Card className="mb-6">
           <CardHeader>

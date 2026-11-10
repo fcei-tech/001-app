@@ -22,7 +22,7 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/compon
 import { TableEmpty } from "@/components/ui/table-empty";
 import { Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert, Pencil, Ellipsis, Warehouse, ChevronDown } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
-import { aggiornaCampiSkuInline, spostaSkuInDeposito, correggiQuantita, annullaMovimenti, annullaMovimentiMultipli, togliDalRegistro } from "@/app/magazzino/actions";
+import { aggiornaCampiSkuInline, campoPersonalizzatoInBloccoAction, ripristinaCampoPersonalizzatoInBloccoAction, spostaSkuInDeposito, correggiQuantita, annullaMovimenti, annullaMovimentiMultipli, togliDalRegistro } from "@/app/magazzino/actions";
 import { CasellaRegistro } from "@/components/magazzino/casella-registro";
 import { GiacenzaSku } from "@/app/magazzino/[id]/giacenza-sku";
 import { CellaQuantita } from "@/components/magazzino/cella-quantita";
@@ -37,6 +37,8 @@ import {
 import { annullaEsposizioneAction, ritiraDaPortaliAction } from "@/app/pubblicazione/esposizione-actions";
 import type { DaSistemare } from "@/db/portale-queries";
 import { CellTesto, CellSelect, CellMisura } from "@/components/magazzino/editable-cell";
+import { CellaCampoPersonalizzato } from "@/components/magazzino/cella-campo-personalizzato";
+import type { CampoPersonalizzato } from "@/lib/campi-personalizzati";
 import { FiltroTag } from "@/components/tag/filtro-tag";
 import { BarraFiltri, CampoFiltro, Scorciatoia, type ChipFiltro } from "@/components/filtri/barra-filtri";
 import { MenuViste } from "@/components/filtri/menu-viste";
@@ -44,7 +46,7 @@ import { BarraSelezione } from "@/components/filtri/barra-selezione";
 import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
 import type { TagBreve } from "@/db/tag-queries";
 import { leggiTagParam, scriviTagParam } from "@/lib/tag-filtro";
-import { campiMancanti, ETICHETTA_CAMPO_MANCANTE, SPIEGAZIONE_CAMPO_MANCANTE } from "@/lib/campi-mancanti-pubblicazione";
+import { campiMancanti, ETICHETTA_CAMPO_MANCANTE, spiegazioneCampoMancante } from "@/lib/campi-mancanti-pubblicazione";
 
 const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"];
 
@@ -69,6 +71,10 @@ type ColonnaId =
   | "prezzoEbay"
   | "prezzoCatawiki"
   | "riservaCatawiki"
+  | "prezzoShopify"
+  | "prezzoSubito"
+  | "prezzoBidspirit"
+  | "riservaBidspirit"
   | "tag"
   | "note"
   | "stato"
@@ -95,6 +101,10 @@ const ETICHETTE_CAMPI: Record<CampoEditabileInline, string> = {
   prezzoEbay: "Prezzo eBay",
   prezzoCatawiki: "Prezzo Catawiki",
   riservaCatawiki: "Riserva Catawiki",
+  prezzoShopify: "Prezzo Shopify",
+  prezzoSubito: "Prezzo Subito",
+  prezzoBidspirit: "Prezzo Bidspirit",
+  riservaBidspirit: "Riserva Bidspirit",
 };
 
 // Campi proposti per la modifica in blocco. Esclude larghezza/altezza
@@ -104,6 +114,7 @@ const ETICHETTE_CAMPI: Record<CampoEditabileInline, string> = {
 const CAMPI_BULK = CAMPI_EDITABILI_INLINE.filter((c) => c !== "larghezza" && c !== "altezza" && c !== "tag");
 
 type RenderCtx = {
+  sogliaCatawiki: number;
   tipi: { id: number; nome: string }[];
   salvaTesto: (r: RigaMagazzino, campo: CampoEditabileInline, valore: string) => void;
   salvaMisura: (r: RigaMagazzino, larghezza: string, altezza: string) => void;
@@ -160,6 +171,10 @@ const MAPPA_ORDINABILI: Record<ColonnaId, ColonnaOrdinabile> = {
   prezzoEbay: "prezzoEbay",
   prezzoCatawiki: "prezzoCatawiki",
   riservaCatawiki: "riservaCatawiki",
+  prezzoShopify: "prezzoShopify",
+  prezzoSubito: "prezzoSubito",
+  prezzoBidspirit: "prezzoBidspirit",
+  riservaBidspirit: "riservaBidspirit",
   tag: "tag",
   note: "note",
   stato: "stato",
@@ -287,6 +302,22 @@ const COLONNE: DefinizioneColonna[] = [
     render: (r, ctx) => <CellTesto valore={r.riservaCatawiki} numerico allineaDestra visualizza={formatEuro} onSalva={(v) => ctx.salvaTesto(r, "riservaCatawiki", v)} />,
   },
   {
+    id: "prezzoShopify", etichetta: "Prezzo Shopify", defaultVisibile: false, allineaDestra: true,
+    render: (r, ctx) => <CellTesto valore={r.prezzoShopify} numerico allineaDestra visualizza={formatEuro} onSalva={(v) => ctx.salvaTesto(r, "prezzoShopify", v)} />,
+  },
+  {
+    id: "prezzoSubito", etichetta: "Prezzo Subito", defaultVisibile: false, allineaDestra: true,
+    render: (r, ctx) => <CellTesto valore={r.prezzoSubito} numerico allineaDestra visualizza={formatEuro} onSalva={(v) => ctx.salvaTesto(r, "prezzoSubito", v)} />,
+  },
+  {
+    id: "prezzoBidspirit", etichetta: "Prezzo Bidspirit", defaultVisibile: false, allineaDestra: true,
+    render: (r, ctx) => <CellTesto valore={r.prezzoBidspirit} numerico allineaDestra visualizza={formatEuro} onSalva={(v) => ctx.salvaTesto(r, "prezzoBidspirit", v)} />,
+  },
+  {
+    id: "riservaBidspirit", etichetta: "Riserva Bidspirit", defaultVisibile: false, allineaDestra: true,
+    render: (r, ctx) => <CellTesto valore={r.riservaBidspirit} numerico allineaDestra visualizza={formatEuro} onSalva={(v) => ctx.salvaTesto(r, "riservaBidspirit", v)} />,
+  },
+  {
     id: "tag", etichetta: "Tag", defaultVisibile: true,
     // Sola lettura (2026-10-30): i tag si cambiano dalla scheda sku o col bottone "Tag…".
     render: (r) => <span className="text-sm">{r.tag || <span className="text-muted-foreground">—</span>}</span>,
@@ -313,13 +344,13 @@ const COLONNE: DefinizioneColonna[] = [
     // solo nel title/tooltip, altrimenti la cella diventa larghissima con
     // piu' campi mancanti insieme.
     id: "datiMancanti", etichetta: "Dati mancanti", defaultVisibile: true,
-    render: (r) => {
-      const mancanti = campiMancanti(r);
+    render: (r, ctx) => {
+      const mancanti = campiMancanti(r, ctx.sogliaCatawiki);
       if (mancanti.length === 0) return <span className="text-muted-foreground">—</span>;
       return (
         <span
           className="inline-flex items-start gap-1 text-warning"
-          title={mancanti.map((m) => SPIEGAZIONE_CAMPO_MANCANTE[m]).join(" · ")}
+          title={mancanti.map((m) => spiegazioneCampoMancante(m, ctx.sogliaCatawiki)).join(" · ")}
         >
           <TriangleAlert className="size-3.5 mt-0.5 shrink-0" />
           <span className="text-xs font-medium">{mancanti.map((m) => ETICHETTA_CAMPO_MANCANTE[m]).join(", ")}</span>
@@ -438,7 +469,11 @@ export function VistaMagazzino({
   daSistemare,
   canaliStatici,
   tagDisponibili,
+  sogliaCatawiki,
+  campiPersonalizzati,
 }: {
+  campiPersonalizzati: CampoPersonalizzato[];
+  sogliaCatawiki: number;
   tagDisponibili: TagBreve[];
   daSistemare: Record<number, DaSistemare[]>;
   canaliStatici: { id: number; nome: string }[];
@@ -534,6 +569,9 @@ export function VistaMagazzino({
   const [campoBulk, setCampoBulk] = useState<CampoEditabileInline | "">("");
   const [valoreBulk, setValoreBulk] = useState<ValoreCampoInline>("");
   const [dialogBulkAperto, setDialogBulkAperto] = useState(false);
+  // Modifica in blocco di un campo personalizzato (2026-11-10)
+  const [campoBulkCp, setCampoBulkCp] = useState<CampoPersonalizzato | null>(null);
+  const [valoreBulkCp, setValoreBulkCp] = useState("");
   // Sposta selezionati in un deposito (Release 2)
   const [depositoBulk, setDepositoBulk] = useState("");
   const [dialogSpostaAperto, setDialogSpostaAperto] = useState(false);
@@ -634,6 +672,7 @@ export function VistaMagazzino({
   }
 
   const ctx: RenderCtx = {
+    sogliaCatawiki,
     correggiDaTabella,
     apriGiacenza: (r) => setGiacenzaSkuId(r.id),
     tipi,
@@ -644,9 +683,17 @@ export function VistaMagazzino({
     salvaBloccato: (r, valore) => salvaCampi([{ id: r.id, campi: { bloccatoVendita: valore } }], `${r.skuCode} ${valore ? "bloccato" : "sbloccato"} per la vendita`),
   };
 
-  function impostaColonna(id: ColonnaId, visibile: boolean) {
-    scriviColonneSalvate({ ...colonne, [id]: visibile });
+  function impostaColonna(id: string, visibile: boolean) {
+    scriviColonneSalvate({ ...colonne, [id]: visibile } as Record<ColonnaId, boolean>);
   }
+
+  // Colonne dei campi personalizzati (Release 9): una per campo, visibili di
+  // default; la scelta "nascosta" sta nella stessa preferenza delle altre
+  // colonne, sotto la chiave "cp_<id>" (assente = visibile).
+  const colonneCpVisibili = useMemo(
+    () => campiPersonalizzati.filter((c) => (colonne as Record<string, boolean | undefined>)[`cp_${c.id}`] !== false),
+    [campiPersonalizzati, colonne]
+  );
 
   // "Ripristina colonne predefinite" (2026-09-25, richiesta esplicita
   // cliente dopo aver toccato a mano ogni colonna nel menu "Colonne" e
@@ -825,6 +872,33 @@ export function VistaMagazzino({
     setValoreBulk("");
   }
 
+  async function confermaBulkCp() {
+    if (!campoBulkCp) return;
+    const campo = campoBulkCp;
+    const ids = Array.from(selezionati);
+    const valore = valoreBulkCp;
+    setCampoBulkCp(null);
+    setValoreBulkCp("");
+    setErrore(null);
+    const esito = await campoPersonalizzatoInBloccoAction(ids, campo.id, valore);
+    if (!esito.ok) {
+      setErrore(esito.errore ?? "Modifica non riuscita");
+      return;
+    }
+    const precedenti = esito.precedenti ?? [];
+    setUndoSlot({
+      descrizione: `${campo.nome} → ${valore.trim() === "" ? "(vuoto)" : campo.tipo === "si_no" ? (valore === "si" ? "Sì" : "No") : valore} (${ids.length} sku)`,
+      ripristina: async () => {
+        const e = await ripristinaCampoPersonalizzatoInBloccoAction(campo.id, precedenti);
+        if (!e.ok) setErrore(e.errore ?? "Annulla non riuscito");
+        setUndoSlot(null);
+        router.refresh();
+      },
+    });
+    setSelezionati(new Set());
+    router.refresh();
+  }
+
   async function confermaBulk() {
     if (!campoBulk) return;
     const ids = Array.from(selezionati);
@@ -881,6 +955,17 @@ export function VistaMagazzino({
                     onSelect={(e) => e.preventDefault()}
                   >
                     {c.etichetta}
+                  </DropdownMenuCheckboxItem>
+                ))}
+                {campiPersonalizzati.length > 0 && <DropdownMenuSeparator />}
+                {campiPersonalizzati.map((c) => (
+                  <DropdownMenuCheckboxItem
+                    key={`cp_${c.id}`}
+                    checked={(colonne as Record<string, boolean | undefined>)[`cp_${c.id}`] !== false}
+                    onCheckedChange={(v) => impostaColonna(`cp_${c.id}`, v === true)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {c.nome}
                   </DropdownMenuCheckboxItem>
                 ))}
                 <DropdownMenuSeparator />
@@ -1024,6 +1109,11 @@ export function VistaMagazzino({
               {CAMPI_BULK.map((c) => (
                 <DropdownMenuItem key={c} onSelect={() => apriModifica(c)}>{ETICHETTE_CAMPI[c]}…</DropdownMenuItem>
               ))}
+              {campiPersonalizzati.length > 0 && <DropdownMenuSeparator />}
+              {campiPersonalizzati.length > 0 && <DropdownMenuLabel>I tuoi campi</DropdownMenuLabel>}
+              {campiPersonalizzati.map((c) => (
+                <DropdownMenuItem key={`cp_${c.id}`} onSelect={() => { setValoreBulkCp(""); setCampoBulkCp(c); }}>{c.nome}…</DropdownMenuItem>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -1091,6 +1181,20 @@ export function VistaMagazzino({
                     />
                   );
                 })}
+                {colonneCpVisibili.map((c) => {
+                  const chiave = `cp_${c.id}` as ColonnaOrdinabile;
+                  return (
+                    <IntestazioneOrdinabile
+                      key={chiave}
+                      etichetta={c.nome}
+                      chiave={chiave}
+                      attiva={ordinamentoCorrente === chiave}
+                      direzione={direzioneAttuale}
+                      allineaDestra={c.tipo === "numero"}
+                      onOrdina={gestisciOrdinamento}
+                    />
+                  );
+                })}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1110,6 +1214,11 @@ export function VistaMagazzino({
                   {colonneVisibili.map((c) => (
                     <TableCell key={c.id} className={c.allineaDestra ? "text-right tabular-nums" : undefined}>
                       {c.render(r, ctx)}
+                    </TableCell>
+                  ))}
+                  {colonneCpVisibili.map((c) => (
+                    <TableCell key={`cp_${c.id}`} className={c.tipo === "numero" ? "text-right tabular-nums" : undefined}>
+                      <CellaCampoPersonalizzato skuId={r.id} campo={c} valore={r.campiPersonalizzati[String(c.id)]} />
                     </TableCell>
                   ))}
                 </TableRow>
@@ -1238,6 +1347,48 @@ export function VistaMagazzino({
           <DialogFooter>
             <Button type="button" variant="outline" onClick={chiudiModifica}>Annulla</Button>
             <Button type="button" disabled={!bulkPronto} onClick={confermaBulk}>Applica a {selezionati.size} sku</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={campoBulkCp !== null} onOpenChange={(a) => { if (!a) { setCampoBulkCp(null); setValoreBulkCp(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{campoBulkCp ? `${campoBulkCp.nome}: modifica ${selezionati.size} sku` : "Modifica in blocco"}</DialogTitle>
+            <DialogDescription>
+              Il valore viene scritto in tutti i {selezionati.size} sku selezionati. Lasciandolo vuoto il campo viene svuotato. Puoi annullare subito dopo.
+            </DialogDescription>
+          </DialogHeader>
+          {campoBulkCp && (campoBulkCp.tipo === "elenco" || campoBulkCp.tipo === "si_no") ? (
+            <select
+              aria-label="Nuovo valore"
+              value={valoreBulkCp}
+              onChange={(e) => setValoreBulkCp(e.target.value)}
+              className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <option value="">(vuoto: svuota il campo)</option>
+              {campoBulkCp.tipo === "si_no" ? (
+                <>
+                  <option value="si">Sì</option>
+                  <option value="no">No</option>
+                </>
+              ) : (
+                campoBulkCp.opzioni.map((o) => <option key={o} value={o}>{o}</option>)
+              )}
+            </select>
+          ) : (
+            <Input
+              value={valoreBulkCp}
+              onChange={(e) => setValoreBulkCp(e.target.value)}
+              inputMode={campoBulkCp?.tipo === "numero" ? "decimal" : undefined}
+              placeholder={campoBulkCp?.tipo === "numero" ? "Numero (vuoto = svuota)" : "Nuovo valore (vuoto = svuota)"}
+              aria-label="Nuovo valore"
+              autoFocus
+            />
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => { setCampoBulkCp(null); setValoreBulkCp(""); }}>Annulla</Button>
+            <Button type="button" onClick={confermaBulkCp}>Applica a {selezionati.size} sku</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

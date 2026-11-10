@@ -42,6 +42,8 @@ export async function getBaseSku() {
       opera: sku.opera,
       bloccatoVendita: sku.bloccatoVendita,
       prezzoEbay: sku.prezzoEbay,
+      prezzoShopify: sku.prezzoShopify,
+      prezzoSubito: sku.prezzoSubito,
       disponibile: sql`coalesce(sum(${movimentiMagazzino.quantitaDelta}), 0)`.mapWith(Number),
       impegnato: impegnatoSql().mapWith(Number),
     })

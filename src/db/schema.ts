@@ -157,6 +157,19 @@ export const sku = pgTable("sku", {
   prezzoEbay: numeric("prezzo_ebay", { precision: 10, scale: 2 }),
   prezzoCatawiki: numeric("prezzo_catawiki", { precision: 10, scale: 2 }),
   riservaCatawiki: numeric("riserva_catawiki", { precision: 10, scale: 2 }),
+  // Prezzi propri per i portali che di norma DERIVANO da un altro prezzo
+  // (Release 9, 2026-11-10, richiesta del cliente): se compilati valgono
+  // loro, se vuoti nei file va la regola di sempre (Shopify = prezzo eBay x
+  // sconto, Subito = prezzo eBay, Bidspirit = prezzo/riserva Catawiki).
+  prezzoShopify: numeric("prezzo_shopify", { precision: 10, scale: 2 }),
+  prezzoSubito: numeric("prezzo_subito", { precision: 10, scale: 2 }),
+  prezzoBidspirit: numeric("prezzo_bidspirit", { precision: 10, scale: 2 }),
+  riservaBidspirit: numeric("riserva_bidspirit", { precision: 10, scale: 2 }),
+
+  // Valori dei campi personalizzati (Release 9): { "<id campo>": valore }.
+  // Testo = stringa, numero = numero, elenco = una delle opzioni, si_no = boolean.
+  // Chiave assente = vuoto.
+  campiPersonalizzati: jsonb("campi_personalizzati").notNull().default({}),
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -520,3 +533,26 @@ export const batchLottiRelations = relations(batchLotti, ({ one }) => ({
   }),
   sku: one(sku, { fields: [batchLotti.skuId], references: [sku.id] }),
 }));
+
+// Impostazioni globali dell'app (Release 9): una riga per chiave, valore
+// jsonb. Oggi: "regole_prezzi" (sconto Shopify, soglia/riserva Catawiki,
+// offerta minima eBay, fasce quantita'). Riga assente = valori standard.
+export const impostazioniApp = pgTable("impostazioni_app", {
+  chiave: text("chiave").primaryKey(),
+  valore: jsonb("valore").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Campi personalizzati degli sku (Release 9, 2026-11-10): colonne aggiunte
+// dall'utente "stile Excel" (nome + tipo), mostrate in Magazzino e nella
+// scheda sku. Il valore sta in sku.campi_personalizzati (jsonb) sotto la
+// chiave = id del campo. tipo: testo | numero | elenco | si_no. opzioni:
+// solo per "elenco" (array di stringhe).
+export const campiPersonalizzati = pgTable("campi_personalizzati", {
+  id: serial("id").primaryKey(),
+  nome: text("nome").notNull().unique(),
+  tipo: text("tipo").notNull().default("testo"),
+  opzioni: jsonb("opzioni").notNull().default([]),
+  ordine: integer("ordine").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});

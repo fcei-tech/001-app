@@ -99,6 +99,20 @@
       "when": 1794233609367,
       "tag": "0013_nome_batch",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794297298034,
+      "tag": "0014_prezzi_per_portale_e_impostazioni",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1794297639715,
+      "tag": "0015_campi_personalizzati",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,7 @@
 // 3) override per lotto (prezzo/riserva/condizione - vince sempre sul
 //    livello 1, salvo il caso "riserva disattivata per tutto il batch" che
 //    ha priorita' massima, vedi sotto)
+import type { RegolePrezzi } from "./regole-prezzi-config";
 import { CATAWIKI_MOLTIPLICATORE_RISERVA_FALLBACK, CATAWIKI_SOGLIA_MINIMA_STIMA_IMPORT, type ProfiloSpedizioneCatawiki } from "./catawiki-config";
 
 export type ImpostazioniBatchCatawiki = {
@@ -117,7 +118,16 @@ function round2(n: number): number {
 // Opzioni di risoluzione (Release 4, Bidspirit): stessa logica di prezzo e
 // riserva di Catawiki, ma la soglia minima 200 vale SOLO per Catawiki.
 // soglia: null = nessuna soglia (Bidspirit); omessa = soglia Catawiki.
-export type OpzioniRisoluzione = { soglia?: number | null };
+export type OpzioniRisoluzione = { soglia?: number | null; moltiplicatoreRiserva?: number };
+
+// Opzioni di risoluzione Catawiki dalle regole prezzi in vigore (modificabili,
+// Release 9). Per Bidspirit: stesso, ma con soglia null (nessuna soglia).
+export function opzioniDaRegole(regole: RegolePrezzi, conSoglia = true): OpzioniRisoluzione {
+  return {
+    soglia: conSoglia ? regole.sogliaMinimaCatawiki : null,
+    moltiplicatoreRiserva: regole.moltiplicatoreRiservaCatawiki,
+  };
+}
 
 export function risolviLottoCatawiki(
   lotto: LottoPerRisoluzioneCatawiki,
@@ -171,7 +181,7 @@ export function risolviLottoCatawiki(
   if (impostazioni.riservaAttiva && stimaLotto !== null) {
     const riservaOverride = parseNumero(lotto.override?.riserva);
     const riservaSku = parseNumero(lotto.skuRiservaCatawiki);
-    const base = riservaOverride ?? riservaSku ?? round2(stimaLotto * CATAWIKI_MOLTIPLICATORE_RISERVA_FALLBACK);
+    const base = riservaOverride ?? riservaSku ?? round2(stimaLotto * (opzioni?.moltiplicatoreRiserva ?? CATAWIKI_MOLTIPLICATORE_RISERVA_FALLBACK));
     origineRiserva = riservaOverride !== null ? "lotto" : riservaSku !== null ? "sku" : "automatica";
     const conModificatore = round2(base + impostazioni.modificatoreRiservaEur);
     // Mai un valore <=0 (e mai 0 letterale, verrebbe letto come riserva

@@ -19,6 +19,10 @@ export const CAMPI_EDITABILI_INLINE = [
   "prezzoEbay",
   "prezzoCatawiki",
   "riservaCatawiki",
+  "prezzoShopify",
+  "prezzoSubito",
+  "prezzoBidspirit",
+  "riservaBidspirit",
 ] as const;
 
 export type CampoEditabileInline = (typeof CAMPI_EDITABILI_INLINE)[number];

@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { getRegolePrezzi } from "@/db/impostazioni-app-queries";
 import { ArrowLeft } from "lucide-react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { getProprietariAttivi, getTipiOggetto, getUbicazioniAttive } from "@/db/queries";
+import { getCampiPersonalizzati } from "@/db/campi-personalizzati-queries";
 import { NuovoSkuFlow } from "./nuovo-sku-flow";
 
 // Questa pagina legge dal database: va costruita a ogni richiesta, mai
@@ -10,10 +12,12 @@ import { NuovoSkuFlow } from "./nuovo-sku-flow";
 export const dynamic = "force-dynamic";
 
 export default async function NuovoSkuPage() {
-  const [tipi, ubicazioni, proprietari] = await Promise.all([
+  const regole = await getRegolePrezzi();
+  const [tipi, ubicazioni, proprietari, campiPersonalizzati] = await Promise.all([
     getTipiOggetto(),
     getUbicazioniAttive(),
     getProprietariAttivi(),
+    getCampiPersonalizzati(),
   ]);
 
   return (
@@ -25,7 +29,7 @@ export default async function NuovoSkuPage() {
             <ArrowLeft /> Torna al Magazzino
           </Link>
         </Button>
-        <NuovoSkuFlow tipi={tipi} ubicazioni={ubicazioni} proprietari={proprietari} />
+        <NuovoSkuFlow tipi={tipi} ubicazioni={ubicazioni} proprietari={proprietari} regole={regole} campiPersonalizzati={campiPersonalizzati} />
       </main>
     </div>
   );

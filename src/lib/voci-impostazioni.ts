@@ -10,6 +10,7 @@ export const GRUPPI_IMPOSTAZIONI: GruppoImpostazioni[] = [
       { href: "/archivi/proprietari", etichetta: "Proprietari" },
       { href: "/archivi/depositi", etichetta: "Depositi" },
       { href: "/archivi/tag", etichetta: "Tag" },
+      { href: "/archivi/campi-sku", etichetta: "Campi personalizzati" },
       { href: "/archivi/portali", etichetta: "Portali" },
     ],
   },
@@ -22,6 +23,7 @@ export const GRUPPI_IMPOSTAZIONI: GruppoImpostazioni[] = [
     voci: [
       { href: "/sistema/collegamenti", etichetta: "Collegamenti e guida" },
       { href: "/sistema/dati", etichetta: "Dati e copie di sicurezza" },
+      { href: "/sistema/controllo-dati", etichetta: "Controllo dati" },
       { href: "/sistema/pulizia", etichetta: "Pulizia dati" },
       { href: "/sistema/zona-pericolo", etichetta: "Zona pericolo" },
     ],

@@ -8,6 +8,7 @@
 // qty_soglia_2_pezzi_max=8, qty_soglia_3_pezzi_min=9).
 
 import { calcolaPrezzoShopify } from "@/lib/shopify-export";
+import { REGOLE_PREZZI_STANDARD, type FasciaQuantita, type RegolePrezzi } from "@/lib/regole-prezzi-config";
 
 export const FASCE_QUANTITA = [
   { fino: 4, pezzi: 1 },
@@ -25,33 +26,65 @@ export function disponibileLibero(disponibile: number, impegnato: number): numbe
 
 // Impostazioni del canale (jsonb): "quantitaFissa" (numero > 0) forza lo
 // stesso numero di pezzi qualunque sia il disponibile - usato da Subito (1).
-export function quantitaDaCaricare(libero: number, impostazioniCanale: unknown): number {
+export function quantitaDaCaricare(
+  libero: number,
+  impostazioniCanale: unknown,
+  fasce: FasciaQuantita[] = REGOLE_PREZZI_STANDARD.fasceQuantita
+): number {
   if (libero <= 0) return 0;
   const fissa =
     impostazioniCanale && typeof impostazioniCanale === "object"
       ? (impostazioniCanale as Record<string, unknown>).quantitaFissa
       : undefined;
   if (typeof fissa === "number" && fissa > 0) return Math.min(fissa, libero);
-  for (const f of FASCE_QUANTITA) {
-    if (libero <= f.fino) return Math.min(f.pezzi, libero);
+  for (const f of fasce) {
+    if (f.fino === null || libero <= f.fino) return Math.min(f.pezzi, libero);
   }
   return QUANTITA_MASSIMA_VISIBILE;
 }
 
 // --- Prezzo per portale ------------------------------------------------------
-// Il prezzo di un portale statico deriva SEMPRE dal prezzo eBay dello sku
-// (nessun ripiego su altri prezzi):
-//  - Shopify = ROUNDUP(prezzo eBay x 0,9) all'euro (stessa funzione del file
-//    prodotti, cosi' lista e file non possono divergere)
-//  - eBay, Subito, Etsy = prezzo eBay cosi' com'e'
-// null = prezzo eBay mancante o non valido (per quel portale non c'e' prezzo).
-export function prezzoPerPortale(nomePortale: string, prezzoEbay: string | number | null): number | null {
-  if (prezzoEbay === null || prezzoEbay === undefined) return null;
-  const testo = String(prezzoEbay).trim().replace(",", ".");
+// Release 9 (2026-11-10): ogni portale che di norma DERIVA il prezzo da un
+// altro puo' avere il suo campo sullo sku. Se e' compilato (> 0) vale quello;
+// se e' vuoto vale la regola di sempre:
+//  - Shopify: campo "Prezzo Shopify", altrimenti ROUNDUP(prezzo eBay x sconto)
+//    all'euro (sconto modificabile, standard 0,9)
+//  - Subito: campo "Prezzo Subito", altrimenti prezzo eBay cosi' com'e'
+//  - eBay, Etsy: prezzo eBay cosi' com'e'
+// Mai un prezzo inventato: se manca anche il prezzo eBay, null (per quel
+// portale non c'e' prezzo).
+export type PrezziSkuPerPortale = {
+  prezzoEbay: string | number | null | undefined;
+  prezzoShopify?: string | number | null;
+  prezzoSubito?: string | number | null;
+};
+
+export type OrigineFallbackPrezzo = "campo" | "regola" | null;
+
+function numeroPositivo(v: string | number | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  const testo = String(v).trim().replace(",", ".");
   const p = Number(testo);
   if (!testo || !Number.isFinite(p) || p <= 0) return null;
-  if (nomePortale === "Shopify") return calcolaPrezzoShopify(testo);
-  return Math.round(p * 100) / 100;
+  return p;
+}
+
+export function prezzoPerPortaleConOrigine(
+  nomePortale: string,
+  prezzi: PrezziSkuPerPortale,
+  regole: RegolePrezzi = REGOLE_PREZZI_STANDARD
+): { prezzo: number | null; origine: OrigineFallbackPrezzo } {
+  const proprio =
+    nomePortale === "Shopify" ? numeroPositivo(prezzi.prezzoShopify) : nomePortale === "Subito" ? numeroPositivo(prezzi.prezzoSubito) : null;
+  if (proprio !== null) return { prezzo: Math.round(proprio * 100) / 100, origine: "campo" };
+  const pe = numeroPositivo(prezzi.prezzoEbay);
+  if (pe === null) return { prezzo: null, origine: null };
+  if (nomePortale === "Shopify") return { prezzo: calcolaPrezzoShopify(String(pe), regole.scontoShopify), origine: "regola" };
+  return { prezzo: Math.round(pe * 100) / 100, origine: "regola" };
+}
+
+export function prezzoPerPortale(nomePortale: string, prezzi: PrezziSkuPerPortale, regole: RegolePrezzi = REGOLE_PREZZI_STANDARD): number | null {
+  return prezzoPerPortaleConOrigine(nomePortale, prezzi, regole).prezzo;
 }
 
 export function prezziDiversi(a: number | null, b: number | null): boolean {

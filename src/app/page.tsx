@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { getRegolePrezzi } from "@/db/impostazioni-app-queries";
+import { getCampiPersonalizzati } from "@/db/campi-personalizzati-queries";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { getMagazzino, getProprietariAttivi, getTipiOggetto, getUbicazioniAttive, type ColonnaOrdinabile } from "@/db/queries";
@@ -16,7 +18,7 @@ import { leggiTagParam } from "@/lib/tag-filtro";
 const COLONNE_ORDINABILI: ColonnaOrdinabile[] = [
   "skuCode", "artista", "opera", "larghezza", "supporto", "anno", "tipo", "condizione",
   "proprieta", "deposito", "disponibile", "numeroFoto", "valoreCarico", "prezzoEbay", "prezzoCatawiki",
-  "riservaCatawiki", "tag", "note", "stato", "creato", "aggiornato", "datiMancanti",
+  "riservaCatawiki", "prezzoShopify", "prezzoSubito", "prezzoBidspirit", "riservaBidspirit", "tag", "note", "stato", "creato", "aggiornato", "datiMancanti",
 ];
 
 type SearchParams = {
@@ -54,11 +56,13 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
   const senzaFoto = sp.senzafoto === "si";
   const soloDatiMancanti = sp.mancanti === "si";
   const tagIds = leggiTagParam(sp.tag);
-  const ordina = sp.ordina && (COLONNE_ORDINABILI as string[]).includes(sp.ordina) ? (sp.ordina as ColonnaOrdinabile) : undefined;
+  const ordina = sp.ordina && ((COLONNE_ORDINABILI as string[]).includes(sp.ordina) || /^cp_\d+$/.test(sp.ordina)) ? (sp.ordina as ColonnaOrdinabile) : undefined;
   const direzione = sp.direzione === "desc" ? "desc" : sp.direzione === "asc" ? "asc" : undefined;
 
   const filtriAttivi = Boolean(q || tipoId || condizione || proprietarioId || ubicazioneId || bloccato || disponibilita || senzaFoto || soloDatiMancanti || tagIds.length > 0);
 
+  const regolePrezzi = await getRegolePrezzi();
+  const campiPersonalizzati = await getCampiPersonalizzati();
   const [righe, tipi, proprietari, ubicazioni, daSistemare, canaliStatici, tagDisponibili] = await Promise.all([
     getMagazzino({ ricerca: q, tagIds, tipoId, condizione, proprietarioId, ubicazioneId, bloccato, disponibilita, senzaFoto, soloDatiMancanti, ordina, direzione }),
     getTipiOggetto(),
@@ -93,6 +97,8 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
           daSistemare={daSistemare}
           canaliStatici={canaliStatici.map((c) => ({ id: c.id, nome: c.nome }))}
           tagDisponibili={tagDisponibili}
+          sogliaCatawiki={regolePrezzi.sogliaMinimaCatawiki}
+          campiPersonalizzati={campiPersonalizzati}
           tipi={tipi}
           proprietari={proprietari}
           ubicazioni={ubicazioni}

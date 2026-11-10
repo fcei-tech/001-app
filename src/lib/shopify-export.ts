@@ -32,7 +32,7 @@ export const SHOPIFY_HEADER = [
 
 export const SHOPIFY_VENDOR = "POSTERCLUB";
 export const SHOPIFY_TIPO = "POSTER VINTAGE";
-export const SHOPIFY_SCONTO_SU_EBAY = 0.9;
+export const SHOPIFY_SCONTO_SU_EBAY = 0.9; // valore standard: la regola in uso arriva da RegolePrezzi.scontoShopify
 const TESTO_CONDIZIONI = "BUONE (COME DA FOTO)";
 const TESTO_GARANZIA =
   "Come società professionale, garantiamo il pieno rispetto dei Diritti del Consumatore dell'Unione Europea (Direttiva 2011/83/UE).";
@@ -46,12 +46,11 @@ export type SkuPerShopify = {
   altezza: string | null;
   supporto: string | null;
   anno: string | null;
-  prezzoEbay: string | null;
 };
 
 export type MotivoScartoShopify = "prezzo_ebay_mancante" | "zero_foto";
 export const ETICHETTA_SCARTO_SHOPIFY: Record<MotivoScartoShopify, string> = {
-  prezzo_ebay_mancante: "Prezzo eBay mancante (serve per calcolare il prezzo Shopify)",
+  prezzo_ebay_mancante: "Prezzo Shopify mancante (manca anche il prezzo eBay da cui calcolarlo)",
   zero_foto: "Nessuna foto",
 };
 
@@ -86,12 +85,12 @@ function eTela(supporto: string | null): boolean {
   return (supporto ?? "").trim().toUpperCase().startsWith("T");
 }
 
-export function calcolaPrezzoShopify(prezzoEbay: string | null): number | null {
+export function calcolaPrezzoShopify(prezzoEbay: string | null, sconto: number = SHOPIFY_SCONTO_SU_EBAY): number | null {
   const p = numero(prezzoEbay);
   if (p === null) return null;
   // ROUNDUP(x, 0): sempre per eccesso all'euro intero (arrotondo prima a 6
   // decimali per non farsi ingannare dai residui di virgola mobile).
-  return Math.ceil(Math.round(p * SHOPIFY_SCONTO_SU_EBAY * 1e6) / 1e6);
+  return Math.ceil(Math.round(p * sconto * 1e6) / 1e6);
 }
 
 export function handleShopify(skuCode: string): string {
@@ -157,13 +156,14 @@ function escapiCsv(v: string): string {
   return v;
 }
 
-export type RigaShopifyInput = { sku: SkuPerShopify; quantita: number; foto: string[]; testo?: TestoPortale };
+// prezzo = prezzo Shopify gia' risolto (campo dello sku, altrimenti regola:
+// vedi prezzoPerPortale in esposizione.ts).
+export type RigaShopifyInput = { sku: SkuPerShopify; quantita: number; foto: string[]; testo?: TestoPortale; prezzo: number | null };
 
 // Restituisce le righe CSV di UN prodotto (prima riga + una per ogni foto
 // successiva). Chi chiama ha gia' verificato prezzo e foto.
-export function generaRigheProdotto({ sku, quantita, foto, testo }: RigaShopifyInput): string[][] {
+export function generaRigheProdotto({ sku, quantita, foto, testo, prezzo }: RigaShopifyInput): string[][] {
   const handle = handleShopify(sku.skuCode);
-  const prezzo = calcolaPrezzoShopify(sku.prezzoEbay);
   const riga = (): string[] => new Array(SHOPIFY_HEADER.length).fill("");
   const col = (nome: (typeof SHOPIFY_HEADER)[number]) => SHOPIFY_HEADER.indexOf(nome);
 
@@ -199,8 +199,8 @@ export function generaRigheProdotto({ sku, quantita, foto, testo }: RigaShopifyI
   });
 }
 
-export function motivoScarto(sku: SkuPerShopify, numeroFoto: number): MotivoScartoShopify | null {
-  if (calcolaPrezzoShopify(sku.prezzoEbay) === null) return "prezzo_ebay_mancante";
+export function motivoScarto(prezzo: number | null, numeroFoto: number): MotivoScartoShopify | null {
+  if (prezzo === null) return "prezzo_ebay_mancante";
   if (numeroFoto === 0) return "zero_foto";
   return null;
 }

@@ -20,7 +20,9 @@
 // modificatore positivo risulterebbe comunque valido - e' un indicatore di
 // massima a livello Magazzino, non la validazione finale per canale/batch
 // (quella resta e resterà solo risolviLottoCatawiki).
-import { CATAWIKI_SOGLIA_MINIMA_STIMA_IMPORT } from "@/lib/catawiki-config";
+import { REGOLE_PREZZI_STANDARD } from "@/lib/regole-prezzi-config";
+
+const SOGLIA_STANDARD = REGOLE_PREZZI_STANDARD.sogliaMinimaCatawiki;
 import type { RigaMagazzino } from "@/db/queries";
 
 export type CampoMancante = "prezzoEbay" | "prezzoCatawiki" | "anno" | "foto";
@@ -36,7 +38,7 @@ export const ETICHETTA_CAMPO_MANCANTE: Record<CampoMancante, string> = {
 
 export const SPIEGAZIONE_CAMPO_MANCANTE: Record<CampoMancante, string> = {
   prezzoEbay: "Prezzo eBay mancante",
-  prezzoCatawiki: `Prezzo Catawiki mancante o sotto la soglia minima di importazione (€ ${CATAWIKI_SOGLIA_MINIMA_STIMA_IMPORT})`,
+  prezzoCatawiki: `Prezzo Catawiki mancante o sotto la soglia minima di importazione (€ ${SOGLIA_STANDARD})`,
   anno: "Anno / epoca mancante",
   foto: "Nessuna foto salvata",
 };
@@ -49,13 +51,20 @@ function parseNumero(v: string | null): number | null {
 
 // Stessa forma minima richiesta dei campi coinvolti, cosi' la funzione resta
 // utilizzabile anche fuori da RigaMagazzino se mai servisse in futuro.
+// La spiegazione con la soglia in vigore (modificabile in Impostazioni).
+export function spiegazioneCampoMancante(campo: CampoMancante, soglia: number = SOGLIA_STANDARD): string {
+  if (campo === "prezzoCatawiki") return `Prezzo Catawiki mancante o sotto la soglia minima di importazione (€ ${soglia})`;
+  return SPIEGAZIONE_CAMPO_MANCANTE[campo];
+}
+
 export function campiMancanti(
-  r: Pick<RigaMagazzino, "prezzoEbay" | "prezzoCatawiki" | "anno" | "numeroFoto">
+  r: Pick<RigaMagazzino, "prezzoEbay" | "prezzoCatawiki" | "anno" | "numeroFoto">,
+  soglia: number = SOGLIA_STANDARD
 ): CampoMancante[] {
   const mancanti: CampoMancante[] = [];
   if (parseNumero(r.prezzoEbay) === null) mancanti.push("prezzoEbay");
   const prezzoCatawiki = parseNumero(r.prezzoCatawiki);
-  if (prezzoCatawiki === null || prezzoCatawiki < CATAWIKI_SOGLIA_MINIMA_STIMA_IMPORT) {
+  if (prezzoCatawiki === null || prezzoCatawiki < soglia) {
     mancanti.push("prezzoCatawiki");
   }
   if (!r.anno || !r.anno.trim()) mancanti.push("anno");

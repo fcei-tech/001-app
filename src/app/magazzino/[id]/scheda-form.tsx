@@ -11,6 +11,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { modificaSku } from "@/app/magazzino/actions";
 import { EliminaSkuButton } from "./elimina-sku-button";
 import { CampiPrezzi } from "@/components/magazzino/campi-prezzi";
+import { CampoPersonalizzatoInput } from "@/components/magazzino/campo-personalizzato-input";
+import type { RegolePrezzi } from "@/lib/regole-prezzi-config";
+import type { CampoPersonalizzato, ValoriCampi } from "@/lib/campi-personalizzati";
 import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 import { EditorTagSku } from "@/components/tag/editor-tag-sku";
 import type { TagBreve } from "@/db/tag-queries";
@@ -43,6 +46,10 @@ type ItemForm = {
   prezzoEbay: string | null;
   prezzoCatawiki: string | null;
   riservaCatawiki: string | null;
+  prezzoShopify: string | null;
+  prezzoSubito: string | null;
+  prezzoBidspirit: string | null;
+  riservaBidspirit: string | null;
   bloccatoVendita: boolean;
 };
 
@@ -56,7 +63,13 @@ export function SchedaSkuForm({
   esito,
   tagDisponibili,
   tagIdsSku,
+  regole,
+  campiPersonalizzati,
+  valoriCampi,
 }: {
+  regole: RegolePrezzi;
+  campiPersonalizzati: CampoPersonalizzato[];
+  valoriCampi: ValoriCampi;
   item: ItemForm;
   tagDisponibili: TagBreve[];
   tagIdsSku: number[];
@@ -202,9 +215,25 @@ export function SchedaSkuForm({
                   prezzoEbay: item.prezzoEbay,
                   prezzoCatawiki: item.prezzoCatawiki,
                   riservaCatawiki: item.riservaCatawiki,
+                  prezzoShopify: item.prezzoShopify,
+                  prezzoSubito: item.prezzoSubito,
+                  prezzoBidspirit: item.prezzoBidspirit,
+                  riservaBidspirit: item.riservaBidspirit,
                 }}
+                regole={regole}
               />
             </div>
+
+            {campiPersonalizzati.length > 0 && (
+              <div className="border-t pt-4">
+                <p className="mb-3 text-sm font-medium text-muted-foreground">Campi personalizzati</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {campiPersonalizzati.map((c) => (
+                    <CampoPersonalizzatoInput key={c.id} campo={c} valore={valoriCampi[String(c.id)]} onCambia={() => setModificato(true)} />
+                  ))}
+                </div>
+              </div>
+            )}
 
             <label className="flex items-center gap-2 text-sm">
               <Checkbox name="bloccatoVendita" defaultChecked={item.bloccatoVendita} onCheckedChange={() => setModificato(true)} />

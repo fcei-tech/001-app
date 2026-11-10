@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { sku } from "@/db/schema";
 import { getCanaleById } from "@/db/pubblicazione-queries";
 import { getFotoPerSkuIds } from "@/db/queries";
+import { getRegolePrezzi } from "@/db/impostazioni-app-queries";
 import { annullaModifiche, impostaBlocco } from "@/db/esposizione-queries";
 import {
   analizzaAllineamento,
@@ -222,6 +223,7 @@ export async function generaFilePortaleAction(canaleId: number, skuIds?: number[
 }
 
 async function generaFileEbay(canaleId: number, skuIds?: number[]): Promise<EsitoFileShopify> {
+  const regole = await getRegolePrezzi();
   const daInviare = righeDaInviare(await getTabellaCanale(canaleId), skuIds);
   if (daInviare.length === 0) return { ok: false, errore: "Niente da mandare: la tabella nel frattempo e' cambiata." };
   const ids = daInviare.map((r) => r.skuId);
@@ -296,9 +298,9 @@ async function generaFileEbay(canaleId: number, skuIds?: number[]): Promise<Esit
   const marca = marcaFile();
   const files: FileGenerato[] = [];
   const nota = "eBay: carica con File Exchange come sempre.";
-  if (nuovi.length > 0) files.push({ tipo: "ADD", nome: nomeFileEbay("ADD", marca), csv: generaCsvEbayAdd(nuovi), nSku: nuovi.length, istruzione: nota });
+  if (nuovi.length > 0) files.push({ tipo: "ADD", nome: nomeFileEbay("ADD", marca), csv: generaCsvEbayAdd(nuovi, regole.offertaMinimaEbayPercentuale), nSku: nuovi.length, istruzione: nota });
   if (revise.length > 0)
-    files.push({ tipo: "REVISE", nome: nomeFileEbay("REVISE", marca), csv: generaCsvEbayRevise(revise), nSku: revise.length, istruzione: nota });
+    files.push({ tipo: "REVISE", nome: nomeFileEbay("REVISE", marca), csv: generaCsvEbayRevise(revise, regole.offertaMinimaEbayPercentuale), nSku: revise.length, istruzione: nota });
   if (reviseTesti.length > 0)
     files.push({ tipo: "REVISE-TESTI", nome: nomeFileEbay("REVISE-TESTI", marca), csv: generaCsvEbayReviseTesti(reviseTesti), nSku: reviseTesti.length, istruzione: `${nota} DA PROVARE: usalo prima su 1–2 annunci.`, daProvare: true });
   if (chiudi.length > 0)
@@ -353,12 +355,12 @@ async function generaFileShopify(canaleId: number, skuIds?: number[]): Promise<E
       // Prodotto davvero nuovo: file completo con foto.
       if (file.azione === "nuovo") {
         const foto = (fotoMappa.get(d.id) ?? []).map((f) => f.url);
-        const motivo = motivoScarto(d, foto.length);
+        const motivo = motivoScarto(r.prezzoOggi, foto.length);
         if (motivo) {
           scarta(d, ETICHETTA_SCARTO_SHOPIFY[motivo]);
           continue;
         }
-        prodotti.push({ sku: d, quantita: file.pezzi, foto, testo });
+        prodotti.push({ sku: d, quantita: file.pezzi, foto, testo, prezzo: r.prezzoOggi });
         incluse.push({ ...file, idPortale: handleShopify(d.skuCode), titolo: buildTitolo(d) });
         continue;
       }

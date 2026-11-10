@@ -25,6 +25,7 @@ import {
   type OverrideLotto,
   getBatch,
 } from "@/db/pubblicazione-queries";
+import { getRegolePrezzi } from "@/db/impostazioni-app-queries";
 import { getFotoPerSkuIds, getSaldiSkuPerUbicazione, getTipiOggetto, getUbicazioniAttive } from "@/db/queries";
 import {
   silenziaErrore as silenziaErroreQuery,
@@ -39,6 +40,7 @@ import {
 import {
   IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
   risolviBatchCatawiki,
+  opzioniDaRegole,
   TIPI_ERRORE_VALIDAZIONE,
   type ImpostazioniBatchCatawiki,
   type LottoPerRisoluzioneCatawiki,
@@ -436,7 +438,8 @@ export async function generaFileCatawikiAction(batchId: number): Promise<{
     numeroFoto: fotoMappa.get(l.skuId)?.length ?? 0,
   }));
 
-  const righeRisolte = risolviBatchCatawiki(lottiPerRisoluzione, impostazioni);
+  const regole = await getRegolePrezzi();
+  const righeRisolte = risolviBatchCatawiki(lottiPerRisoluzione, impostazioni, opzioniDaRegole(regole));
   const righeValide = righeRisolte.filter((r) => r.valido);
   const righeScartate = righeRisolte.filter((r) => !r.valido);
 
@@ -541,6 +544,7 @@ export async function generaFileBidspiritAction(
   const nomeTipo = new Map(tipi.map((t) => [t.id, t.nome]));
   const skuPerId = new Map(batch.lotti.map((l) => [l.skuId, l.sku]));
 
+  const regole = await getRegolePrezzi();
   const righeRisolte = risolviBatchCatawiki(
     batch.lotti.map(
       (l): LottoPerRisoluzioneCatawiki => ({
@@ -549,14 +553,15 @@ export async function generaFileBidspiritAction(
         skuCode: l.sku.skuCode,
         skuCondizione: l.sku.condizione,
         skuAnno: l.sku.anno,
-        skuPrezzoCatawiki: l.sku.prezzoCatawiki,
-        skuRiservaCatawiki: l.sku.riservaCatawiki,
+        // Bidspirit: prezzo e riserva propri dello sku, altrimenti quelli Catawiki.
+        skuPrezzoCatawiki: l.sku.prezzoBidspirit ?? l.sku.prezzoCatawiki,
+        skuRiservaCatawiki: l.sku.riservaBidspirit ?? l.sku.riservaCatawiki,
         override: (l.override as OverrideLottoCatawiki | null) ?? null,
         numeroFoto: fotoMappa.get(l.skuId)?.length ?? 0,
       })
     ),
     impostazioni,
-    { soglia: null }
+    opzioniDaRegole(regole, false)
   );
   const valide = righeRisolte.filter((r) => r.valido);
   const scartate = righeRisolte.filter((r) => !r.valido);

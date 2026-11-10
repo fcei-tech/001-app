@@ -1,9 +1,11 @@
 import { Header } from "@/components/header";
+import { getRegolePrezzi } from "@/db/impostazioni-app-queries";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { listaSilenziamentiTutti } from "@/db/silenziamenti-queries";
 import { getFotoPerSkuIds } from "@/db/queries";
 import {
   risolviLottoCatawiki,
+  opzioniDaRegole,
   IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
   ETICHETTA_ERRORE_VALIDAZIONE,
   TIPI_ERRORE_VALIDAZIONE,
@@ -35,6 +37,7 @@ export default async function SilenziamentiPage() {
   const silenziamenti = await listaSilenziamentiTutti();
   const skuIds = [...new Set(silenziamenti.map((s) => s.skuId))];
   const fotoMappa = await getFotoPerSkuIds(skuIds);
+  const regole = await getRegolePrezzi();
 
   const righe: RigaSilenziamento[] = silenziamenti.map((s) => {
     // Il calcolo "risolto" ha senso solo per gli errori del vocabolario
@@ -53,7 +56,8 @@ export default async function SilenziamentiPage() {
             override: null,
             numeroFoto: fotoMappa.get(s.skuId)?.length ?? 0,
           },
-          IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT
+          IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
+          opzioniDaRegole(regole)
         ).errori.includes(s.tipoErrore as TipoErroreValidazione)
       : false;
 

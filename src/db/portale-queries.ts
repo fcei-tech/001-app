@@ -3,6 +3,7 @@ import { db } from "./index";
 import { bloccoSkuCanale, esposizioneCanale, filePortale, overridePortale, sku, storicoPortale } from "./schema";
 import { getBaseSku, getCanaliStatici, type CanaleStatico } from "./esposizione-queries";
 import { disponibileLibero, prezziDiversi, prezzoPerPortale, quantitaDaCaricare } from "@/lib/esposizione";
+import { getRegolePrezzi } from "./impostazioni-app-queries";
 import type { VoceAllineamento } from "@/lib/allinea-portale";
 import {
   azioneDaStato,
@@ -18,12 +19,13 @@ import {
 // Tutto il calcolo e' in memoria (~1300 sku x pochi portali).
 
 export async function calcolaTabelle(): Promise<{ canali: CanaleStatico[]; righe: Map<number, RigaPortale[]> }> {
-  const [canali, base, esposti, blocchi, override] = await Promise.all([
+  const [canali, base, esposti, blocchi, override, regole] = await Promise.all([
     getCanaliStatici(),
     getBaseSku(),
     db.select().from(esposizioneCanale),
     db.select().from(bloccoSkuCanale),
     db.select().from(overridePortale),
+    getRegolePrezzi(),
   ]);
   const regMap = new Map(esposti.map((e) => [`${e.skuId}:${e.canaleId}`, e]));
   const bloccoMap = new Map(blocchi.map((b) => [`${b.skuId}:${b.canaleId}`, b.motivo]));
@@ -47,8 +49,8 @@ export async function calcolaTabelle(): Promise<{ canali: CanaleStatico[]; righe
         bloccatoQui: s.bloccatoVendita || motivoBlocco !== undefined,
         ritirato: !s.bloccatoVendita && motivoBlocco === "ritiro",
         libero,
-        quantitaAutomatica: quantitaDaCaricare(libero, c.impostazioni),
-        prezzoOggi: prezzoPerPortale(c.nome, s.prezzoEbay),
+        quantitaAutomatica: quantitaDaCaricare(libero, c.impostazioni, regole.fasceQuantita),
+        prezzoOggi: prezzoPerPortale(c.nome, s, regole),
         reg: reg
           ? {
               inVetrina: reg.inVetrina,

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, exists, ilike, inArray, notExists, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, ilike, inArray, notExists, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { db } from "./index";
 import {
   batchLotti,
@@ -14,7 +14,9 @@ import {
   tipiOggetto,
   ubicazioni,
 } from "./schema";
-import { CATAWIKI_SOGLIA_MINIMA_STIMA_IMPORT } from "@/lib/catawiki-config";
+import { getRegolePrezzi } from "./impostazioni-app-queries";
+import { getCampiPersonalizzati } from "./campi-personalizzati-queries";
+import { leggiValori, type ValoriCampi } from "@/lib/campi-personalizzati";
 import { CAUSALE_CORREZIONE, type GiacenzaRiga } from "@/lib/giacenza";
 
 export type RigaMagazzino = {
@@ -39,6 +41,11 @@ export type RigaMagazzino = {
   prezzoEbay: string | null;
   prezzoCatawiki: string | null;
   riservaCatawiki: string | null;
+  prezzoShopify: string | null;
+  prezzoSubito: string | null;
+  prezzoBidspirit: string | null;
+  riservaBidspirit: string | null;
+  campiPersonalizzati: ValoriCampi;
   quantitaDisponibile: number;
   // Proprieta' viste sui movimenti di questo sku (puo' averne piu' di una,
   // es. un carico FP e uno CV sullo stesso sku) - stringa gia' pronta per
@@ -66,7 +73,7 @@ export type RigaMagazzino = {
 // MAPPA_ORDINABILI (Record totale, non Partial) in
 // src/components/magazzino/vista-magazzino.tsx, che forza a compilazione
 // una voce qui per ogni ColonnaId lato client.
-export type ColonnaOrdinabile =
+export type ColonnaOrdinabileFissa =
   | "skuCode"
   | "artista"
   | "opera"
@@ -84,12 +91,19 @@ export type ColonnaOrdinabile =
   | "prezzoEbay"
   | "prezzoCatawiki"
   | "riservaCatawiki"
+  | "prezzoShopify"
+  | "prezzoSubito"
+  | "prezzoBidspirit"
+  | "riservaBidspirit"
   | "tag"
   | "note"
   | "stato"
   | "creato"
   | "aggiornato"
   | "datiMancanti";
+
+// Colonna ordinabile: una fissa oppure un campo personalizzato ("cp_<id>").
+export type ColonnaOrdinabile = ColonnaOrdinabileFissa | `cp_${number}`;
 
 export type FiltriMagazzino = {
   ricerca?: string;
@@ -213,10 +227,10 @@ const tagIdsSql = () => sql<number[]>`coalesce((
 // Nessuna dipendenza da GROUP BY: opera solo su colonne dirette di sku' e
 // una subquery scalare correlata (numeroFotoSql), quindi utilizzabile sia in
 // WHERE sia in ORDER BY di una query con GROUP BY sku.id.
-function campiMancantiCountSql() {
+function campiMancantiCountSql(soglia: number) {
   return sql<number>`(
     (case when ${sku.prezzoEbay} is null or ${sku.prezzoEbay} <= 0 then 1 else 0 end)
-    + (case when ${sku.prezzoCatawiki} is null or ${sku.prezzoCatawiki} < ${CATAWIKI_SOGLIA_MINIMA_STIMA_IMPORT} then 1 else 0 end)
+    + (case when ${sku.prezzoCatawiki} is null or ${sku.prezzoCatawiki} < ${soglia} then 1 else 0 end)
     + (case when ${sku.anno} is null or trim(${sku.anno}) = '' then 1 else 0 end)
     + (case when ${numeroFotoSql()} <= 0 then 1 else 0 end)
   )`;
@@ -262,6 +276,7 @@ export async function getImpegnatoPerSku(skuId: number): Promise<number> {
 }
 
 export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMagazzino[]> {
+  const sogliaCatawiki = (await getRegolePrezzi()).sogliaMinimaCatawiki;
   const condizioniWhere = [];
 
   if (filtri.ricerca?.trim()) {
@@ -330,7 +345,7 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
   if (filtri.prezzoCatawikiMax != null) condizioniWhere.push(sql`${sku.prezzoCatawiki} <= ${filtri.prezzoCatawikiMax}`);
   if (filtri.riservaCatawikiMin != null) condizioniWhere.push(sql`${sku.riservaCatawiki} >= ${filtri.riservaCatawikiMin}`);
   if (filtri.riservaCatawikiMax != null) condizioniWhere.push(sql`${sku.riservaCatawiki} <= ${filtri.riservaCatawikiMax}`);
-  if (filtri.soloDatiMancanti) condizioniWhere.push(sql`${campiMancantiCountSql()} > 0`);
+  if (filtri.soloDatiMancanti) condizioniWhere.push(sql`${campiMancantiCountSql(sogliaCatawiki)} > 0`);
 
   // disponibilita'/quantitaMin/quantitaMax condividono lo stesso HAVING
   // (tutti e tre confrontano la SUM aggregata dei movimenti) - combinati con
@@ -365,14 +380,32 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
     prezzoEbay: sku.prezzoEbay,
     prezzoCatawiki: sku.prezzoCatawiki,
     riservaCatawiki: sku.riservaCatawiki,
+    prezzoShopify: sku.prezzoShopify,
+    prezzoSubito: sku.prezzoSubito,
+    prezzoBidspirit: sku.prezzoBidspirit,
+    riservaBidspirit: sku.riservaBidspirit,
     tag: tagNomiSql(),
     note: sku.note,
     stato: sku.bloccatoVendita,
     creato: sku.createdAt,
     aggiornato: sku.updatedAt,
-    datiMancanti: campiMancantiCountSql(),
+    datiMancanti: campiMancantiCountSql(sogliaCatawiki),
   };
-  const colonnaOrdinamento = filtri.ordina ? COLONNE_ORDINABILI[filtri.ordina] : sku.skuCode;
+  // Colonna fissa, oppure un campo personalizzato ("cp_<id>"): ordinato sul
+  // valore dentro il jsonb (numeri come numeri, il resto come testo).
+  let colonnaOrdinamento: SQL | AnyColumn = sku.skuCode;
+  if (filtri.ordina?.startsWith("cp_")) {
+    const idCampo = Number(filtri.ordina.slice(3));
+    const campo = (await getCampiPersonalizzati()).find((c) => c.id === idCampo);
+    if (campo) {
+      colonnaOrdinamento =
+        campo.tipo === "numero"
+          ? sql`(${sku.campiPersonalizzati} ->> ${String(idCampo)})::numeric`
+          : sql`${sku.campiPersonalizzati} ->> ${String(idCampo)}`;
+    }
+  } else if (filtri.ordina) {
+    colonnaOrdinamento = COLONNE_ORDINABILI[filtri.ordina as ColonnaOrdinabileFissa];
+  }
   const direzioneOrdinamento = filtri.direzione === "desc" ? desc : asc;
 
   const righe = await db
@@ -396,6 +429,11 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
       prezzoEbay: sku.prezzoEbay,
       prezzoCatawiki: sku.prezzoCatawiki,
       riservaCatawiki: sku.riservaCatawiki,
+      prezzoShopify: sku.prezzoShopify,
+      prezzoSubito: sku.prezzoSubito,
+      prezzoBidspirit: sku.prezzoBidspirit,
+      riservaBidspirit: sku.riservaBidspirit,
+      campiPersonalizzati: sku.campiPersonalizzati,
       quantitaDisponibile: quantitaDisponibileSql().mapWith(Number),
       // string_agg ignora da solo i NULL (righe senza movimenti per via del
       // left join) - nessun gate esplicito necessario.
@@ -424,6 +462,7 @@ export async function getMagazzino(filtri: FiltriMagazzino = {}): Promise<RigaMa
 
   return righe.map((r) => ({
     ...r,
+    campiPersonalizzati: leggiValori(r.campiPersonalizzati),
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   }));

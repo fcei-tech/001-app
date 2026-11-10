@@ -9,6 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { CasellaRegistro } from "@/components/magazzino/casella-registro";
 import { CampiPrezzi } from "@/components/magazzino/campi-prezzi";
+import { PerPubblicare } from "@/components/magazzino/per-pubblicare";
+import { CampoPersonalizzatoInput } from "@/components/magazzino/campo-personalizzato-input";
+import type { CampoPersonalizzato } from "@/lib/campi-personalizzati";
+import type { RegolePrezzi } from "@/lib/regole-prezzi-config";
 import {
   Card,
   CardContent,
@@ -33,11 +37,43 @@ import {
 type Candidato = Awaited<ReturnType<typeof cercaCandidati>>[number];
 type Vocabolario = { id: number; nome: string }[];
 
+// Dati che servono per pubblicare (stessi controlli del Magazzino: prezzo eBay,
+// prezzo Catawiki sopra soglia, anno/epoca, foto). La foto si aggiunge dalla
+// scheda dopo la creazione, quindi qui e' sempre "da fare dopo".
+type StatoPubblicazione = { prezzoEbay: boolean; prezzoCatawiki: boolean; anno: boolean };
+const STATO_INIZIALE: StatoPubblicazione = { prezzoEbay: false, prezzoCatawiki: false, anno: false };
+
+function leggiStato(form: HTMLFormElement, soglia: number): StatoPubblicazione {
+  const fd = new FormData(form);
+  const num = (k: string) => Number(String(fd.get(k) ?? "").trim().replace(",", "."));
+  const eb = num("prezzoEbay");
+  const ca = num("prezzoCatawiki");
+  return {
+    prezzoEbay: Number.isFinite(eb) && eb > 0,
+    prezzoCatawiki: Number.isFinite(ca) && ca >= soglia,
+    anno: String(fd.get("anno") ?? "").trim().length > 0,
+  };
+}
+
+function TitoloSezione({ n, titolo, nota }: { n: number; titolo: string; nota?: string }) {
+  return (
+    <div className="mb-3 flex items-baseline gap-2">
+      <span className="flex size-5 items-center justify-center rounded-full bg-muted text-xs font-medium">{n}</span>
+      <p className="text-sm font-semibold">{titolo}</p>
+      {nota && <p className="text-xs text-muted-foreground">{nota}</p>}
+    </div>
+  );
+}
+
 export function NuovoSkuFlow({
   tipi,
   ubicazioni,
   proprietari,
+  regole,
+  campiPersonalizzati,
 }: {
+  regole: RegolePrezzi;
+  campiPersonalizzati: CampoPersonalizzato[];
   tipi: Vocabolario;
   ubicazioni: Vocabolario;
   proprietari: ProprietarioOpzione[];
@@ -47,6 +83,7 @@ export function NuovoSkuFlow({
   const [cercando, setCercando] = React.useState(false);
   const [mostraForm, setMostraForm] = React.useState(false);
   const [candidatoScelto, setCandidatoScelto] = React.useState<Candidato | null>(null);
+  const [stato, setStato] = React.useState<StatoPubblicazione>(STATO_INIZIALE);
 
   // Ricerca con debounce: un effect che sottoscrive un timer esterno e
   // aggiorna lo stato in risposta e' il caso d'uso legittimo per un effect
@@ -125,7 +162,9 @@ export function NuovoSkuFlow({
           <CardDescription>Verra&apos; generato il prossimo codice Z-NNNNN disponibile.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={creaNuovoSku} className="flex flex-col gap-6">
+          <form action={creaNuovoSku} className="flex flex-col gap-6" onChange={(e) => setStato(leggiStato(e.currentTarget, regole.sogliaMinimaCatawiki))}>
+            <div>
+              <TitoloSezione n={1} titolo="L'opera" nota="* obbligatori per creare lo sku" />
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="artista">Artista *</Label>
@@ -148,7 +187,7 @@ export function NuovoSkuFlow({
                 <Input id="supporto" name="supporto" placeholder="es. CARTA, TELATO" />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="anno">Anno / epoca</Label>
+                <Label htmlFor="anno">Anno / epoca<PerPubblicare ok={stato.anno} /></Label>
                 <Input id="anno" name="anno" placeholder="es. circa 1965" />
               </div>
               <div className="flex flex-col gap-1.5">
@@ -182,11 +221,10 @@ export function NuovoSkuFlow({
                 </Select>
               </div>
             </div>
+            </div>
 
             <div className="border-t pt-4">
-              <p className="mb-3 text-sm font-medium text-muted-foreground">
-                Dove va caricato (facoltativo, puoi anche lasciare a magazzino senza copie)
-              </p>
+              <TitoloSezione n={2} titolo="Dove va caricato" nota="facoltativo: puoi anche creare lo sku senza copie" />
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="flex flex-col gap-1.5">
                   <SelettoreProprietario proprietari={proprietari} idBase="proprietario-nuovo" />
@@ -217,17 +255,41 @@ export function NuovoSkuFlow({
             </div>
 
             <div className="border-t pt-4">
-              <p className="mb-3 text-sm font-medium text-muted-foreground">
-                Dati commerciali (facoltativi, puoi compilarli dopo)
-              </p>
-              <CampiPrezzi />
+              <TitoloSezione n={3} titolo="Prezzi" nota="facoltativi ora, ma servono per pubblicare" />
+              <CampiPrezzi regole={regole} evidenziaPubblicazione />
             </div>
 
-            <div className="flex gap-2">
+            {campiPersonalizzati.length > 0 && (
+              <div className="border-t pt-4">
+                <TitoloSezione n={4} titolo="Campi personalizzati" nota="i tuoi campi (Impostazioni > Campi personalizzati), tutti facoltativi" />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {campiPersonalizzati.map((c) => (
+                    <CampoPersonalizzatoInput key={c.id} campo={c} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="sticky bottom-0 -mx-6 -mb-6 flex flex-wrap items-center gap-3 border-t bg-card/95 px-6 py-3 backdrop-blur">
               <Button type="submit">Crea sku</Button>
               <Button type="button" variant="ghost" onClick={() => setMostraForm(false)}>
                 Annulla
               </Button>
+              <p className="text-xs text-muted-foreground" aria-live="polite">
+                Per pubblicare:{" "}
+                {([
+                  [stato.prezzoEbay, "prezzo eBay"],
+                  [stato.prezzoCatawiki, `prezzo Catawiki (da ${regole.sogliaMinimaCatawiki} €)`],
+                  [stato.anno, "anno"],
+                ] as const).map(([ok, nome], i) => (
+                  <span key={nome} className={ok ? "text-emerald-700 dark:text-emerald-400" : "text-amber-800 dark:text-amber-400"}>
+                    {i > 0 && " · "}
+                    {ok ? "✓ " : "mancano: "}
+                    {nome}
+                  </span>
+                ))}
+                <span> · foto: si aggiunge dalla scheda dopo la creazione</span>
+              </p>
             </div>
           </form>
         </CardContent>

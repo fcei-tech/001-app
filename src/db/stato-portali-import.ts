@@ -1,5 +1,6 @@
 import { db } from "./index";
 import { getBaseSku } from "./esposizione-queries";
+import { getRegolePrezzi } from "./impostazioni-app-queries";
 import { bloccoSkuCanale, esposizioneCanale } from "./schema";
 import { disponibileLibero, prezzoPerPortale, quantitaDaCaricare } from "@/lib/esposizione";
 import { type StatoSkuMaster } from "@/lib/master-stato-portali";
@@ -19,11 +20,12 @@ type Piano = {
 };
 
 async function costruisciPiano(stato: StatoSkuMaster[]): Promise<Piano> {
-  const [tuttiCanali, base, bloccoEsistenti, esposizioneEsistente] = await Promise.all([
+  const [tuttiCanali, base, bloccoEsistenti, esposizioneEsistente, regole] = await Promise.all([
     db.query.canali.findMany(),
     getBaseSku(),
     db.select().from(bloccoSkuCanale),
     db.select().from(esposizioneCanale),
+    getRegolePrezzi(),
   ]);
   const perCodice = new Map(base.map((b) => [b.skuCode, b]));
   const bloccoSet = new Set(bloccoEsistenti.map((b) => `${b.skuId}:${b.canaleId}`));
@@ -75,10 +77,10 @@ async function costruisciPiano(stato: StatoSkuMaster[]): Promise<Piano> {
           piano.caricati.push({
             skuId: b.id,
             canaleId: canale.id,
-            quantita: Math.max(1, quantitaDaCaricare(libero, canale.impostazioni)),
+            quantita: Math.max(1, quantitaDaCaricare(libero, canale.impostazioni, regole.fasceQuantita)),
             // Da qui parte il controllo "Da riprezzare": si assume online il
             // prezzo di oggi.
-            prezzo: prezzoPerPortale(nome, b.prezzoEbay),
+            prezzo: prezzoPerPortale(nome, b, regole),
           });
         }
       }

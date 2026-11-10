@@ -1,5 +1,7 @@
 "use server";
 
+import { getCampiPersonalizzati, impostaCampoInBlocco, impostaValoriSku, ripristinaCampoInBlocco, type PrecedenteCampoBlocco } from "@/db/campi-personalizzati-queries";
+import { normalizzaValoreCampo } from "@/lib/campi-personalizzati";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
@@ -111,6 +113,20 @@ export async function creaNuovoSku(formData: FormData) {
   }
   const condizione = condizioneRaw as (typeof CONDIZIONI)[number];
 
+  // Campi personalizzati: validati PRIMA di creare lo sku (un valore sbagliato
+  // non lascia uno sku creato a meta').
+  const personalizzati: Record<number, unknown> = {};
+  for (const [chiave, valore] of formData.entries()) {
+    if (chiave.startsWith("cp_") && Number.isInteger(Number(chiave.slice(3)))) {
+      personalizzati[Number(chiave.slice(3))] = typeof valore === "string" ? valore : "";
+    }
+  }
+  const campiDef = await getCampiPersonalizzati();
+  for (const [id, grezzo] of Object.entries(personalizzati)) {
+    const c = campiDef.find((x) => x.id === Number(id));
+    if (c) normalizzaValoreCampo(c, grezzo);
+  }
+
   const [nuovo] = await db
     .insert(sku)
     .values({
@@ -127,8 +143,14 @@ export async function creaNuovoSku(formData: FormData) {
       prezzoEbay: numeroOVuoto(formData.get("prezzoEbay")),
       prezzoCatawiki: numeroOVuoto(formData.get("prezzoCatawiki")),
       riservaCatawiki: numeroOVuoto(formData.get("riservaCatawiki")),
+      prezzoShopify: numeroOVuoto(formData.get("prezzoShopify")),
+      prezzoSubito: numeroOVuoto(formData.get("prezzoSubito")),
+      prezzoBidspirit: numeroOVuoto(formData.get("prezzoBidspirit")),
+      riservaBidspirit: numeroOVuoto(formData.get("riservaBidspirit")),
     })
     .returning();
+
+  if (Object.keys(personalizzati).length > 0) await impostaValoriSku(nuovo.id, personalizzati);
 
   if (quantita > 0) {
     // Casella "Scrivi nel registro": spuntata = carico visibile; tolta =
@@ -171,6 +193,47 @@ export async function aggiungiCaricoSkuEsistente(formData: FormData) {
   redirect(`/magazzino/${skuId}?carico=1`);
 }
 
+// Salva UN campo personalizzato di UNO sku (dalla cella in Magazzino). Testo
+// vuoto = svuota. Un valore non valido (es. testo in un numero) non salva.
+export async function salvaValoreCampoPersonalizzatoAction(skuId: number, campoId: number, valore: string): Promise<{ ok: boolean; errore?: string }> {
+  try {
+    await impostaValoriSku(skuId, { [campoId]: valore });
+    revalidatePath("/");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, errore: e instanceof Error ? e.message : "Errore sconosciuto" };
+  }
+}
+
+// Modifica in blocco di UN campo personalizzato su piu' sku (valore "" = svuota).
+export async function campoPersonalizzatoInBloccoAction(
+  skuIds: number[],
+  campoId: number,
+  valore: string
+): Promise<{ ok: boolean; errore?: string; precedenti?: PrecedenteCampoBlocco[] }> {
+  try {
+    if (!skuIds.length) return { ok: true, precedenti: [] };
+    const precedenti = await impostaCampoInBlocco(skuIds, campoId, valore);
+    revalidatePath("/");
+    return { ok: true, precedenti };
+  } catch (e) {
+    return { ok: false, errore: e instanceof Error ? e.message : "Errore sconosciuto" };
+  }
+}
+
+export async function ripristinaCampoPersonalizzatoInBloccoAction(
+  campoId: number,
+  precedenti: PrecedenteCampoBlocco[]
+): Promise<{ ok: boolean; errore?: string }> {
+  try {
+    await ripristinaCampoInBlocco(campoId, precedenti);
+    revalidatePath("/");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, errore: e instanceof Error ? e.message : "Errore sconosciuto" };
+  }
+}
+
 export async function modificaSku(formData: FormData) {
   const id = Number(formData.get("id"));
   if (!id) throw new Error("Sku non valido");
@@ -179,6 +242,16 @@ export async function modificaSku(formData: FormData) {
   if (!CONDIZIONI.includes(condizioneRaw as (typeof CONDIZIONI)[number])) {
     throw new Error("Condizione non valida");
   }
+
+  // Campi personalizzati (Release 9): input "cp_<id campo>". Validati PRIMA di
+  // salvare, cosi' un valore sbagliato non lascia la scheda salvata a meta'.
+  const personalizzati: Record<number, unknown> = {};
+  for (const [chiave, valore] of formData.entries()) {
+    if (chiave.startsWith("cp_") && Number.isInteger(Number(chiave.slice(3)))) {
+      personalizzati[Number(chiave.slice(3))] = typeof valore === "string" ? valore : "";
+    }
+  }
+  if (Object.keys(personalizzati).length > 0) await impostaValoriSku(id, personalizzati);
 
   await db
     .update(sku)
@@ -198,6 +271,10 @@ export async function modificaSku(formData: FormData) {
       prezzoEbay: numeroOVuoto(formData.get("prezzoEbay")),
       prezzoCatawiki: numeroOVuoto(formData.get("prezzoCatawiki")),
       riservaCatawiki: numeroOVuoto(formData.get("riservaCatawiki")),
+      prezzoShopify: numeroOVuoto(formData.get("prezzoShopify")),
+      prezzoSubito: numeroOVuoto(formData.get("prezzoSubito")),
+      prezzoBidspirit: numeroOVuoto(formData.get("prezzoBidspirit")),
+      riservaBidspirit: numeroOVuoto(formData.get("riservaBidspirit")),
       updatedAt: new Date(),
     })
     .where(eq(sku.id, id));
@@ -367,6 +444,10 @@ const COLONNE_SKU_INLINE = {
   prezzoEbay: sku.prezzoEbay,
   prezzoCatawiki: sku.prezzoCatawiki,
   riservaCatawiki: sku.riservaCatawiki,
+  prezzoShopify: sku.prezzoShopify,
+  prezzoSubito: sku.prezzoSubito,
+  prezzoBidspirit: sku.prezzoBidspirit,
+  riservaBidspirit: sku.riservaBidspirit,
 } as const;
 
 function validaCampoInline(campo: CampoEditabileInline, valore: ValoreCampoInline): ValoreCampoInline {
@@ -388,6 +469,10 @@ function validaCampoInline(campo: CampoEditabileInline, valore: ValoreCampoInlin
     case "prezzoEbay":
     case "prezzoCatawiki":
     case "riservaCatawiki":
+    case "prezzoShopify":
+    case "prezzoSubito":
+    case "prezzoBidspirit":
+    case "riservaBidspirit":
       return numeroOVuoto(valore as string);
     case "condizione": {
       const v = (valore ?? "").toString();
