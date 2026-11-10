@@ -14,7 +14,9 @@ import { prenotaCodiciAction, rilasciaCodiciAction } from "@/app/magazzino/actio
 export type BloccoMostrato = { id: string; da: number; a: number; usati: number };
 const cod = (n: number) => `Z-${String(n).padStart(5, "0")}`;
 
-export function CodiciSku({ prossimo, blocchi, dimensioneStandard }: { prossimo: string; blocchi: BloccoMostrato[]; dimensioneStandard: number }) {
+export function CodiciSku({ prossimo, blocchi: tuttiBlocchi, dimensioneStandard }: { prossimo: string; blocchi: BloccoMostrato[]; dimensioneStandard: number }) {
+  // Un blocco completamente usato non serve più: non lo mostro (resta solo la parte ancora libera).
+  const blocchi = tuttiBlocchi.filter((b) => b.usati < b.a - b.da + 1);
   const [aperto, setAperto] = useState(false);
   const [copiato, setCopiato] = useState(false);
   const [quanti, setQuanti] = useState(String(dimensioneStandard));

@@ -239,7 +239,9 @@ export async function caricaFotoSuShopify(
       userErrors: { field: string; message: string }[];
     };
   }>(MUTATION_FILE_CREATE, {
-    files: [{ originalSource: target.resourceUrl, contentType: "IMAGE" }],
+    // REPLACE: se esiste già un file con lo stesso nome (es. Z-00124_a.jpg, reimportato)
+    // lo sostituisce invece di creare un doppione con un codice aggiunto al nome.
+    files: [{ originalSource: target.resourceUrl, contentType: "IMAGE", duplicateResolutionMode: "REPLACE" }],
   });
 
   if (creato.fileCreate.userErrors.length) {

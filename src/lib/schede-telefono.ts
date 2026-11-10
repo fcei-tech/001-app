@@ -75,7 +75,7 @@ function numero(v: string): number | null {
   return v.trim() !== "" && Number.isFinite(n) ? n : null;
 }
 
-// Cosa manca per pubblicare (stesse regole di Controllo dati + supporto).
+// Cosa manca per pubblicare (stesse regole di Controllo dati; supporto vuoto = carta normale, non blocca).
 export function mancaNellaScheda(s: SchedaTelefono): string[] {
   const m: string[] = [];
   if (!s.artista || s.artista === "…") m.push("artista");
@@ -83,7 +83,6 @@ export function mancaNellaScheda(s: SchedaTelefono): string[] {
   if (s.foto.length === 0) m.push("foto");
   if (!numero(s.larghezza) || !numero(s.altezza)) m.push("misure");
   if (!s.anno) m.push("anno");
-  if (!s.supporto) m.push("supporto");
   if (numero(s.prezzoEbay) === null) m.push("prezzo eBay");
   const c = numero(s.prezzoCatawiki);
   if (c === null || c < SOGLIA_CATAWIKI_SCHEDE) m.push("prezzo Catawiki");
