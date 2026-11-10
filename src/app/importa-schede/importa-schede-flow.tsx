@@ -12,6 +12,8 @@ import { caricaUnaFotoSku } from "@/app/magazzino/actions";
 type Scelta = "rinomina" | "ignora";
 type Esito = { creati: { vecchio: string; nuovo: string; foto: number }[]; saltati: string[]; errori: string[] };
 
+const norm = (x: string) => x.trim().toLowerCase().replace(/\s+/g, " ");
+
 function mimeDaNome(n: string) {
   const e = n.split(".").pop()?.toLowerCase();
   return e === "png" ? "image/png" : e === "webp" ? "image/webp" : e === "heic" ? "image/heic" : "image/jpeg";
@@ -20,11 +22,13 @@ function mimeDaNome(n: string) {
 export function ImportaSchedeFlow({
   depositi,
   tipi,
+  proprietari,
   depositoIniziale,
   tipoIniziale,
 }: {
   depositi: { id: number; nome: string }[];
   tipi: { id: number; nome: string }[];
+  proprietari: { id: number; nome: string; tipo: string }[];
   depositoIniziale: number | null;
   tipoIniziale: number | null;
 }) {
@@ -36,6 +40,9 @@ export function ImportaSchedeFlow({
   const [voceFoto, setVoceFoto] = React.useState<Map<string, VoceZip>>(new Map());
   const [scelte, setScelte] = React.useState<Record<string, Scelta>>({});
   const [deposito, setDeposito] = React.useState<number | null>(depositoIniziale);
+  const [depositoRiga, setDepositoRiga] = React.useState<Record<string, number>>({});
+  const [proprietarioRiga, setProprietarioRiga] = React.useState<Record<string, number>>({});
+  const [tipoRiga, setTipoRiga] = React.useState<Record<string, number>>({});
   const [tipo, setTipo] = React.useState<number | null>(tipoIniziale);
   const [esito, setEsito] = React.useState<Esito | null>(null);
 
@@ -60,6 +67,9 @@ export function ImportaSchedeFlow({
       setVoci(r.voci);
       setVoceFoto(mappa);
       setScelte({});
+      setDepositoRiga({});
+      setProprietarioRiga({});
+      setTipoRiga({});
     } catch (e) {
       setErrore(e instanceof Error ? e.message : "Errore nella lettura.");
     } finally {
@@ -67,6 +77,17 @@ export function ImportaSchedeFlow({
     }
   }
 
+  // Deposito di una scheda: nome scritto sul telefono se coincide con un deposito di BATCH,
+  // altrimenti la scelta fatta qui sulla riga, altrimenti il deposito principale (menu in alto).
+  const riconosciuto = (s: SchedaTelefono) => (s.deposito.trim() ? depositi.find((d) => norm(d.nome) === norm(s.deposito))?.id ?? null : null);
+  const depositoDi = (s: SchedaTelefono) => riconosciuto(s) ?? depositoRiga[s.codice] ?? deposito;
+  // Proprietario: nome scritto sul telefono se coincide, altrimenti scelta sulla riga, altrimenti la regola di sempre (FP = primo azienda, CV = primo soci).
+  const propRiconosciuto = (s: SchedaTelefono) => (s.proprietario.trim() ? proprietari.find((p) => norm(p.nome) === norm(s.proprietario))?.id ?? null : null);
+  const propPredefinito = (s: SchedaTelefono) => proprietari.find((p) => p.tipo === (s.proprieta === "FP" ? "azienda" : "soci"))?.id ?? proprietari[0]?.id ?? null;
+  const proprietarioDi = (s: SchedaTelefono) => propRiconosciuto(s) ?? proprietarioRiga[s.codice] ?? propPredefinito(s);
+  // Tipo oggetto: come il deposito; vuoto = tipo predefinito (menu in alto).
+  const tipoRiconosciuto = (s: SchedaTelefono) => (s.tipo.trim() ? tipi.find((x) => norm(x.nome) === norm(s.tipo))?.id ?? null : null);
+  const tipoDi = (s: SchedaTelefono) => tipoRiconosciuto(s) ?? tipoRiga[s.codice] ?? tipo;
   const conflitti = voci.filter((v) => v.stato === "conflitto");
   const nonDecisi = conflitti.filter((v) => !scelte[v.codice]).length;
   const daCreare = voci.filter((v) => v.stato === "nuova" || (v.stato === "conflitto" && scelte[v.codice] === "rinomina"));
@@ -85,11 +106,12 @@ export function ImportaSchedeFlow({
         continue;
       }
       setLavoro(`Creo ${v.codice} (${++fatte}/${daCreare.length})…`);
-      const r = await creaSkuDaScheda(json, v.codice, deposito, tipo, rinomina);
+      const r = await creaSkuDaScheda(json, v.codice, depositoDi(s) ?? deposito, tipoDi(s) ?? tipo, rinomina, proprietarioDi(s));
       if (!r.ok || !r.skuId) {
         out.errori.push(`${v.codice}: ${r.errore ?? "errore"}`);
         continue;
       }
+      if (r.tagNonTrovati && r.tagNonTrovati.length) out.errori.push(`${r.codice}: tag non trovati in BATCH e non assegnati: ${r.tagNonTrovati.join(", ")}`);
       let caricate = 0;
       for (let i = 0; i < s.foto.length; i++) {
         setLavoro(`Foto ${i + 1}/${s.foto.length} di ${r.codice}…`);
@@ -153,7 +175,7 @@ export function ImportaSchedeFlow({
             </CardHeader>
             <CardContent className="grid gap-3 sm:grid-cols-2">
               <label className="grid gap-1 text-sm">
-                Deposito
+                Deposito principale (se manca o non è riconosciuto)
                 <select className="h-9 rounded-md border bg-background px-2" value={deposito ?? ""} onChange={(e) => setDeposito(Number(e.target.value))}>
                   {depositi.map((d) => (
                     <option key={d.id} value={d.id}>{d.nome}</option>
@@ -161,7 +183,7 @@ export function ImportaSchedeFlow({
                 </select>
               </label>
               <label className="grid gap-1 text-sm">
-                Tipo oggetto
+                Tipo oggetto predefinito
                 <select className="h-9 rounded-md border bg-background px-2" value={tipo ?? ""} onChange={(e) => setTipo(Number(e.target.value))}>
                   {tipi.map((t) => (
                     <option key={t.id} value={t.id}>{t.nome}</option>
@@ -178,6 +200,54 @@ export function ImportaSchedeFlow({
                     <span className="font-mono text-xs">{s.codice}</span>
                     <span className="text-xs text-muted-foreground">{s.proprieta}</span>
                     <span className="min-w-0 flex-1 truncate">{s.artista} — {s.opera} · {s.foto.length} foto</span>
+                    {v.stato !== "gia_presente" && (
+                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                        Deposito
+                        <select
+                          className="h-7 rounded-md border bg-background px-1 text-foreground"
+                          value={depositoDi(s) ?? ""}
+                          onChange={(e) => setDepositoRiga({ ...depositoRiga, [s.codice]: Number(e.target.value) })}
+                          disabled={riconosciuto(s) !== null}
+                        >
+                          {depositi.map((d) => (
+                            <option key={d.id} value={d.id}>{d.nome}</option>
+                          ))}
+                        </select>
+                        {riconosciuto(s) !== null ? "dal telefono" : s.deposito.trim() ? `«${s.deposito}» non trovato: scegli` : "non indicato: principale"}
+                      </label>
+                    )}
+                    {v.stato !== "gia_presente" && (
+                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                        Proprietario
+                        <select
+                          className="h-7 rounded-md border bg-background px-1 text-foreground"
+                          value={proprietarioDi(s) ?? ""}
+                          onChange={(e) => setProprietarioRiga({ ...proprietarioRiga, [s.codice]: Number(e.target.value) })}
+                          disabled={propRiconosciuto(s) !== null}
+                        >
+                          {proprietari.map((p) => (
+                            <option key={p.id} value={p.id}>{p.nome}</option>
+                          ))}
+                        </select>
+                        {propRiconosciuto(s) !== null ? "dal telefono" : s.proprietario.trim() ? `«${s.proprietario}» non trovato: scegli` : `in base a ${s.proprieta}`}
+                      </label>
+                    )}
+                    {v.stato !== "gia_presente" && s.tipo.trim() && (
+                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                        Tipo
+                        <select
+                          className="h-7 rounded-md border bg-background px-1 text-foreground"
+                          value={tipoDi(s) ?? ""}
+                          onChange={(e) => setTipoRiga({ ...tipoRiga, [s.codice]: Number(e.target.value) })}
+                          disabled={tipoRiconosciuto(s) !== null}
+                        >
+                          {tipi.map((x) => (
+                            <option key={x.id} value={x.id}>{x.nome}</option>
+                          ))}
+                        </select>
+                        {tipoRiconosciuto(s) !== null ? "dal telefono" : `«${s.tipo}» non trovato: scegli`}
+                      </label>
+                    )}
                     <span className={m.length ? "text-xs text-warning" : "text-xs text-success"}>{m.length ? `Mancano: ${m.join(", ")}` : "Completa"}</span>
                     {v.stato === "gia_presente" && <span className="text-xs text-muted-foreground">già in BATCH: salto</span>}
                     {v.stato === "conflitto" && (

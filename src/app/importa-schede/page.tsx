@@ -2,13 +2,13 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
-import { getTipiOggetto, getUbicazioniAttive } from "@/db/queries";
+import { getProprietariAttivi, getTipiOggetto, getUbicazioniAttive } from "@/db/queries";
 import { ImportaSchedeFlow } from "./importa-schede-flow";
 
 export const dynamic = "force-dynamic";
 
 export default async function ImportaSchedePage() {
-  const [tipi, ubicazioni] = await Promise.all([getTipiOggetto(), getUbicazioniAttive()]);
+  const [tipi, ubicazioni, proprietari] = await Promise.all([getTipiOggetto(), getUbicazioniAttive(), getProprietariAttivi()]);
   const depositi = ubicazioni.filter((u) => u.tipo === "deposito");
   const primoDeposito = [...depositi].sort((a, b) => a.id - b.id)[0];
   const poster = tipi.find((t) => t.nome === "Poster") ?? tipi[0];
@@ -28,6 +28,7 @@ export default async function ImportaSchedePage() {
         <ImportaSchedeFlow
           depositi={depositi.map((d) => ({ id: d.id, nome: d.nome }))}
           tipi={tipi.map((t) => ({ id: t.id, nome: t.nome }))}
+          proprietari={proprietari.map((p) => ({ id: p.id, nome: p.nome, tipo: p.tipo }))}
           depositoIniziale={primoDeposito?.id ?? null}
           tipoIniziale={poster?.id ?? null}
         />

@@ -22,6 +22,15 @@ export type SchedaTelefono = {
   prezzoCatawiki: string;
   costo: string; // solo FP, facoltativo
   quantita: number;
+  proprietario: string; // testo libero ("" = in base a FP/CV); BATCH lo confronta coi nomi dei proprietari
+  tipo: string; // testo libero ("" = tipo predefinito); confrontato coi tipi oggetto
+  tag: string;
+  riservaCatawiki: string;
+  prezzoShopify: string;
+  prezzoSubito: string;
+  prezzoBidspirit: string;
+  riservaBidspirit: string;
+  deposito: string; // testo libero scritto sul telefono ("" = deposito principale); BATCH lo confronta coi nomi dei depositi
   foto: string[]; // nomi file nello zip, in ordine (cartella foto/)
 };
 
@@ -59,6 +68,15 @@ export function leggiFileSchede(grezzo: unknown): FileSchede {
       prezzoCatawiki: testo(x.prezzoCatawiki),
       costo: testo(x.costo),
       quantita: Number.isFinite(Number(x.quantita)) && Number(x.quantita) > 0 ? Math.floor(Number(x.quantita)) : 1,
+      deposito: testo(x.deposito),
+      proprietario: testo(x.proprietario),
+      tipo: testo(x.tipo),
+      tag: testo(x.tag),
+      riservaCatawiki: testo(x.riservaCatawiki),
+      prezzoShopify: testo(x.prezzoShopify),
+      prezzoSubito: testo(x.prezzoSubito),
+      prezzoBidspirit: testo(x.prezzoBidspirit),
+      riservaBidspirit: testo(x.riservaBidspirit),
       foto: Array.isArray(x.foto) ? x.foto.map(testo).filter(Boolean) : [],
     };
   });
