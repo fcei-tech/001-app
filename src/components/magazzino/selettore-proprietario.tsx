@@ -22,7 +22,10 @@ export function SelettoreProprietario({
   proprietari: ProprietarioOpzione[];
   idBase?: string;
 }) {
-  const [valore, setValore] = React.useState<string>(String(proprietari[0]?.id ?? "nuovo"));
+  // Predefinito ragionato: la maggior parte dei carichi sono acquisti societari,
+  // quindi il primo proprietario di tipo "azienda" (per id); se non c'e', il primo.
+  const predefinito = proprietari.filter((p) => p.tipo === "azienda").sort((a, b) => a.id - b.id)[0] ?? proprietari[0];
+  const [valore, setValore] = React.useState<string>(String(predefinito?.id ?? "nuovo"));
   const [nome, setNome] = React.useState("");
   const inputNome = React.useRef<HTMLInputElement>(null);
   const nuovo = valore === "nuovo";

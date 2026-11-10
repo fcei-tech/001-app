@@ -36,6 +36,14 @@ import {
 
 type Candidato = Awaited<ReturnType<typeof cercaCandidati>>[number];
 type Vocabolario = { id: number; nome: string }[];
+type UbicazioneOpzione = { id: number; nome: string; tipo: string };
+
+// Deposito predefinito del carico: il primo deposito attivo (per id), come
+// nell'importazione Excel; se non ce n'e', la prima ubicazione.
+function depositoPredefinito(ubicazioni: UbicazioneOpzione[]): string {
+  const d = ubicazioni.filter((u) => u.tipo === "deposito").sort((a, b) => a.id - b.id)[0] ?? ubicazioni[0];
+  return String(d?.id ?? "");
+}
 
 // Dati che servono per pubblicare (stessi controlli del Magazzino: prezzo eBay,
 // prezzo Catawiki sopra soglia, anno/epoca, foto). La foto si aggiunge dalla
@@ -75,7 +83,7 @@ export function NuovoSkuFlow({
   regole: RegolePrezzi;
   campiPersonalizzati: CampoPersonalizzato[];
   tipi: Vocabolario;
-  ubicazioni: Vocabolario;
+  ubicazioni: UbicazioneOpzione[];
   proprietari: ProprietarioOpzione[];
 }) {
   const [query, setQuery] = React.useState("");
@@ -124,7 +132,7 @@ export function NuovoSkuFlow({
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="ubicazioneId">Ubicazione</Label>
-              <Select name="ubicazioneId" defaultValue={String(ubicazioni[0]?.id ?? "")}>
+              <Select name="ubicazioneId" defaultValue={depositoPredefinito(ubicazioni)}>
                 <SelectTrigger id="ubicazioneId">
                   <SelectValue />
                 </SelectTrigger>
@@ -231,7 +239,7 @@ export function NuovoSkuFlow({
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="ubicazioneId">Ubicazione</Label>
-                  <Select name="ubicazioneId" defaultValue={String(ubicazioni[0]?.id ?? "")}>
+                  <Select name="ubicazioneId" defaultValue={depositoPredefinito(ubicazioni)}>
                     <SelectTrigger id="ubicazioneId">
                       <SelectValue />
                     </SelectTrigger>
