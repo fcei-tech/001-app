@@ -46,9 +46,9 @@ function testo(v: unknown): string {
 export function leggiFileSchede(grezzo: unknown): FileSchede {
   const o = grezzo as Partial<FileSchede> | null;
   if (!o || o.formato !== FORMATO_SCHEDE || !Array.isArray(o.schede)) {
-    throw new Error("Questo zip non contiene schede del telefono (schede.json mancante o diverso).");
+    throw new Error("Questo zip non contiene articoli di BATCH Web (schede.json mancante o diverso).");
   }
-  if (o.versione !== VERSIONE_SCHEDE) throw new Error(`Versione schede ${o.versione} non supportata da questa versione di BATCH.`);
+  if (o.versione !== VERSIONE_SCHEDE) throw new Error(`Versione del file ${o.versione} non supportata da questa versione di BATCH.`);
   const schede = o.schede.map((s, i): SchedaTelefono => {
     const x = s as Partial<SchedaTelefono>;
     const codice = testo(x.codice);

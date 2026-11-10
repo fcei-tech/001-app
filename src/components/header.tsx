@@ -15,9 +15,13 @@ import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 // (elenchi di base) e Sistema (collegamenti, dati, zona pericolo).
 const VOCI = [
   { href: "/", etichetta: "Magazzino" },
+  { href: "/carica", etichetta: "Carica" },
   { href: "/pubblicazione", etichetta: "Pubblicazione" },
   { href: "/impostazioni", etichetta: "Impostazioni" },
 ];
+
+// Pagine che appartengono a "Carica" (ingressi di dati: Excel, foto, nuovi articoli (BATCH Web), righe per Excel).
+const PREFISSI_CARICA = ["/carica", "/importa-excel", "/importa-schede", "/importa-foto", "/righe-excel"];
 
 // Pagine che appartengono a "Impostazioni" (elenchi, prezzi, dati, sistema).
 const PREFISSI_IMPOSTAZIONI = ["/impostazioni", "/archivi", "/sistema"];
@@ -78,9 +82,11 @@ export function Header() {
             const attiva =
               v.href === "/"
                 ? pathname === "/" || pathname.startsWith("/magazzino")
-                : v.href === "/impostazioni"
-                  ? PREFISSI_IMPOSTAZIONI.some((p) => pathname.startsWith(p))
-                  : pathname.startsWith(v.href);
+                : v.href === "/carica"
+                  ? PREFISSI_CARICA.some((p) => pathname.startsWith(p))
+                  : v.href === "/impostazioni"
+                    ? PREFISSI_IMPOSTAZIONI.some((p) => pathname.startsWith(p))
+                    : pathname.startsWith(v.href);
             return (
               <Link
                 key={v.href}

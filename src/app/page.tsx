@@ -4,7 +4,7 @@ import { getCampiPersonalizzati } from "@/db/campi-personalizzati-queries";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { getMagazzino, getProprietariAttivi, getTipiOggetto, getUbicazioniAttive, type ColonnaOrdinabile } from "@/db/queries";
-import { Plus, FileSpreadsheet, Images } from "lucide-react";
+import { Plus } from "lucide-react";
 import { getCanaliStatici } from "@/db/esposizione-queries";
 import { getDaSistemarePerSku } from "@/db/portale-queries";
 import { VistaMagazzino } from "@/components/magazzino/vista-magazzino";
@@ -92,10 +92,6 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
             <CodiciSku prossimo={prossimoLibero} blocchi={blocchiCodici} dimensioneStandard={DIMENSIONE_BLOCCO_STANDARD} />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="secondary"><Link href="/importa-excel"><FileSpreadsheet /> Importa da Excel</Link></Button>
-            <Button asChild variant="secondary"><Link href="/importa-schede"><Images /> Schede da telefono</Link></Button>
-            <Button asChild variant="secondary"><Link href="/righe-excel"><FileSpreadsheet /> Righe per Excel</Link></Button>
-            <Button asChild variant="secondary"><Link href="/importa-foto"><Images /> Importa Foto</Link></Button>
             <Button asChild><Link href="/magazzino/nuovo"><Plus /> Nuovo sku</Link></Button>
           </div>
         </div>

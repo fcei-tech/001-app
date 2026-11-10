@@ -17,7 +17,7 @@ import {
 // porta alla pagina giusta. Compare una volta per apertura dell'app (salvo
 // "Non mostrare più") e si riapre sempre dal tasto "?" nella barra in alto.
 const PASSI = [
-  { id: "carica", titolo: "Carica", testo: "Excel, foto o nuovo sku", href: "/importa-excel", Icona: Upload },
+  { id: "carica", titolo: "Carica", testo: "Excel, foto o nuovo sku", href: "/carica", Icona: Upload },
   { id: "organizza", titolo: "Organizza", testo: "Dati, tag, viste del magazzino", href: "/", Icona: Tags },
   { id: "pubblica", titolo: "Pubblica", testo: "Portali e aste", href: "/pubblicazione", Icona: Send },
   { id: "chiudi", titolo: "Chiudi", testo: "Vendite, giacenze, copia di sicurezza", href: "/sistema/dati", Icona: Archive },

@@ -120,7 +120,7 @@ export async function creaSkuDaScheda(
         ubicazioneId: depositoId,
         causale: "carico",
         quantitaDelta: s.quantita,
-        note: "Scheda da telefono",
+        note: "Da BATCH Web",
       });
       return n.id;
     });

@@ -14,7 +14,7 @@ export default async function RigheExcelPage() {
       <Header />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
         <Button asChild variant="ghost" size="sm" className="mb-4 -ml-2">
-          <Link href="/"><ArrowLeft /> Torna al Magazzino</Link>
+          <Link href="/carica"><ArrowLeft /> Torna a Carica</Link>
         </Button>
         <div className="mb-6 flex flex-col gap-1">
           <h1 className="text-xl font-semibold tracking-tight">Righe per Excel</h1>
