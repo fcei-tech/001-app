@@ -34,14 +34,39 @@ export type ImpostazioniBatchCatawiki = {
   riservaAttiva: boolean;
   modificatorePrezzoPercentuale: number;
   modificatoreRiservaEur: number;
+  // Release 12 (2026-11-20): il modificatore riserva puo' essere in euro o in
+  // percentuale (selettore € | % nella finestra batch, Catawiki e Bidspirit).
+  // Entrambi i valori restano memorizzati (cambiando unita' non si perde il
+  // numero); conta solo quello dell'unita' scelta. Assente = "eur" (Catawiki,
+  // comportamento invariato); per Bidspirit il default e' "percento" (vedi
+  // impostazioniBatchEffettive). La percentuale e' sulla riserva finale da
+  // qualunque fonte (lotto, sku, automatica) e arrotonda all'euro intero.
+  modificatoreRiservaUnita?: "eur" | "percento";
+  modificatoreRiservaPercentuale?: number;
   messaggioEsperto: string;
 };
+
+// Impostazioni effettive di un batch: default + valori salvati. Per Bidspirit
+// l'unita' del modificatore riserva parte su percento se non e' mai stata scelta.
+export function impostazioniBatchEffettive(
+  salvate: unknown,
+  nomeCanale: string
+): ImpostazioniBatchCatawiki {
+  const s = (salvate ?? {}) as Partial<ImpostazioniBatchCatawiki>;
+  return {
+    ...IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
+    ...s,
+    modificatoreRiservaUnita: s.modificatoreRiservaUnita ?? (nomeCanale === "Bidspirit" ? "percento" : "eur"),
+  };
+}
 
 export const IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT: ImpostazioniBatchCatawiki = {
   profiloSpedizione: "standard",
   riservaAttiva: true,
   modificatorePrezzoPercentuale: 0,
   modificatoreRiservaEur: 0,
+  modificatoreRiservaUnita: "eur",
+  modificatoreRiservaPercentuale: 0,
   messaggioEsperto: "",
 };
 
@@ -183,7 +208,10 @@ export function risolviLottoCatawiki(
     const riservaSku = parseNumero(lotto.skuRiservaCatawiki);
     const base = riservaOverride ?? riservaSku ?? round2(stimaLotto * (opzioni?.moltiplicatoreRiserva ?? CATAWIKI_MOLTIPLICATORE_RISERVA_FALLBACK));
     origineRiserva = riservaOverride !== null ? "lotto" : riservaSku !== null ? "sku" : "automatica";
-    const conModificatore = round2(base + impostazioni.modificatoreRiservaEur);
+    const conModificatore =
+      impostazioni.modificatoreRiservaUnita === "percento"
+        ? Math.round(base * (1 + (impostazioni.modificatoreRiservaPercentuale ?? 0) / 100))
+        : round2(base + impostazioni.modificatoreRiservaEur);
     // Mai un valore <=0 (e mai 0 letterale, verrebbe letto come riserva
     // reale a 0 euro) - floor a vuoto, stessa regola del vecchio Master.
     riservaFinale = conModificatore > 0 ? conModificatore : null;

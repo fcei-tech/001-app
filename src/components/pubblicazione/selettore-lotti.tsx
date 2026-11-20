@@ -58,6 +58,8 @@ type ColonnaId =
   | "prezzoEbay"
   | "prezzoCatawiki"
   | "riservaCatawiki"
+  | "prezzoBidspirit"
+  | "riservaBidspirit"
   | "tag"
   | "note";
 
@@ -103,6 +105,8 @@ const COLONNE: DefinizioneColonna[] = [
   { id: "prezzoEbay", etichetta: "Prezzo eBay", defaultVisibile: true, allineaDestra: true, chiaveOrdinamento: "prezzoEbay", render: (r) => formatEuro(r.prezzoEbay) },
   { id: "prezzoCatawiki", etichetta: "Prezzo Catawiki", defaultVisibile: true, allineaDestra: true, chiaveOrdinamento: "prezzoCatawiki", render: (r) => formatEuro(r.prezzoCatawiki) },
   { id: "riservaCatawiki", etichetta: "Riserva Catawiki", defaultVisibile: true, allineaDestra: true, chiaveOrdinamento: "riservaCatawiki", render: (r) => formatEuro(r.riservaCatawiki) },
+  { id: "prezzoBidspirit", etichetta: "Prezzo Bidspirit", defaultVisibile: false, allineaDestra: true, chiaveOrdinamento: "prezzoBidspirit", render: (r) => formatEuro(r.prezzoBidspirit) },
+  { id: "riservaBidspirit", etichetta: "Riserva Bidspirit", defaultVisibile: false, allineaDestra: true, chiaveOrdinamento: "riservaBidspirit", render: (r) => formatEuro(r.riservaBidspirit) },
   { id: "tag", etichetta: "Tag", defaultVisibile: true, chiaveOrdinamento: "tag", render: (r) => r.tag || "—" },
   { id: "note", etichetta: "Note", defaultVisibile: false, chiaveOrdinamento: "note", render: (r) => r.note || "—" },
 ];

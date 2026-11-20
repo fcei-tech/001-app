@@ -50,19 +50,20 @@ import { GeneraFileCatawikiButton } from "@/components/pubblicazione/genera-file
 import { GeneraFileAstaFisicaButton } from "@/components/pubblicazione/genera-file-asta-fisica-button";
 import { buildDescription } from "@/lib/catawiki-export";
 import { SelettoreColonneLotti, type ColonnaLottiBatch } from "@/components/pubblicazione/selettore-colonne-lotti";
-import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
+import { colorePrincipale, fasceDelCanale, sfondoPaginaCanale } from "@/lib/colori-canali";
 import { BarraCanale } from "@/components/pubblicazione/barra-canale";
 import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
 import {
   risolviBatchCatawiki,
   opzioniDaRegole,
-  IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
+  impostazioniBatchEffettive,
   ETICHETTA_ERRORE_VALIDAZIONE,
   type ImpostazioniBatchCatawiki,
   type LottoPerRisoluzioneCatawiki,
   type OverrideLottoCatawiki,
 } from "@/lib/catawiki-resolver";
 import { pl } from "@/lib/plurale";
+import { BIDSPIRIT_PERCENTUALE_MAX_ESTIMATE, BIDSPIRIT_PERCENTUALE_START_SU_RISERVA } from "@/lib/bidspirit-export";
 
 const ETICHETTE_STATO_RIGA: Record<string, { label: string; variant: "secondary" | "success" | "outline" }> = {
   attivo: { label: "In asta", variant: "secondary" },
@@ -200,8 +201,8 @@ export default async function BatchPubblicazionePage({
   // alimenta l'AVVISO non bloccante nel dialog di EliminaBatchButton (cosa
   // si libera), mai un blocco.
   const numeroLottiConPrenotazione = contaLottiConPrenotazione(batch, batch.canale);
-  const colore = coloreCanale(batch.canale.nome);
-  const fasce = fasceCanale(batch.canale.nome);
+  const colore = colorePrincipale(batch.canale);
+  const fasce = fasceDelCanale(batch.canale);
   // Override per lotto (2026-09-24, richiesta esplicita utente - vedi
   // OverrideLotto in pubblicazione-queries.ts): "Riserva proposta" su
   // asta_fisica, "Prezzo/Riserva evento" sugli altri canali asta_online
@@ -210,6 +211,8 @@ export default async function BatchPubblicazionePage({
   // isCatawiki sotto) - non usa piu' questa colonna combinata unica. Mai
   // effetto sul Magazzino in nessun caso.
   const isCatawiki = batch.canale.nome === "Catawiki";
+  // Release 12 (2026-11-20): Bidspirit ha la sua finestra impostazioni (due modificatori) e la colonna "Nel file".
+  const isBidspirit = batch.canale.nome === "Bidspirit";
   const mostraRiservaProposta = batch.canale.tipo === "asta_fisica";
   const mostraOverrideOnline = batch.canale.tipo === "asta_online" && !isCatawiki;
   const mostraOverride = mostraRiservaProposta || mostraOverrideOnline;
@@ -229,17 +232,18 @@ export default async function BatchPubblicazionePage({
   // export" - stessa fonte di verita' usata da generaFileCatawikiAction, mai
   // ricalcolata con logica diversa (vedi commento in catawiki-resolver.ts).
   const impostazioniCatawiki: ImpostazioniBatchCatawiki = {
-    ...IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
-    ...((batch.impostazioniBatch ?? {}) as Partial<ImpostazioniBatchCatawiki>),
+    ...impostazioniBatchEffettive(batch.impostazioniBatch, batch.canale.nome),
+    // Bidspirit: la riserva e' obbligatoria, sempre attiva.
+    ...(isBidspirit ? { riservaAttiva: true } : {}),
   };
   const regolePrezzi = await getRegolePrezzi();
-  const [fotoMappaCatawiki, silenziamentiMappa] = isCatawiki
+  const [fotoMappaCatawiki, silenziamentiMappa] = isCatawiki || isBidspirit
     ? await Promise.all([
         getFotoPerSkuIds(batch.lotti.map((l) => l.skuId)),
         getSilenziamentiComeMappa(batch.canaleId),
       ])
     : [new Map<number, { id: number; url: string; ordine: number }[]>(), new Map<number, Set<string>>()];
-  const righeRisolteCatawiki = isCatawiki
+  const righeRisolteCatawiki = isCatawiki || isBidspirit
     ? risolviBatchCatawiki(
         batch.lotti.map(
           (l): LottoPerRisoluzioneCatawiki => ({
@@ -248,14 +252,15 @@ export default async function BatchPubblicazionePage({
             skuCode: l.sku.skuCode,
             skuCondizione: l.sku.condizione,
             skuAnno: l.sku.anno,
-            skuPrezzoCatawiki: l.sku.prezzoCatawiki,
-            skuRiservaCatawiki: l.sku.riservaCatawiki,
+            // Bidspirit: prezzo e riserva propri dello sku, altrimenti quelli Catawiki.
+            skuPrezzoCatawiki: isBidspirit ? (l.sku.prezzoBidspirit ?? l.sku.prezzoCatawiki) : l.sku.prezzoCatawiki,
+            skuRiservaCatawiki: isBidspirit ? (l.sku.riservaBidspirit ?? l.sku.riservaCatawiki) : l.sku.riservaCatawiki,
             override: (l.override as OverrideLottoCatawiki | null) ?? null,
             numeroFoto: fotoMappaCatawiki.get(l.skuId)?.length ?? 0,
           })
         ),
         impostazioniCatawiki,
-        opzioniDaRegole(regolePrezzi)
+        opzioniDaRegole(regolePrezzi, !isBidspirit)
       )
     : [];
   const risoltaPerLottoId = new Map(righeRisolteCatawiki.map((r) => [r.batchLottoId, r]));
@@ -289,6 +294,9 @@ export default async function BatchPubblicazionePage({
           { id: "descrizione", etichetta: "Descrizione", defaultVisibile: true },
           { id: "statoExport", etichetta: "Stato export", defaultVisibile: true },
         ]
+      : []),
+    ...(isBidspirit
+      ? [{ id: "nelFile", etichetta: "Nel file", defaultVisibile: true }]
       : []),
   ];
 
@@ -393,7 +401,7 @@ export default async function BatchPubblicazionePage({
   });
 
   return (
-    <div className="min-h-full flex flex-col">
+    <div className="min-h-full flex flex-col" style={{ backgroundColor: sfondoPaginaCanale(batch.canale) }}>
       <Header />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
         <Link
@@ -413,7 +421,7 @@ export default async function BatchPubblicazionePage({
           className={`relative mb-6 flex items-center justify-between gap-4 overflow-hidden ${fasce ? "pl-9" : "border-l-[20px] pl-4"}`}
           style={!fasce && colore ? { borderLeftColor: colore } : undefined}
         >
-          {fasce && <BarraCanale nomeCanale={batch.canale.nome} />}
+          {fasce && <BarraCanale fasce={fasce} />}
           <div className="flex flex-col gap-1">
             <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight">
               <span>{batch.nome ? `${batch.nome}` : `Batch #${batch.id}`} — {batch.canale.nome}</span>
@@ -563,6 +571,28 @@ export default async function BatchPubblicazionePage({
           </SezioneAggiungiLotti>
         )}
 
+        {isBidspirit && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Impostazioni batch (Bidspirit)</CardTitle>
+              <CardDescription>
+                Si applicano a tutti i lotti del batch. Il prezzo del lotto viene dai dati Catawiki dello sku (o dal
+                prezzo Bidspirit se compilato); la riserva e&apos; sempre attiva. La colonna &quot;Nel file&quot;
+                mostra i valori dopo i modificatori.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ImpostazioniBatchCatawikiForm
+                batchId={batch.id}
+                canaleId={Number(canaleId)}
+                valoreIniziale={impostazioniCatawiki}
+                disabilitato={batch.stato === "pubblicato"}
+                variante="bidspirit"
+              />
+            </CardContent>
+          </Card>
+        )}
+
         {isCatawiki && (
           <Card className="mb-6">
             <CardHeader>
@@ -627,6 +657,7 @@ export default async function BatchPubblicazionePage({
                         <TableHead data-col="statoExport">Stato export</TableHead>
                       </>
                     )}
+                    {isBidspirit && <TableHead data-col="nelFile">Nel file</TableHead>}
                     {mostraColonnaAzioni && <TableHead className="sticky right-0 z-10 bg-background text-right shadow-[-1px_0_0_0_var(--border)]">Azioni</TableHead>}
                   </TableRow>
                 </TableHeader>
@@ -672,6 +703,38 @@ export default async function BatchPubblicazionePage({
                             ) : (
                               `${(l.override as OverrideLotto | null)?.prezzo ?? "—"} / ${(l.override as OverrideLotto | null)?.riserva ?? "—"}`
                             )}
+                          </TableCell>
+                        )}
+                        {isBidspirit && (
+                          <TableCell data-col="nelFile">
+                            {(() => {
+                              const r = risoltaPerLottoId.get(l.id);
+                              if (!r) return "—";
+                              if (!r.valido) {
+                                return (
+                                  <div className="flex flex-wrap gap-1">
+                                    {r.errori.map((err) => (
+                                      <Badge key={err} variant="destructive">
+                                        {err === "prezzo_mancante_o_sotto_soglia" ? "Prezzo mancante" : ETICHETTA_ERRORE_VALIDAZIONE[err]}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                );
+                              }
+                              const eur = (n: number | null) => (n === null ? "—" : `€ ${n.toFixed(2)}`);
+                              const start = r.riservaFinale === null ? null : Math.ceil((r.riservaFinale * BIDSPIRIT_PERCENTUALE_START_SU_RISERVA) / 100);
+                              const max = r.stimaLotto === null ? null : Math.round(r.stimaLotto * (1 + BIDSPIRIT_PERCENTUALE_MAX_ESTIMATE / 100) * 100) / 100;
+                              const origine =
+                                r.origineRiserva === "lotto" ? " (lotto)" : r.origineRiserva === "sku" ? " (sku)" : r.origineRiserva === "automatica" ? " (automatica)" : "";
+                              return (
+                                <div className="whitespace-nowrap text-xs text-muted-foreground">
+                                  Stima {eur(r.stimaLotto)} · Riserva {eur(r.riservaFinale)}
+                                  {origine}
+                                  <br />
+                                  Start {eur(start)} · Max {eur(max)}
+                                </div>
+                              );
+                            })()}
                           </TableCell>
                         )}
                         {isCatawiki &&

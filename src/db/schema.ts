@@ -255,6 +255,11 @@ export const canali = pgTable("canali", {
   esclusivo: boolean("esclusivo").notNull().default(false),
   attivo: boolean("attivo").notNull().default(true),
   impostazioni: jsonb("impostazioni").notNull().default({}),
+  // Colori del portale (Release 12, 2026-11-20): da 1 a 4 colori hex
+  // "#RRGGBB". 1 = barra piena, 2-4 = fasce orizzontali; lo sfondo tenue
+  // della pagina usa il primo. Vuoto = ricade sulla tabella per nome in
+  // src/lib/colori-canali.ts.
+  colori: jsonb("colori").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

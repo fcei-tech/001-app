@@ -13,7 +13,7 @@ import { AllineaPortale } from "@/components/pubblicazione/allinea-portale";
 import { RitiratiPortale } from "@/components/pubblicazione/ritirati-portale";
 import { StoricoPortale } from "@/components/pubblicazione/storico-portale";
 import { creaBatch } from "../actions";
-import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
+import { colorePrincipale, fasceDelCanale, sfondoPaginaCanale } from "@/lib/colori-canali";
 import { contaLottiConPrenotazione } from "@/lib/prenotazione-batch";
 import { ListaBatchCanale, type RigaBatch } from "@/components/pubblicazione/lista-batch-canale";
 import { BarraCanale } from "@/components/pubblicazione/barra-canale";
@@ -47,8 +47,8 @@ export default async function CanalePubblicazionePage({
   const tagDisponibili = canale.tipo === "statico" ? await getTagBrevi() : [];
   const tagPerSku = canale.tipo === "statico" ? await getTagIdsPerSku() : {};
 
-  const colore = coloreCanale(canale.nome);
-  const fasce = fasceCanale(canale.nome);
+  const colore = colorePrincipale(canale);
+  const fasce = fasceDelCanale(canale);
   const righe: RigaBatch[] = batch.map((b) => ({
     nome: b.nome,
     id: b.id,
@@ -61,7 +61,7 @@ export default async function CanalePubblicazionePage({
   }));
 
   return (
-    <div className="min-h-full flex flex-col">
+    <div className="min-h-full flex flex-col" style={{ backgroundColor: sfondoPaginaCanale(canale) }}>
       <Header />
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
         <Link
@@ -92,7 +92,7 @@ export default async function CanalePubblicazionePage({
           className={`relative mb-6 flex items-center justify-between gap-4 overflow-hidden ${fasce ? "pl-9" : "border-l-[20px] pl-4"}`}
           style={!fasce && colore ? { borderLeftColor: colore } : undefined}
         >
-          {fasce && <BarraCanale nomeCanale={canale.nome} />}
+          {fasce && <BarraCanale fasce={fasce} />}
           <div className="flex flex-col gap-1">
             <h1 className="text-xl font-semibold tracking-tight">{canale.nome}</h1>
             <p className="text-sm text-muted-foreground">

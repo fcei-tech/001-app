@@ -23,16 +23,22 @@ export function ImpostazioniBatchCatawikiForm({
   canaleId,
   valoreIniziale,
   disabilitato,
+  variante = "catawiki",
 }: {
   batchId: number;
   canaleId: number;
   valoreIniziale: ImpostazioniBatchCatawiki;
   disabilitato: boolean;
+  // Bidspirit: niente profilo di spedizione, riserva sempre attiva, niente messaggio a Expert.
+  variante?: "catawiki" | "bidspirit";
 }) {
+  const bidspirit = variante === "bidspirit";
   const [profiloSpedizione, setProfiloSpedizione] = useState<ProfiloSpedizioneCatawiki>(valoreIniziale.profiloSpedizione);
   const [riservaAttiva, setRiservaAttiva] = useState(valoreIniziale.riservaAttiva);
   const [modPrezzo, setModPrezzo] = useState(String(valoreIniziale.modificatorePrezzoPercentuale));
   const [modRiserva, setModRiserva] = useState(String(valoreIniziale.modificatoreRiservaEur));
+  const [modRiservaPerc, setModRiservaPerc] = useState(String(valoreIniziale.modificatoreRiservaPercentuale ?? 0));
+  const [unita, setUnita] = useState<"eur" | "percento">(valoreIniziale.modificatoreRiservaUnita ?? "eur");
   const [messaggio, setMessaggio] = useState(valoreIniziale.messaggioEsperto);
   const [pending, startTransition] = useTransition();
   const [salvato, setSalvato] = useState(false);
@@ -47,6 +53,8 @@ export function ImpostazioniBatchCatawikiForm({
     if (riservaAttiva) fd.set("riservaAttiva", "on");
     fd.set("modificatorePrezzoPercentuale", modPrezzo);
     fd.set("modificatoreRiservaEur", modRiserva);
+    fd.set("modificatoreRiservaPercentuale", modRiservaPerc);
+    fd.set("modificatoreRiservaUnita", unita);
     fd.set("messaggioEsperto", messaggio);
     startTransition(async () => {
       try {
@@ -61,6 +69,7 @@ export function ImpostazioniBatchCatawikiForm({
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
+      {!bidspirit && (
       <div className="space-y-1.5">
         <Label>Profilo di spedizione</Label>
         <Select
@@ -80,13 +89,16 @@ export function ImpostazioniBatchCatawikiForm({
           </SelectContent>
         </Select>
       </div>
+      )}
 
+      {!bidspirit && (
       <div className="flex items-end pb-1.5">
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <Checkbox checked={riservaAttiva} onCheckedChange={(v) => setRiservaAttiva(v === true)} disabled={disabilitato} />
           Riserva attiva su tutto il batch
         </label>
       </div>
+      )}
 
       <div className="space-y-1.5">
         <Label>Modificatore prezzo (%)</Label>
@@ -100,16 +112,36 @@ export function ImpostazioniBatchCatawikiForm({
       </div>
 
       <div className="space-y-1.5">
-        <Label>Modificatore riserva (€)</Label>
-        <Input
-          value={modRiserva}
-          onChange={(e) => setModRiserva(e.target.value)}
-          inputMode="decimal"
-          disabled={disabilitato}
-          placeholder="0"
-        />
+        <Label>Modificatore riserva ({unita === "percento" ? "%" : "€"})</Label>
+        <div className="flex gap-2">
+          <Input
+            value={unita === "percento" ? modRiservaPerc : modRiserva}
+            onChange={(e) => (unita === "percento" ? setModRiservaPerc(e.target.value) : setModRiserva(e.target.value))}
+            inputMode="decimal"
+            disabled={disabilitato}
+            placeholder="0"
+          />
+          {/* Selettore € | % (Release 12): la percentuale e' sulla riserva finale, arrotondata all'euro intero. */}
+          <div className="flex shrink-0 overflow-hidden rounded-md border text-sm" role="group" aria-label="Unita del modificatore riserva">
+            {(["eur", "percento"] as const).map((u) => (
+              <button
+                key={u}
+                type="button"
+                disabled={disabilitato}
+                onClick={() => setUnita(u)}
+                className={`px-3 ${unita === u ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}
+              >
+                {u === "eur" ? "€" : "%"}
+              </button>
+            ))}
+          </div>
+        </div>
+        {unita === "percento" && (
+          <p className="text-xs text-muted-foreground">Sulla riserva finale (lotto, sku o automatica), arrotondata all&apos;euro intero.</p>
+        )}
       </div>
 
+      {!bidspirit && (
       <div className="space-y-1.5 sm:col-span-2">
         <Label>Messaggio a Expert (opzionale)</Label>
         <Input
@@ -119,6 +151,7 @@ export function ImpostazioniBatchCatawikiForm({
           placeholder="facoltativo"
         />
       </div>
+      )}
 
       {!disabilitato && (
         <div className="sticky bottom-0 z-20 -mx-6 -mb-6 flex items-center gap-3 border-t bg-card/95 px-6 py-3 backdrop-blur sm:col-span-2">

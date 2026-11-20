@@ -2,6 +2,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { db } from "@/db";
 import { InterruttorePortale } from "@/components/archivi/interruttore-portale";
+import { ColoriPortale, NuovoPortale } from "@/components/archivi/editor-colori-portale";
+import { coloriDelCanale } from "@/lib/colori-canali";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +23,7 @@ export default async function PortaliPage() {
           I canali di vendita. Un portale non attivo sparisce da Pubblicazione e non genera liste &quot;Da fare&quot;; i suoi dati restano.
         </p>
       </div>
+      <NuovoPortale />
       <Card>
         <CardContent className="p-4 text-sm text-muted-foreground">
           <p className="font-medium text-foreground">Un pezzo alla volta</p>
@@ -46,7 +49,8 @@ export default async function PortaliPage() {
                     {imp.quantitaFissa ? ` · sempre ${imp.quantitaFissa} pezzo` : ""}
                   </span>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-start gap-3">
+                  <ColoriPortale canaleId={c.id} colori={coloriDelCanale(c)} />
                   <Badge variant={c.attivo ? "success" : "secondary"}>{c.attivo ? "Attivo" : "Non attivo"}</Badge>
                   <InterruttorePortale canaleId={c.id} attivo={c.attivo} />
                 </div>

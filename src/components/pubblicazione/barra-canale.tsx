@@ -23,11 +23,9 @@
 // src/app/pubblicazione/[canaleId]/page.tsx e
 // src/app/pubblicazione/[canaleId]/[batchId]/page.tsx) cosi' il testo non ci
 // finisce sotto.
-import { fasceCanale } from "@/lib/colori-canali";
-
-export function BarraCanale({ nomeCanale }: { nomeCanale: string }) {
-  const fasce = fasceCanale(nomeCanale);
-  if (!fasce) return null;
+// Release 12: le fasce arrivano dal database (colonna "colori", 2-4 colori).
+export function BarraCanale({ fasce }: { fasce: string[] | undefined }) {
+  if (!fasce || fasce.length < 2) return null;
   return (
     // w-5 (20px) = SPESSORE_BORDO_CANALE_PX - vedi nota sulla costante in
     // colori-canali.ts (Tailwind non puo' leggerla a runtime).

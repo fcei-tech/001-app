@@ -68,7 +68,7 @@ const BLU_LINK = rgb(0.1, 0.25, 0.75);
 // Il font standard Helvetica supporta solo il set WinAnsi: qualunque altro
 // carattere farebbe fallire drawText. Sostituisce con "?" cio' che non e'
 // rappresentabile, invece di far fallire l'intera generazione.
-function pulisciTesto(testo: string, font: PDFFont): string {
+export function pulisciTesto(testo: string, font: PDFFont): string {
   const consentiti = new Set(font.getCharacterSet());
   let out = "";
   for (const ch of testo.replace(/[\r\n\t]+/g, " ")) {
@@ -79,7 +79,7 @@ function pulisciTesto(testo: string, font: PDFFont): string {
 }
 
 // Va a capo per parole entro larghezzaMax; oltre maxRighe tronca con "…".
-function spezzaTesto(testo: string, font: PDFFont, dimensione: number, larghezzaMax: number, maxRighe: number): string[] {
+export function spezzaTesto(testo: string, font: PDFFont, dimensione: number, larghezzaMax: number, maxRighe: number): string[] {
   const parole = testo.split(/\s+/).filter(Boolean);
   const righe: string[] = [];
   let corrente = "";

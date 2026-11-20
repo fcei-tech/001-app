@@ -20,7 +20,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { Columns3, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert, Pencil, Ellipsis, Warehouse, ChevronDown } from "lucide-react";
+import { Columns3, Download, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert, Pencil, Ellipsis, Warehouse, ChevronDown } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 import { aggiornaCampiSkuInline, campoPersonalizzatoInBloccoAction, ripristinaCampoPersonalizzatoInBloccoAction, spostaSkuInDeposito, correggiQuantita, annullaMovimenti, annullaMovimentiMultipli, togliDalRegistro } from "@/app/magazzino/actions";
 import { CasellaRegistro } from "@/components/magazzino/casella-registro";
@@ -43,6 +43,7 @@ import { FiltroTag } from "@/components/tag/filtro-tag";
 import { BarraFiltri, CampoFiltro, Scorciatoia, type ChipFiltro } from "@/components/filtri/barra-filtri";
 import { MenuViste } from "@/components/filtri/menu-viste";
 import { BarraSelezione } from "@/components/filtri/barra-selezione";
+import { EsportaMagazzino } from "@/components/magazzino/esporta-magazzino";
 import { EliminaSkuMultipli } from "@/components/magazzino/elimina-sku-multipli";
 import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
 import type { TagBreve } from "@/db/tag-queries";
@@ -472,6 +473,7 @@ export function VistaMagazzino({
   tagDisponibili,
   sogliaCatawiki,
   campiPersonalizzati,
+  filtriAttivi,
 }: {
   campiPersonalizzati: CampoPersonalizzato[];
   sogliaCatawiki: number;
@@ -513,6 +515,7 @@ export function VistaMagazzino({
   // Filtro locale "Da sistemare su un portale" (portali statici): non
   // tocca l'URL, filtra solo le righe gia' caricate.
   const [soloDaSistemare, setSoloDaSistemare] = useState(false);
+  const [dialogEsportaAperto, setDialogEsportaAperto] = useState(false);
   const nDaSistemare = useMemo(() => righeLocal.filter((r) => daSistemare[r.id]?.length).length, [righeLocal, daSistemare]);
   const righeMostrate = useMemo(
     () => (soloDaSistemare ? righeLocal.filter((r) => daSistemare[r.id]?.length) : righeLocal),
@@ -941,6 +944,9 @@ export function VistaMagazzino({
         strumenti={
           <>
             <MenuViste chiave="magazzino" onApplica={applicaVista} />
+            <Button type="button" variant="outline" title="Esporta in Excel, CSV o PDF" onClick={() => setDialogEsportaAperto(true)}>
+              <Download /> Esporta
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="outline" title="Scegli quali colonne vedere nella tabella">
@@ -1094,6 +1100,9 @@ export function VistaMagazzino({
 
       {selezionati.size > 0 && (
         <BarraSelezione n={selezionati.size} totale={righeMostrate.length} onDeseleziona={() => setSelezionati(new Set())}>
+          <Button type="button" variant="outline" onClick={() => setDialogEsportaAperto(true)}>
+            <Download /> Esporta
+          </Button>
           <AssegnaTagSelezione
             tag={tagDisponibili}
             skuIds={Array.from(selezionati)}
@@ -1267,6 +1276,18 @@ export function VistaMagazzino({
           })()}
         </DialogContent>
       </Dialog>
+
+      {dialogEsportaAperto && (
+        <EsportaMagazzino
+          aperto
+          onChiudi={() => setDialogEsportaAperto(false)}
+          idsSelezionati={idsSelezionati}
+          idsFiltrati={righeMostrate.map((r) => r.id)}
+          filtriAttivi={filtriAttivi}
+          proprietari={proprietari}
+          campiPersonalizzati={campiPersonalizzati}
+        />
+      )}
 
       <Dialog open={dialogSpostaAperto} onOpenChange={(a) => { setDialogSpostaAperto(a); if (!a) setDepositoBulk(""); }}>
         <DialogContent>

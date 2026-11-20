@@ -38,7 +38,7 @@ import {
   type ProfiloSpedizioneCatawiki,
 } from "@/lib/catawiki-config";
 import {
-  IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
+  impostazioniBatchEffettive,
   risolviBatchCatawiki,
   opzioniDaRegole,
   TIPI_ERRORE_VALIDAZIONE,
@@ -358,27 +358,39 @@ export async function aggiornaImpostazioniBatchCatawikiAction(formData: FormData
 
   const batch = await getBatch(batchId);
   if (!batch) throw new Error("Batch non trovato");
-  if (batch.canale.nome !== "Catawiki") {
-    throw new Error("Queste impostazioni sono disponibili solo per il canale Catawiki");
+  // Release 12: vale anche per Bidspirit (due modificatori, riserva sempre attiva).
+  const isBidspirit = batch.canale.nome === "Bidspirit";
+  if (batch.canale.nome !== "Catawiki" && !isBidspirit) {
+    throw new Error("Queste impostazioni sono disponibili solo per Catawiki e Bidspirit");
   }
   if (batch.stato === "pubblicato") {
     throw new Error("Non si possono modificare le impostazioni di un batch gia' pubblicato");
   }
 
-  const profiloSpedizione = (formData.get("profiloSpedizione") ?? "").toString();
-  if (!(profiloSpedizione in CATAWIKI_PROFILI_SPEDIZIONE)) {
-    throw new Error("Profilo di spedizione non valido");
+  const precedenti = impostazioniBatchEffettive(batch.impostazioniBatch, batch.canale.nome);
+  // Bidspirit non ha profilo di spedizione ne' messaggio a Expert: si tengono i valori esistenti.
+  let profiloSpedizione = precedenti.profiloSpedizione as string;
+  if (!isBidspirit) {
+    profiloSpedizione = (formData.get("profiloSpedizione") ?? "").toString();
+    if (!(profiloSpedizione in CATAWIKI_PROFILI_SPEDIZIONE)) {
+      throw new Error("Profilo di spedizione non valido");
+    }
   }
-  const riservaAttiva = formData.get("riservaAttiva") === "on";
+  const riservaAttiva = isBidspirit ? true : formData.get("riservaAttiva") === "on";
   const modificatorePrezzoPercentuale = Number(formData.get("modificatorePrezzoPercentuale") ?? 0) || 0;
   const modificatoreRiservaEur = Number(formData.get("modificatoreRiservaEur") ?? 0) || 0;
-  const messaggioEsperto = (formData.get("messaggioEsperto") ?? "").toString();
+  const modificatoreRiservaPercentuale = Number(formData.get("modificatoreRiservaPercentuale") ?? 0) || 0;
+  const unitaRaw = (formData.get("modificatoreRiservaUnita") ?? "").toString();
+  const modificatoreRiservaUnita: "eur" | "percento" = unitaRaw === "percento" ? "percento" : "eur";
+  const messaggioEsperto = isBidspirit ? precedenti.messaggioEsperto : (formData.get("messaggioEsperto") ?? "").toString();
 
   const impostazioni: ImpostazioniBatchCatawiki = {
     profiloSpedizione: profiloSpedizione as ProfiloSpedizioneCatawiki,
     riservaAttiva,
     modificatorePrezzoPercentuale,
     modificatoreRiservaEur,
+    modificatoreRiservaUnita,
+    modificatoreRiservaPercentuale,
     messaggioEsperto,
   };
 
@@ -417,10 +429,7 @@ export async function generaFileCatawikiAction(batchId: number): Promise<{
   }
   if (batch.lotti.length === 0) throw new Error("Il batch non ha lotti");
 
-  const impostazioni: ImpostazioniBatchCatawiki = {
-    ...IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
-    ...((batch.impostazioniBatch ?? {}) as Partial<ImpostazioniBatchCatawiki>),
-  };
+  const impostazioni = impostazioniBatchEffettive(batch.impostazioniBatch, batch.canale.nome);
 
   const skuIds = batch.lotti.map((l) => l.skuId);
   const fotoMappa = await getFotoPerSkuIds(skuIds);
@@ -534,8 +543,7 @@ export async function generaFileBidspiritAction(
 
   // La riserva e' obbligatoria su Bidspirit: sempre attiva.
   const impostazioni: ImpostazioniBatchCatawiki = {
-    ...IMPOSTAZIONI_BATCH_CATAWIKI_DEFAULT,
-    ...((batch.impostazioniBatch ?? {}) as Partial<ImpostazioniBatchCatawiki>),
+    ...impostazioniBatchEffettive(batch.impostazioniBatch, batch.canale.nome),
     riservaAttiva: true,
   };
 

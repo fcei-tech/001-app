@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { pl } from "@/lib/plurale";
 import { getCanaliConConteggio } from "@/db/pubblicazione-queries";
 import { calcolaDaFare } from "@/db/portale-queries";
-import { coloreCanale, fasceCanale } from "@/lib/colori-canali";
+import { colorePrincipale, fasceDelCanale } from "@/lib/colori-canali";
 import { BarraCanale } from "@/components/pubblicazione/barra-canale";
 
 // Due gruppi con titolo al posto delle etichette "Statico / Asta online / Asta fisica".
@@ -49,8 +49,8 @@ export default async function PubblicazionePage() {
                   <h2 className="mb-3 text-sm font-semibold">{gruppo.titolo}</h2>
                   <div className="grid gap-3 sm:grid-cols-2">
                     {elenco.map((c) => {
-                      const colore = coloreCanale(c.nome);
-                      const fasce = fasceCanale(c.nome);
+                      const colore = colorePrincipale(c);
+                      const fasce = fasceDelCanale(c);
                       // Portali con tabella (Shopify, eBay, Subito): quante cose da sistemare.
                       const nDaFare = daFareMap.get(c.id)?.length ?? 0;
                       return (
@@ -64,7 +64,7 @@ export default async function PubblicazionePage() {
                             className={`relative h-full overflow-hidden transition-colors hover:border-primary/40 ${fasce ? "pl-5" : "border-l-[20px]"}`}
                             style={!fasce && colore ? { borderLeftColor: colore } : undefined}
                           >
-                            {fasce && <BarraCanale nomeCanale={c.nome} />}
+                            {fasce && <BarraCanale fasce={fasce} />}
                             <CardHeader className="space-y-0">
                               <div className="flex items-center gap-2">
                                 {colore && <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: colore }} />}
