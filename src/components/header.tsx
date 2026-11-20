@@ -58,7 +58,7 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
+      <div className="mx-auto flex h-14 max-w-[2200px] items-center justify-between px-4">
         <Link href="/" onClick={vaiA("/")} className="flex items-center gap-3">
           <Image
             src="/brand/logo.png"

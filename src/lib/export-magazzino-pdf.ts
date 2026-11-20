@@ -3,7 +3,10 @@
 // (scaricata ridimensionata dalla CDN, vedi scaricaMiniatura) e i link
 // cliccabili Foto 1..N. Se una miniatura non si scarica la riga resta valida
 // con i soli link. Mai link agli annunci dei portali.
-import { PDFArray, PDFDocument, PDFName, PDFString, StandardFonts, rgb, type PDFPage } from "pdf-lib";
+// Release 13: le colonne libere (id "libera1"/"libera2") escono come CAMPI DI
+// TESTO COMPILABILI (AcroForm): si scrive dentro con Acrobat o Anteprima, ad
+// esempio il prezzo da proporre. Il PDF non viene "appiattito".
+import { PDFArray, PDFBool, PDFDocument, PDFName, PDFString, StandardFonts, rgb, type PDFPage } from "pdf-lib";
 import { pulisciTesto, spezzaTesto, scaricaMiniatureInParallelo } from "./asta-fisica-pdf";
 import { dataOggiIt, euroIt, type DefinizioneColonnaExport, type RigaExport } from "./export-magazzino";
 
@@ -58,6 +61,8 @@ export async function costruisciPdf(
   const haTotale = rigaTotale && righe.length > 0 && (colonne.some((c) => c.id === "pezzi") || colonne.some((c) => c.id === "valore"));
   const nPagine = Math.max(1, Math.ceil((righe.length + (haTotale ? 1 : 0)) / perPagina));
   const annot = new Map<PDFPage, ReturnType<typeof doc.context.register>[]>();
+  const form = doc.getForm();
+  let nCampi = 0;
 
   // Totali (Pezzi, Valore) in fondo, se le colonne ci sono.
   const iPezzi = colonne.findIndex((c) => c.id === "pezzi");
@@ -141,6 +146,24 @@ export async function costruisciPdf(
         } else {
           testo = formatta(c, righe[idx]);
         }
+        if (!eTotale && c.id.startsWith("libera")) {
+          // Cella libera = campo compilabile (nome unico per riga e colonna).
+          const campo = form.createTextField(`${c.id}_${idx}_${nCampi++}`);
+          campo.addToPage(pag, {
+            x: xc + 1.5,
+            y: yBasso + 1.5,
+            width: w - 3,
+            height: altezzaRiga - 3,
+            font,
+            borderWidth: 0,
+            backgroundColor: rgb(0.97, 0.97, 0.85),
+            textColor: NERO,
+          });
+          campo.setFontSize(dim + 1);
+          campo.updateAppearances(font);
+          xc += w;
+          return;
+        }
         const f = grassetto ? bold : font;
         const linee = spezzaTesto(pulisciTesto(testo, f), f, dim, w - 6, maxRighe);
         linee.forEach((r, k) => pag.drawText(r, { x: xc + 3, y: yAlto - 11 - k * (dim + 2), size: dim, font: f, color: NERO }));
@@ -153,6 +176,10 @@ export async function costruisciPdf(
     const es = pag.node.lookup(PDFName.of("Annots"));
     if (es instanceof PDFArray) for (const r of refs) es.push(r);
     else pag.node.set(PDFName.of("Annots"), doc.context.obj(refs));
+  }
+  if (nCampi > 0) {
+    // Acrobat ricalcola l'aspetto di cio' che si scrive nei campi.
+    form.acroForm.dict.set(PDFName.of("NeedAppearances"), PDFBool.True);
   }
   return { bytes: await doc.save(), senzaMiniatura };
 }

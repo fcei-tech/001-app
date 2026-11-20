@@ -403,7 +403,7 @@ export default async function BatchPubblicazionePage({
   return (
     <div className="min-h-full flex flex-col" style={{ backgroundColor: sfondoPaginaCanale(batch.canale) }}>
       <Header />
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+      <main className="mx-auto w-full max-w-[2200px] flex-1 px-4 py-8">
         <Link
           href={`/pubblicazione/${canaleId}`}
           className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"

@@ -37,6 +37,8 @@ export type OpzioniExport = {
   rigaTotale: boolean;
   /** Titoli delle due colonne libere (vuote, da riempire a mano nel file). Titolo vuoto = colonna con nome di default. */
   titoliLibere: [string, string];
+  /** Release 13: i pezzi nei depositi di tipo "asta fisica" (anche quelli consegnati alle case d'asta) non contano. Assente = false (modelli salvati prima). */
+  escludiAste?: boolean;
 };
 
 export type ModelloExport = {
@@ -155,16 +157,21 @@ export function catalogoColonne(campi: CampoPersonalizzato[], titoliLibere: [str
 export function costruisciRighe(
   righe: RigaMagazzino[],
   foto: Map<number, string[]>,
-  o: Pick<OpzioniExport, "soloConPezzi" | "proprietarioId" | "giacenza">
+  o: Pick<OpzioniExport, "soloConPezzi" | "proprietarioId" | "giacenza" | "escludiAste">
 ): RigaExport[] {
   const out: RigaExport[] = [];
   for (const r of righe) {
     const urls = foto.get(r.id) ?? [];
-    const g = r.giacenze.filter((x) => (o.proprietarioId ? x.proprietarioId === o.proprietarioId : true) && (o.soloConPezzi ? x.saldo > 0 : x.saldo !== 0));
+    const g = r.giacenze.filter(
+      (x) =>
+        (o.proprietarioId ? x.proprietarioId === o.proprietarioId : true) &&
+        !(o.escludiAste && x.ubicazioneTipo === "asta_fisica") &&
+        (o.soloConPezzi ? x.saldo > 0 : x.saldo !== 0)
+    );
     if (o.giacenza === "sku_deposito") {
       if (g.length === 0) {
         // Sku senza giacenza: resta in elenco solo se non si chiedono i soli pezzi e non si filtra un proprietario.
-        if (!o.soloConPezzi && !o.proprietarioId) out.push({ r, pezzi: 0, proprietario: "", deposito: "", fotoUrls: urls });
+        if (!o.soloConPezzi && !o.proprietarioId && !o.escludiAste) out.push({ r, pezzi: 0, proprietario: "", deposito: "", fotoUrls: urls });
         continue;
       }
       for (const x of g) out.push({ r, pezzi: x.saldo, proprietario: x.proprietarioNome, deposito: x.ubicazioneNome, fotoUrls: urls });

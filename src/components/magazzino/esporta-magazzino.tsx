@@ -53,6 +53,7 @@ export function EsportaMagazzino({
   const [conData, setConData] = useState(false);
   const [pdfFoto, setPdfFoto] = useState(false);
   const [rigaTotale, setRigaTotale] = useState(false);
+  const [escludiAste, setEscludiAste] = useState(false);
   const [riepilogo, setRiepilogo] = useState<{ chiave: string; sku: number; righe: number; pezzi: number; valore: number; senzaCosto: number } | null>(null);
   const [modelli, setModelli] = useState<ModelloExport[]>([]);
   const [nomeModello, setNomeModello] = useState("");
@@ -82,6 +83,26 @@ export function EsportaMagazzino({
       pdfFoto: false,
       rigaTotale: true,
       titoliLibere: ["", ""],
+      escludiAste: false,
+    },
+  };
+  // Modello di fabbrica: listino da proporre a un commerciante = una riga per sku, solo quello che
+  // hai a disposizione (fuori dalle aste), PDF con foto e una colonna "Prezzo" compilabile in Acrobat.
+  const modelloListino: ModelloExport = {
+    nome: "Listino commerciante",
+    opzioni: {
+      ambito: "tutto",
+      soloConPezzi: true,
+      proprietarioId: 0,
+      giacenza: "sku",
+      formato: "pdf",
+      colonne: ["skuCode", "artista", "opera", "misura", "anno", "condizione", "libera1"],
+      titolo: "Listino",
+      conData: true,
+      pdfFoto: true,
+      rigaTotale: false,
+      titoliLibere: ["Prezzo", ""],
+      escludiAste: true,
     },
   };
 
@@ -97,6 +118,7 @@ export function EsportaMagazzino({
     setConData(o.conData);
     setPdfFoto(o.pdfFoto);
     setRigaTotale(o.rigaTotale ?? false);
+    setEscludiAste(o.escludiAste ?? false);
     setTitoliLibere(o.titoliLibere ?? ["", ""]);
     setNomeModello(m.nome);
   }
@@ -115,16 +137,16 @@ export function EsportaMagazzino({
   const ids = ambito === "selezionati" ? idsSelezionati : idsFiltrati;
 
   function opzioniCorrenti() {
-    return { ambito, soloConPezzi, proprietarioId, giacenza, formato, colonne, titolo, conData, pdfFoto, rigaTotale, titoliLibere };
+    return { ambito, soloConPezzi, proprietarioId, giacenza, formato, colonne, titolo, conData, pdfFoto, rigaTotale, titoliLibere, escludiAste };
   }
 
   // Riepilogo "Verra' esportato": si ricalcola quando cambia una scelta che
   // modifica le righe (le colonne e il formato non le cambiano).
-  const chiaveRiepilogo = `${ambito}|${ids.join(",")}|${soloConPezzi}|${proprietarioId}|${giacenza}`;
+  const chiaveRiepilogo = `${ambito}|${ids.join(",")}|${soloConPezzi}|${proprietarioId}|${giacenza}|${escludiAste}`;
   useEffect(() => {
     let vivo = true;
     const t = setTimeout(() => {
-      anteprimaExportAction({ ambito, soloConPezzi, proprietarioId, giacenza, formato: "xlsx", colonne: [], titolo: "", conData: false, pdfFoto: false, rigaTotale: false, titoliLibere: ["", ""], skuIds: ids })
+      anteprimaExportAction({ ambito, soloConPezzi, proprietarioId, giacenza, formato: "xlsx", colonne: [], titolo: "", conData: false, pdfFoto: false, rigaTotale: false, titoliLibere: ["", ""], escludiAste, skuIds: ids })
         .then((r) => { if (vivo) setRiepilogo({ chiave: chiaveRiepilogo, ...r }); })
         .catch(() => undefined);
     }, 250);
@@ -180,6 +202,7 @@ export function EsportaMagazzino({
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-muted-foreground">Modelli:</span>
           <Button type="button" size="sm" variant="outline" onClick={() => applicaModello(modelloFabbrica)}>Inventario FP</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => applicaModello(modelloListino)}>Listino commerciante</Button>
           {modelli.map((m) => (
             <span key={m.nome} className="inline-flex items-center overflow-hidden rounded-md border">
               <button type="button" className="px-2 py-1 hover:bg-muted" onClick={() => applicaModello(m)}>{m.nome}</button>
@@ -211,6 +234,10 @@ export function EsportaMagazzino({
             <label className="flex items-center gap-2 text-sm">
               <Checkbox checked={soloConPezzi} onCheckedChange={(v) => setSoloConPezzi(v === true)} />
               Solo con pezzi disponibili
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={escludiAste} onCheckedChange={(v) => setEscludiAste(v === true)} />
+              Escludi i pezzi nelle aste fisiche
             </label>
             <div className="flex flex-col gap-1">
               <span className="text-xs text-muted-foreground">Proprietario</span>
@@ -298,7 +325,7 @@ export function EsportaMagazzino({
         <div className="flex flex-col gap-1">
           <p className="text-sm font-medium">Colonne libere</p>
           <p className="text-xs text-muted-foreground">
-            Escono vuote, da compilare nel file (per esempio i prezzi dedicati a un cliente). Dai un titolo e scegli la colonna nell&apos;elenco.
+            Escono vuote, da compilare nel file (per esempio i prezzi dedicati a un cliente). Dai un titolo e scegli la colonna nell&apos;elenco. Nel PDF ogni cella è un campo che compili direttamente in Acrobat (o in Anteprima su Mac).
           </p>
           <div className="grid gap-2 sm:grid-cols-2">
             {[0, 1].map((i) => (

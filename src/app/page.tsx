@@ -81,7 +81,7 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
   return (
     <div className="min-h-full flex flex-col">
       <Header />
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+      <main className="mx-auto w-full max-w-[2200px] flex-1 px-4 py-8">
         {skueliminato && (
           <div className="mb-4 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">Sku eliminato.</div>
         )}
