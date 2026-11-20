@@ -39,6 +39,8 @@ export type OpzioniExport = {
   titoliLibere: [string, string];
   /** Release 13: i pezzi nei depositi di tipo "asta fisica" (anche quelli consegnati alle case d'asta) non contano. Assente = false (modelli salvati prima). */
   escludiAste?: boolean;
+  /** Release 13: gli sku bloccati alla vendita non entrano. Assente = false (modelli salvati prima). */
+  escludiBloccati?: boolean;
 };
 
 export type ModelloExport = {
@@ -120,7 +122,7 @@ export const COLONNE_EXPORT_FISSE: DefinizioneColonnaExport[] = [
   { id: "bloccato", etichetta: "Bloccato in vendita", tipo: "testo", larghezza: 12, valore: (x) => (x.r.bloccatoVendita ? "Sì" : "No") },
   { id: "numeroFoto", etichetta: "N. foto", tipo: "numero", larghezza: 8, valore: (x) => x.fotoUrls.length },
   // Solo link alle FOTO (mai agli annunci dei portali).
-  { id: "fotoPrimaria", etichetta: "Foto principale (link)", tipo: "link", larghezza: 30, valore: (x) => x.fotoUrls[0] ?? "" },
+  { id: "fotoPrimaria", etichetta: "Foto principale (link)", tipo: "link", larghezza: 14, valore: (x) => x.fotoUrls[0] ?? "" },
   { id: "creato", etichetta: "Creato il", tipo: "data", larghezza: 12, valore: (x) => dataIt(x.r.createdAt) },
   { id: "aggiornato", etichetta: "Aggiornato il", tipo: "data", larghezza: 13, valore: (x) => dataIt(x.r.updatedAt) },
 ];
@@ -157,10 +159,11 @@ export function catalogoColonne(campi: CampoPersonalizzato[], titoliLibere: [str
 export function costruisciRighe(
   righe: RigaMagazzino[],
   foto: Map<number, string[]>,
-  o: Pick<OpzioniExport, "soloConPezzi" | "proprietarioId" | "giacenza" | "escludiAste">
+  o: Pick<OpzioniExport, "soloConPezzi" | "proprietarioId" | "giacenza" | "escludiAste" | "escludiBloccati">
 ): RigaExport[] {
   const out: RigaExport[] = [];
   for (const r of righe) {
+    if (o.escludiBloccati && r.bloccatoVendita) continue;
     const urls = foto.get(r.id) ?? [];
     const g = r.giacenze.filter(
       (x) =>
@@ -243,7 +246,10 @@ export function costruisciXlsx(cols: DefinizioneColonnaExport[], righe: RigaExpo
       } else if (c.tipo === "euro" && cella.t === "n") {
         cella.z = FORMATO_EURO_XLSX;
       } else if (c.tipo === "link" && typeof cella.v === "string" && cella.v) {
+        // Excel: nella cella si legge "Foto", il collegamento resta sotto (clic = apre la foto). CSV: resta l'indirizzo.
         cella.l = { Target: cella.v, Tooltip: "Apri la foto" };
+        cella.v = "Foto";
+        cella.w = "Foto";
       }
     });
   });

@@ -1,10 +1,11 @@
 "use client";
 
-// Finestra "Esporta" del Magazzino (Release 12, 2026-11-20): "quello che voglio,
-// come voglio". Cosa (selezionati / filtrati / tutto), giacenza, formato,
-// colonne a scelta e riordinabili, modelli salvati. Link = solo foto.
+// Finestra "Esporta" del Magazzino (Release 12, riordinata nella Release 13, 2026-11-20).
+// Tre blocchi: 1 Quali sku, 2 Formato, 3 Colonne. Una sola barra dei modelli in alto.
+// Le opzioni compaiono solo quando servono (miniature solo PDF, Riga Totale solo con
+// Pezzi o Valore). Le colonne libere si rinominano nella loro riga. Link = solo foto.
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { ArrowDown, ArrowUp, Download } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,8 @@ import { anteprimaExportAction, eliminaModelloExportAction, esportaMagazzinoActi
 type Ambito = "selezionati" | "filtrati" | "tutto";
 
 const select = "h-9 w-full rounded-md border bg-background px-2 text-sm";
+const blocco = "flex flex-col gap-3 rounded-md border p-3";
+const titoloBlocco = "text-xs font-medium uppercase tracking-wide text-muted-foreground";
 
 export function EsportaMagazzino({
   aperto,
@@ -45,6 +48,8 @@ export function EsportaMagazzino({
   const catalogo = useMemo(() => catalogoColonne(campiPersonalizzati, titoliLibere), [campiPersonalizzati, titoliLibere]);
   const [ambito, setAmbito] = useState<Ambito>(idsSelezionati.length > 0 ? "selezionati" : "filtrati");
   const [soloConPezzi, setSoloConPezzi] = useState(false);
+  const [escludiAste, setEscludiAste] = useState(false);
+  const [escludiBloccati, setEscludiBloccati] = useState(false);
   const [proprietarioId, setProprietarioId] = useState(0);
   const [giacenza, setGiacenza] = useState<GiacenzaExport>("sku");
   const [formato, setFormato] = useState<FormatoExport>("xlsx");
@@ -53,9 +58,11 @@ export function EsportaMagazzino({
   const [conData, setConData] = useState(false);
   const [pdfFoto, setPdfFoto] = useState(false);
   const [rigaTotale, setRigaTotale] = useState(false);
-  const [escludiAste, setEscludiAste] = useState(false);
+  const [cerca, setCerca] = useState("");
   const [riepilogo, setRiepilogo] = useState<{ chiave: string; sku: number; righe: number; pezzi: number; valore: number; senzaCosto: number } | null>(null);
   const [modelli, setModelli] = useState<ModelloExport[]>([]);
+  const [modelloAttivo, setModelloAttivo] = useState("");
+  const [salvaAperto, setSalvaAperto] = useState(false);
   const [nomeModello, setNomeModello] = useState("");
   const [errore, setErrore] = useState<string | null>(null);
   const [esito, setEsito] = useState<string | null>(null);
@@ -84,10 +91,12 @@ export function EsportaMagazzino({
       rigaTotale: true,
       titoliLibere: ["", ""],
       escludiAste: false,
+      escludiBloccati: false,
     },
   };
   // Modello di fabbrica: listino da proporre a un commerciante = una riga per sku, solo quello che
-  // hai a disposizione (fuori dalle aste), PDF con foto e una colonna "Prezzo" compilabile in Acrobat.
+  // hai a disposizione (fuori dalle aste, non bloccato), PDF con foto e una colonna "Prezzo"
+  // compilabile in Acrobat.
   const modelloListino: ModelloExport = {
     nome: "Listino commerciante",
     opzioni: {
@@ -103,6 +112,7 @@ export function EsportaMagazzino({
       rigaTotale: false,
       titoliLibere: ["Prezzo", ""],
       escludiAste: true,
+      escludiBloccati: true,
     },
   };
 
@@ -110,6 +120,8 @@ export function EsportaMagazzino({
     const o = m.opzioni;
     setAmbito(o.ambito === "selezionati" && idsSelezionati.length === 0 ? "filtrati" : o.ambito);
     setSoloConPezzi(o.soloConPezzi);
+    setEscludiAste(o.escludiAste ?? false);
+    setEscludiBloccati(o.escludiBloccati ?? false);
     setProprietarioId(proprietari.some((p) => p.id === o.proprietarioId) ? o.proprietarioId : 0);
     setGiacenza(o.giacenza);
     setFormato(o.formato);
@@ -118,8 +130,8 @@ export function EsportaMagazzino({
     setConData(o.conData);
     setPdfFoto(o.pdfFoto);
     setRigaTotale(o.rigaTotale ?? false);
-    setEscludiAste(o.escludiAste ?? false);
     setTitoliLibere(o.titoliLibere ?? ["", ""]);
+    setModelloAttivo(m.nome);
     setNomeModello(m.nome);
   }
 
@@ -136,17 +148,21 @@ export function EsportaMagazzino({
 
   const ids = ambito === "selezionati" ? idsSelezionati : idsFiltrati;
 
+  // La riga Totale ha senso solo con Pezzi o Valore tra le colonne: altrimenti non si offre e non si applica.
+  const totalePossibile = colonne.includes("pezzi") || colonne.includes("valore");
+  const rigaTotaleEffettiva = rigaTotale && totalePossibile;
+
   function opzioniCorrenti() {
-    return { ambito, soloConPezzi, proprietarioId, giacenza, formato, colonne, titolo, conData, pdfFoto, rigaTotale, titoliLibere, escludiAste };
+    return { ambito, soloConPezzi, proprietarioId, giacenza, formato, colonne, titolo, conData, pdfFoto, rigaTotale: rigaTotaleEffettiva, titoliLibere, escludiAste, escludiBloccati };
   }
 
   // Riepilogo "Verra' esportato": si ricalcola quando cambia una scelta che
   // modifica le righe (le colonne e il formato non le cambiano).
-  const chiaveRiepilogo = `${ambito}|${ids.join(",")}|${soloConPezzi}|${proprietarioId}|${giacenza}|${escludiAste}`;
+  const chiaveRiepilogo = `${ambito}|${ids.join(",")}|${soloConPezzi}|${proprietarioId}|${giacenza}|${escludiAste}|${escludiBloccati}`;
   useEffect(() => {
     let vivo = true;
     const t = setTimeout(() => {
-      anteprimaExportAction({ ambito, soloConPezzi, proprietarioId, giacenza, formato: "xlsx", colonne: [], titolo: "", conData: false, pdfFoto: false, rigaTotale: false, titoliLibere: ["", ""], escludiAste, skuIds: ids })
+      anteprimaExportAction({ ambito, soloConPezzi, proprietarioId, giacenza, formato: "xlsx", colonne: [], titolo: "", conData: false, pdfFoto: false, rigaTotale: false, titoliLibere: ["", ""], escludiAste, escludiBloccati, skuIds: ids })
         .then((r) => { if (vivo) setRiepilogo({ chiave: chiaveRiepilogo, ...r }); })
         .catch(() => undefined);
     }, 250);
@@ -181,161 +197,211 @@ export function EsportaMagazzino({
   function salvaModello() {
     start(async () => {
       const r = await salvaModelloExportAction({ nome: nomeModello, opzioni: opzioniCorrenti() });
-      if (!r.ok) setErrore(r.errore ?? "Errore");
-      else setModelli(await leggiModelliExportAction());
+      if (!r.ok) {
+        setErrore(r.errore ?? "Errore");
+        return;
+      }
+      setErrore(null);
+      setModelloAttivo(nomeModello.trim());
+      setSalvaAperto(false);
+      setModelli(await leggiModelliExportAction());
     });
   }
 
-  const nonScelte = catalogo.filter((c) => !colonne.includes(c.id));
   const etichetta = (id: string) => catalogo.find((c) => c.id === id)?.etichetta ?? id;
+  const nonScelte = catalogo.filter((c) => !colonne.includes(c.id));
+  const q = cerca.trim().toLowerCase();
+  const nonScelteFiltrate = nonScelte.filter((c) => !q || c.etichetta.toLowerCase().includes(q));
+  const normali = nonScelteFiltrate.filter((c) => !c.id.startsWith("libera"));
+  const libere = nonScelteFiltrate.filter((c) => c.id.startsWith("libera"));
+  const nomeAttivoSalvato = modelli.some((m) => m.nome === modelloAttivo);
+
+  function cambiaTitoloLibera(id: string, v: string) {
+    const i = id === "libera1" ? 0 : 1;
+    setTitoliLibere(i === 0 ? [v, titoliLibere[1]] : [titoliLibere[0], v]);
+  }
+
+  const chip = (attivo: boolean) => (attivo ? "default" : "outline") as "default" | "outline";
 
   return (
     <Dialog open={aperto} onOpenChange={(a) => { if (!a) onChiudi(); }}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Esporta dal Magazzino</DialogTitle>
-          <DialogDescription>
-            Scegli cosa esportare, in che formato e quali colonne. I collegamenti sono solo alle foto (mai agli annunci dei portali).
-          </DialogDescription>
+          <DialogDescription>Nei file ci sono solo i link alle foto, mai agli annunci dei portali.</DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Modelli:</span>
-          <Button type="button" size="sm" variant="outline" onClick={() => applicaModello(modelloFabbrica)}>Inventario FP</Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => applicaModello(modelloListino)}>Listino commerciante</Button>
-          {modelli.map((m) => (
-            <span key={m.nome} className="inline-flex items-center overflow-hidden rounded-md border">
-              <button type="button" className="px-2 py-1 hover:bg-muted" onClick={() => applicaModello(m)}>{m.nome}</button>
-              <button
-                type="button"
-                aria-label={`Elimina il modello ${m.nome}`}
-                className="border-l px-1.5 py-1 text-muted-foreground hover:bg-muted"
-                onClick={() => start(async () => { await eliminaModelloExportAction(m.nome); setModelli(await leggiModelliExportAction()); })}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-2">
-            <p className="text-sm font-medium">Cosa</p>
-            {([
-              ["selezionati", "Sku selezionati", idsSelezionati.length > 0],
-              ["filtrati", filtriAttivi ? "Sku filtrati" : "Sku in elenco", true],
-              ["tutto", "Tutto il magazzino", true],
-            ] as [Ambito, string, boolean][]).map(([v, et, abil]) => (
-              <label key={v} className={`flex items-center gap-2 text-sm ${abil ? "" : "opacity-50"}`}>
-                <input type="radio" name="ambito" checked={ambito === v} disabled={!abil} onChange={() => setAmbito(v)} />
-                {et}
-              </label>
+        {/* Modelli: un solo punto per sceglierli e salvarli */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground">Modello</span>
+            <Button type="button" size="sm" variant={chip(modelloAttivo === modelloFabbrica.nome)} onClick={() => applicaModello(modelloFabbrica)}>Inventario FP</Button>
+            <Button type="button" size="sm" variant={chip(modelloAttivo === modelloListino.nome)} onClick={() => applicaModello(modelloListino)}>Listino commerciante</Button>
+            {modelli.map((m) => (
+              <span key={m.nome} className={`inline-flex items-center overflow-hidden rounded-md border ${modelloAttivo === m.nome ? "border-primary bg-primary/15" : ""}`}>
+                <button type="button" className="px-2 py-1 hover:bg-muted" onClick={() => applicaModello(m)}>{m.nome}</button>
+                <button
+                  type="button"
+                  aria-label={`Elimina il modello ${m.nome}`}
+                  className="border-l px-1.5 py-1 text-muted-foreground hover:bg-muted"
+                  onClick={() => start(async () => { await eliminaModelloExportAction(m.nome); setModelli(await leggiModelliExportAction()); })}
+                >
+                  ×
+                </button>
+              </span>
             ))}
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={soloConPezzi} onCheckedChange={(v) => setSoloConPezzi(v === true)} />
-              Solo con pezzi disponibili
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={escludiAste} onCheckedChange={(v) => setEscludiAste(v === true)} />
-              Escludi i pezzi nelle aste fisiche
-            </label>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Proprietario</span>
-              <select className={select} value={proprietarioId} onChange={(e) => setProprietarioId(Number(e.target.value))}>
-                <option value={0}>Tutti</option>
-                {proprietari.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
-              </select>
+          </div>
+          <Button type="button" size="sm" variant="outline" onClick={() => setSalvaAperto((v) => !v)}>Salva come modello…</Button>
+        </div>
+        {salvaAperto && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Input className="h-9 w-56" placeholder="Nome del modello" value={nomeModello} onChange={(e) => setNomeModello(e.target.value)} />
+            <Button type="button" size="sm" disabled={pending || !nomeModello.trim()} onClick={salvaModello}>Salva</Button>
+            {nomeAttivoSalvato && nomeModello.trim() === modelloAttivo && <span className="text-xs text-muted-foreground">Sostituisce il modello con lo stesso nome.</span>}
+          </div>
+        )}
+
+        {/* 1 - Quali sku */}
+        <div>
+          <p className={`${titoloBlocco} mb-2`}>1 · Quali sku</p>
+          <div className={blocco}>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              {([
+                ["selezionati", "Selezionati", idsSelezionati.length > 0],
+                ["filtrati", filtriAttivi ? "Sku filtrati" : "In elenco", true],
+                ["tutto", "Tutto il magazzino", true],
+              ] as [Ambito, string, boolean][]).map(([v, et, abil]) => (
+                <label key={v} className={`flex items-center gap-2 text-sm ${abil ? "" : "opacity-50"}`}>
+                  <input type="radio" name="ambito" checked={ambito === v} disabled={!abil} onChange={() => setAmbito(v)} />
+                  {et}
+                </label>
+              ))}
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <span className="text-xs text-muted-foreground">Escludi</span>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={escludiAste} onCheckedChange={(v) => setEscludiAste(v === true)} />
+                  Pezzi nelle aste fisiche
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={escludiBloccati} onCheckedChange={(v) => setEscludiBloccati(v === true)} />
+                  Sku bloccati alla vendita
+                </label>
+              </div>
+              <div className="flex flex-col gap-2">
+                <span className="text-xs text-muted-foreground">Tieni solo</span>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={soloConPezzi} onCheckedChange={(v) => setSoloConPezzi(v === true)} />
+                  Con pezzi disponibili
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-xs text-muted-foreground">Proprietario</span>
+                  <select className={`${select} flex-1`} value={proprietarioId} onChange={(e) => setProprietarioId(Number(e.target.value))} aria-label="Proprietario">
+                    <option value={0}>Tutti</option>
+                    {proprietari.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                  </select>
+                </label>
+              </div>
             </div>
           </div>
+        </div>
 
-          <div className="flex flex-col gap-2">
-            <p className="text-sm font-medium">Come</p>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Giacenza</span>
-              <select className={select} value={giacenza} onChange={(e) => setGiacenza(e.target.value as GiacenzaExport)}>
+        {/* 2 - Formato */}
+        <div>
+          <p className={`${titoloBlocco} mb-2`}>2 · Formato</p>
+          <div className={blocco}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" size="sm" variant={chip(formato === "xlsx")} onClick={() => setFormato("xlsx")}>Excel</Button>
+              <Button type="button" size="sm" variant={chip(formato === "csv")} onClick={() => setFormato("csv")}>CSV</Button>
+              <Button type="button" size="sm" variant={chip(formato === "pdf")} onClick={() => setFormato("pdf")}>PDF</Button>
+              <select className={`${select} ml-auto w-60`} value={giacenza} onChange={(e) => setGiacenza(e.target.value as GiacenzaExport)} aria-label="Giacenza">
                 <option value="sku">Una riga per sku</option>
                 <option value="sku_deposito">Una riga per sku e deposito</option>
               </select>
             </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Formato</span>
-              <select className={select} value={formato} onChange={(e) => setFormato(e.target.value as FormatoExport)}>
-                <option value="xlsx">Excel (.xlsx)</option>
-                <option value="csv">CSV (per Excel italiano)</option>
-                <option value="pdf">PDF</option>
-              </select>
-            </div>
-            {formato === "pdf" && (
+            {formato === "pdf" ? (
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox checked={pdfFoto} onCheckedChange={(v) => setPdfFoto(v === true)} />
-                Con miniature e link alle foto
+                Miniature e link alle foto
+                <span className="rounded border border-dashed px-1.5 text-[11px] text-muted-foreground">solo PDF</span>
+              </label>
+            ) : (
+              <p className="text-xs text-muted-foreground">Nessuna immagine nelle celle: per il link alla foto principale scegli la colonna &quot;Foto principale (link)&quot;.</p>
+            )}
+            <div className="flex flex-wrap items-center gap-4">
+              <Input className="h-9 min-w-48 flex-1" placeholder="Titolo in testa (facoltativo)" value={titolo} onChange={(e) => setTitolo(e.target.value)} aria-label="Titolo in testa" />
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={conData} onCheckedChange={(v) => setConData(v === true)} />
+                Data di oggi
+              </label>
+            </div>
+            {totalePossibile && (
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={rigaTotale} onCheckedChange={(v) => setRigaTotale(v === true)} />
+                Riga Totale in fondo
+                <span className="rounded border border-dashed px-1.5 text-[11px] text-muted-foreground">pezzi e valore</span>
               </label>
             )}
-            {formato !== "pdf" && (
-              <p className="text-xs text-muted-foreground">
-                Nessuna immagine nelle celle: per il link alla foto principale scegli la colonna &quot;Foto principale (link)&quot;.
-              </p>
-            )}
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Titolo in testa (facoltativo)</span>
-              <Input value={titolo} onChange={(e) => setTitolo(e.target.value)} />
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={conData} onCheckedChange={(v) => setConData(v === true)} />
-              Scrivi la data di oggi in testa
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={rigaTotale} onCheckedChange={(v) => setRigaTotale(v === true)} />
-              Riga Totale in fondo (pezzi e valore)
-            </label>
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium">Colonne nel file (in questo ordine)</p>
-            <div className="max-h-56 overflow-y-auto rounded-md border">
+        {/* 3 - Colonne */}
+        <div>
+          <p className={`${titoloBlocco} mb-2`}>3 · Colonne</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="max-h-72 overflow-y-auto rounded-md border">
               {colonne.length === 0 && <p className="p-3 text-sm text-muted-foreground">Nessuna colonna scelta.</p>}
-              {colonne.map((id, i) => (
-                <div key={id} className="flex items-center justify-between gap-2 border-b px-2 py-1 text-sm last:border-b-0">
-                  <span>{etichetta(id)}</span>
-                  <span className="flex items-center">
-                    <Button type="button" size="icon" variant="ghost" className="size-7" aria-label="Su" onClick={() => muovi(i, -1)}><ArrowUp className="size-4" /></Button>
-                    <Button type="button" size="icon" variant="ghost" className="size-7" aria-label="Giù" onClick={() => muovi(i, 1)}><ArrowDown className="size-4" /></Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => attiva(id, false)}>Togli</Button>
-                  </span>
-                </div>
-              ))}
+              {colonne.map((id, i) => {
+                const libera = id.startsWith("libera");
+                return (
+                  <div key={id} className={`flex items-center justify-between gap-2 border-b px-2 py-1 text-sm last:border-b-0 ${libera ? "bg-muted/40" : ""}`}>
+                    {libera ? (
+                      <span className="flex min-w-0 flex-1 items-center gap-2">
+                        <Input
+                          className="h-7 max-w-32"
+                          value={titoliLibere[id === "libera1" ? 0 : 1]}
+                          placeholder={`Colonna libera ${id === "libera1" ? 1 : 2}`}
+                          onChange={(e) => cambiaTitoloLibera(id, e.target.value)}
+                          aria-label={`Titolo colonna libera ${id === "libera1" ? 1 : 2}`}
+                        />
+                        <span className="whitespace-nowrap rounded border border-dashed px-1.5 text-[11px] text-muted-foreground">libera{formato === "pdf" ? " · compilabile" : ""}</span>
+                      </span>
+                    ) : (
+                      <span className="truncate">{etichetta(id)}</span>
+                    )}
+                    <span className="flex items-center">
+                      <Button type="button" size="icon" variant="ghost" className="size-7" aria-label="Su" onClick={() => muovi(i, -1)}><ArrowUp className="size-4" /></Button>
+                      <Button type="button" size="icon" variant="ghost" className="size-7" aria-label="Giù" onClick={() => muovi(i, 1)}><ArrowDown className="size-4" /></Button>
+                      <Button type="button" size="icon" variant="ghost" className="size-7" aria-label={`Togli ${etichetta(id)}`} onClick={() => attiva(id, false)}><X className="size-4" /></Button>
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-          </div>
-          <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium">Altre colonne disponibili</p>
-            <div className="max-h-56 overflow-y-auto rounded-md border">
-              {nonScelte.map((c) => (
-                <label key={c.id} className="flex cursor-pointer items-center gap-2 border-b px-2 py-1 text-sm last:border-b-0 hover:bg-muted/50">
-                  <Checkbox checked={false} onCheckedChange={(v) => attiva(c.id, v === true)} />
-                  {c.etichetta}
-                </label>
-              ))}
-              {nonScelte.length === 0 && <p className="p-3 text-sm text-muted-foreground">Hai scelto tutte le colonne.</p>}
+            <div className="flex flex-col gap-2">
+              <Input className="h-9" placeholder="Cerca una colonna…" value={cerca} onChange={(e) => setCerca(e.target.value)} aria-label="Cerca una colonna" />
+              <div className="max-h-60 overflow-y-auto rounded-md border">
+                {normali.map((c) => (
+                  <label key={c.id} className="flex cursor-pointer items-center gap-2 border-b px-2 py-1 text-sm last:border-b-0 hover:bg-muted/50">
+                    <Checkbox checked={false} onCheckedChange={(v) => attiva(c.id, v === true)} />
+                    {c.etichetta}
+                  </label>
+                ))}
+                {libere.map((c, k) => (
+                  <label key={c.id} className={`flex cursor-pointer items-center justify-between gap-2 border-b px-2 py-1 text-sm last:border-b-0 hover:bg-muted/50 ${k === 0 ? "border-t border-dashed" : ""}`}>
+                    <span className="flex items-center gap-2">
+                      <Checkbox checked={false} onCheckedChange={(v) => attiva(c.id, v === true)} />
+                      {c.etichetta}
+                    </span>
+                    <span className="rounded border border-dashed px-1.5 text-[11px] text-muted-foreground">vuota</span>
+                  </label>
+                ))}
+                {normali.length === 0 && libere.length === 0 && (
+                  <p className="p-3 text-sm text-muted-foreground">{nonScelte.length === 0 ? "Hai scelto tutte le colonne." : "Nessuna colonna con questo nome."}</p>
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium">Colonne libere</p>
-          <p className="text-xs text-muted-foreground">
-            Escono vuote, da compilare nel file (per esempio i prezzi dedicati a un cliente). Dai un titolo e scegli la colonna nell&apos;elenco. Nel PDF ogni cella è un campo che compili direttamente in Acrobat (o in Anteprima su Mac).
-          </p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {[0, 1].map((i) => (
-              <Input
-                key={i}
-                placeholder={`Titolo colonna libera ${i + 1}`}
-                value={titoliLibere[i]}
-                onChange={(e) => setTitoliLibere(i === 0 ? [e.target.value, titoliLibere[1]] : [titoliLibere[0], e.target.value])}
-              />
-            ))}
           </div>
         </div>
 
@@ -358,17 +424,11 @@ export function EsportaMagazzino({
         {errore && <p className="text-sm text-destructive">{errore}</p>}
         {esito && <p className="text-sm text-success">{esito}</p>}
 
-        <DialogFooter className="flex-wrap gap-2 sm:justify-between">
-          <div className="flex items-center gap-2">
-            <Input className="h-9 w-44" placeholder="Nome del modello" value={nomeModello} onChange={(e) => setNomeModello(e.target.value)} />
-            <Button type="button" variant="outline" disabled={pending || !nomeModello.trim()} onClick={salvaModello}>Salva modello</Button>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={onChiudi}>Chiudi</Button>
-            <Button type="button" disabled={pending || colonne.length === 0} onClick={esporta}>
-              <Download /> {pending ? "Preparo…" : "Esporta"}
-            </Button>
-          </div>
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="outline" onClick={onChiudi}>Chiudi</Button>
+          <Button type="button" disabled={pending || colonne.length === 0} onClick={esporta}>
+            <Download /> {pending ? "Preparo…" : "Esporta"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

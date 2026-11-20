@@ -30,7 +30,7 @@ async function preparaRighe(o: OpzioniExport) {
   const fotoMappa = scelti.length ? await getFotoPerSkuIds(scelti.map((r) => r.id)) : new Map();
   const foto = new Map<number, string[]>();
   for (const [id, f] of fotoMappa) foto.set(id, f.map((x: { url: string }) => x.url));
-  const righe = costruisciRighe(scelti, foto, { soloConPezzi: o.soloConPezzi, proprietarioId: o.proprietarioId, giacenza: o.giacenza, escludiAste: o.escludiAste });
+  const righe = costruisciRighe(scelti, foto, { soloConPezzi: o.soloConPezzi, proprietarioId: o.proprietarioId, giacenza: o.giacenza, escludiAste: o.escludiAste, escludiBloccati: o.escludiBloccati });
   return { scelti, righe };
 }
 
@@ -64,7 +64,7 @@ export async function esportaMagazzinoAction(
     if (o.colonne.length === 0) return { ok: false, errore: "Scegli almeno una colonna." };
     const { scelti, righe } = await preparaRighe(o);
     if (scelti.length === 0) return { ok: false, errore: "Nessuno sku da esportare." };
-    if (righe.length === 0) return { ok: false, errore: "Con queste scelte non resta nessuna riga (controlla \"solo con pezzi\", il proprietario e l'esclusione delle aste)." };
+    if (righe.length === 0) return { ok: false, errore: "Con queste scelte non resta nessuna riga (controlla \"solo con pezzi\", il proprietario e le esclusioni)." };
 
     const catalogo = catalogoColonne(await getCampiPersonalizzati(), o.titoliLibere ?? ["", ""]);
     const cols = colonneScelte(catalogo, o.colonne);
