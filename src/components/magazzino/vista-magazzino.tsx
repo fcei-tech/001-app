@@ -1100,9 +1100,6 @@ export function VistaMagazzino({
 
       {selezionati.size > 0 && (
         <BarraSelezione n={selezionati.size} totale={righeMostrate.length} onDeseleziona={() => setSelezionati(new Set())}>
-          <Button type="button" variant="outline" onClick={() => setDialogEsportaAperto(true)}>
-            <Download /> Esporta
-          </Button>
           <AssegnaTagSelezione
             tag={tagDisponibili}
             skuIds={Array.from(selezionati)}

@@ -118,6 +118,13 @@ export function BarraFiltri({
       {aperto && children && (
         <div className="grid gap-3 rounded-lg border bg-muted/30 p-3 [grid-template-columns:repeat(auto-fill,minmax(13rem,1fr))]">
           {children}
+          {onAzzera && (
+            <div className="col-span-full flex justify-end">
+              <Button type="button" size="sm" variant="outline" disabled={n === 0} onClick={onAzzera}>
+                Togli tutti i filtri
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

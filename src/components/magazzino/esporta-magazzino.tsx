@@ -15,9 +15,10 @@ import {
   catalogoColonne,
   type FormatoExport,
   type GiacenzaExport,
+  euroIt,
   type ModelloExport,
 } from "@/lib/export-magazzino";
-import { eliminaModelloExportAction, esportaMagazzinoAction, leggiModelliExportAction, salvaModelloExportAction } from "@/app/magazzino/export-actions";
+import { anteprimaExportAction, eliminaModelloExportAction, esportaMagazzinoAction, leggiModelliExportAction, salvaModelloExportAction } from "@/app/magazzino/export-actions";
 
 type Ambito = "selezionati" | "filtrati" | "tutto";
 
@@ -40,7 +41,8 @@ export function EsportaMagazzino({
   proprietari: { id: number; nome: string }[];
   campiPersonalizzati: CampoPersonalizzato[];
 }) {
-  const catalogo = useMemo(() => catalogoColonne(campiPersonalizzati), [campiPersonalizzati]);
+  const [titoliLibere, setTitoliLibere] = useState<[string, string]>(["", ""]);
+  const catalogo = useMemo(() => catalogoColonne(campiPersonalizzati, titoliLibere), [campiPersonalizzati, titoliLibere]);
   const [ambito, setAmbito] = useState<Ambito>(idsSelezionati.length > 0 ? "selezionati" : "filtrati");
   const [soloConPezzi, setSoloConPezzi] = useState(false);
   const [proprietarioId, setProprietarioId] = useState(0);
@@ -50,6 +52,8 @@ export function EsportaMagazzino({
   const [titolo, setTitolo] = useState("");
   const [conData, setConData] = useState(false);
   const [pdfFoto, setPdfFoto] = useState(false);
+  const [rigaTotale, setRigaTotale] = useState(false);
+  const [riepilogo, setRiepilogo] = useState<{ chiave: string; sku: number; righe: number; pezzi: number; valore: number; senzaCosto: number } | null>(null);
   const [modelli, setModelli] = useState<ModelloExport[]>([]);
   const [nomeModello, setNomeModello] = useState("");
   const [errore, setErrore] = useState<string | null>(null);
@@ -76,6 +80,8 @@ export function EsportaMagazzino({
       titolo: "Inventario FP",
       conData: true,
       pdfFoto: false,
+      rigaTotale: true,
+      titoliLibere: ["", ""],
     },
   };
 
@@ -90,6 +96,8 @@ export function EsportaMagazzino({
     setTitolo(o.titolo);
     setConData(o.conData);
     setPdfFoto(o.pdfFoto);
+    setRigaTotale(o.rigaTotale ?? false);
+    setTitoliLibere(o.titoliLibere ?? ["", ""]);
     setNomeModello(m.nome);
   }
 
@@ -105,11 +113,24 @@ export function EsportaMagazzino({
   }
 
   const ids = ambito === "selezionati" ? idsSelezionati : idsFiltrati;
-  const nSku = ambito === "tutto" ? null : ids.length;
 
   function opzioniCorrenti() {
-    return { ambito, soloConPezzi, proprietarioId, giacenza, formato, colonne, titolo, conData, pdfFoto };
+    return { ambito, soloConPezzi, proprietarioId, giacenza, formato, colonne, titolo, conData, pdfFoto, rigaTotale, titoliLibere };
   }
+
+  // Riepilogo "Verra' esportato": si ricalcola quando cambia una scelta che
+  // modifica le righe (le colonne e il formato non le cambiano).
+  const chiaveRiepilogo = `${ambito}|${ids.join(",")}|${soloConPezzi}|${proprietarioId}|${giacenza}`;
+  useEffect(() => {
+    let vivo = true;
+    const t = setTimeout(() => {
+      anteprimaExportAction({ ambito, soloConPezzi, proprietarioId, giacenza, formato: "xlsx", colonne: [], titolo: "", conData: false, pdfFoto: false, rigaTotale: false, titoliLibere: ["", ""], skuIds: ids })
+        .then((r) => { if (vivo) setRiepilogo({ chiave: chiaveRiepilogo, ...r }); })
+        .catch(() => undefined);
+    }, 250);
+    return () => { vivo = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chiaveRiepilogo]);
 
   function esporta() {
     setErrore(null);
@@ -178,8 +199,8 @@ export function EsportaMagazzino({
           <div className="flex flex-col gap-2">
             <p className="text-sm font-medium">Cosa</p>
             {([
-              ["selezionati", `Sku selezionati (${idsSelezionati.length})`, idsSelezionati.length > 0],
-              ["filtrati", `${filtriAttivi ? "Sku filtrati" : "Sku in elenco"} (${idsFiltrati.length})`, true],
+              ["selezionati", "Sku selezionati", idsSelezionati.length > 0],
+              ["filtrati", filtriAttivi ? "Sku filtrati" : "Sku in elenco", true],
               ["tutto", "Tutto il magazzino", true],
             ] as [Ambito, string, boolean][]).map(([v, et, abil]) => (
               <label key={v} className={`flex items-center gap-2 text-sm ${abil ? "" : "opacity-50"}`}>
@@ -236,6 +257,10 @@ export function EsportaMagazzino({
               <Checkbox checked={conData} onCheckedChange={(v) => setConData(v === true)} />
               Scrivi la data di oggi in testa
             </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={rigaTotale} onCheckedChange={(v) => setRigaTotale(v === true)} />
+              Riga Totale in fondo (pezzi e valore)
+            </label>
           </div>
         </div>
 
@@ -270,6 +295,36 @@ export function EsportaMagazzino({
           </div>
         </div>
 
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-medium">Colonne libere</p>
+          <p className="text-xs text-muted-foreground">
+            Escono vuote, da compilare nel file (per esempio i prezzi dedicati a un cliente). Dai un titolo e scegli la colonna nell&apos;elenco.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {[0, 1].map((i) => (
+              <Input
+                key={i}
+                placeholder={`Titolo colonna libera ${i + 1}`}
+                value={titoliLibere[i]}
+                onChange={(e) => setTitoliLibere(i === 0 ? [e.target.value, titoliLibere[1]] : [titoliLibere[0], e.target.value])}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+          {riepilogo === null || riepilogo.chiave !== chiaveRiepilogo ? (
+            <span className="text-muted-foreground">Calcolo…</span>
+          ) : riepilogo.righe === 0 ? (
+            <span className="text-destructive">Con queste scelte non resta nessuna riga.</span>
+          ) : (
+            <>
+              <span className="font-medium">Verrà esportato:</span> {riepilogo.sku} sku · {riepilogo.righe} righe · {riepilogo.pezzi} pezzi · valore {euroIt(riepilogo.valore)}
+              {riepilogo.senzaCosto > 0 && <span className="text-muted-foreground"> ({riepilogo.senzaCosto} righe senza costo, non contate nel valore)</span>}
+            </>
+          )}
+        </div>
+
         {(colonne.includes("valore") && !(colonne.includes("costo") && colonne.includes("pezzi"))) && (
           <p className="text-xs text-warning">Per il Valore (costo × pezzi) servono anche le colonne &quot;Costo unitario&quot; e &quot;Pezzi&quot;.</p>
         )}
@@ -284,7 +339,7 @@ export function EsportaMagazzino({
           <div className="flex items-center gap-2">
             <Button type="button" variant="outline" onClick={onChiudi}>Chiudi</Button>
             <Button type="button" disabled={pending || colonne.length === 0} onClick={esporta}>
-              <Download /> {pending ? "Preparo…" : nSku === null ? "Esporta tutto" : `Esporta ${nSku} sku`}
+              <Download /> {pending ? "Preparo…" : "Esporta"}
             </Button>
           </div>
         </DialogFooter>

@@ -33,6 +33,10 @@ export type OpzioniExport = {
   conData: boolean;
   /** Solo PDF: miniatura della foto principale + link Foto 1..N in ogni riga. */
   pdfFoto: boolean;
+  /** Riga Totale in fondo (Pezzi e Valore). Spenta salvo il modello Inventario FP. */
+  rigaTotale: boolean;
+  /** Titoli delle due colonne libere (vuote, da riempire a mano nel file). Titolo vuoto = colonna con nome di default. */
+  titoliLibere: [string, string];
 };
 
 export type ModelloExport = {
@@ -64,6 +68,19 @@ function num(v: string | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// Numero senza decimali inutili: "90.0" -> "90", "12.50" -> "12,5" (virgola italiana).
+function numPulito(v: string | null): string {
+  if (v === null || v === "") return "?";
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n).replace(".", ",") : v;
+}
+
+export const FORMATO_EURO_XLSX = '#,##0.00 "€"';
+
+export function euroIt(n: number): string {
+  return `${n.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true })} €`;
+}
+
 function dataIt(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -77,7 +94,7 @@ export const COLONNE_EXPORT_FISSE: DefinizioneColonnaExport[] = [
   { id: "opera", etichetta: "Opera", tipo: "testo", larghezza: 40, valore: (x) => x.r.opera },
   { id: "larghezza", etichetta: "Larghezza (cm)", tipo: "numero", larghezza: 12, valore: (x) => num(x.r.larghezza) },
   { id: "altezza", etichetta: "Altezza (cm)", tipo: "numero", larghezza: 12, valore: (x) => num(x.r.altezza) },
-  { id: "misura", etichetta: "Misura", tipo: "testo", larghezza: 14, valore: (x) => (x.r.larghezza || x.r.altezza ? `${x.r.larghezza ?? "?"} x ${x.r.altezza ?? "?"} cm` : "") },
+  { id: "misura", etichetta: "Misura", tipo: "testo", larghezza: 14, valore: (x) => (x.r.larghezza || x.r.altezza ? `${numPulito(x.r.larghezza)} x ${numPulito(x.r.altezza)} cm` : "") },
   { id: "supporto", etichetta: "Supporto", tipo: "testo", larghezza: 14, valore: (x) => x.r.supporto ?? "" },
   { id: "anno", etichetta: "Anno / epoca", tipo: "testo", larghezza: 12, valore: (x) => x.r.anno ?? "" },
   { id: "tipo", etichetta: "Tipo", tipo: "testo", larghezza: 14, valore: (x) => x.r.tipo },
@@ -109,7 +126,15 @@ export const COLONNE_EXPORT_FISSE: DefinizioneColonnaExport[] = [
 // Colonne proposte al primo uso (poi l'utente sceglie).
 export const COLONNE_EXPORT_DEFAULT = ["skuCode", "artista", "opera", "misura", "anno", "condizione", "deposito", "pezzi", "costo", "valore"];
 
-export function catalogoColonne(campi: CampoPersonalizzato[]): DefinizioneColonnaExport[] {
+export function catalogoColonne(campi: CampoPersonalizzato[], titoliLibere: [string, string] = ["", ""]): DefinizioneColonnaExport[] {
+  // Due colonne libere: escono vuote, da compilare a mano (es. prezzi dedicati a un cliente B2B).
+  const libere: DefinizioneColonnaExport[] = [0, 1].map((i) => ({
+    id: `libera${i + 1}`,
+    etichetta: titoliLibere[i].trim() || `Colonna libera ${i + 1}`,
+    tipo: "testo" as const,
+    larghezza: 18,
+    valore: () => "",
+  }));
   const personalizzati: DefinizioneColonnaExport[] = campi.map((c) => ({
     id: `cp_${c.id}`,
     etichetta: c.nome,
@@ -122,7 +147,7 @@ export function catalogoColonne(campi: CampoPersonalizzato[]): DefinizioneColonn
       return valoreComeTesto(v);
     },
   }));
-  return [...COLONNE_EXPORT_FISSE, ...personalizzati];
+  return [...COLONNE_EXPORT_FISSE, ...personalizzati, ...libere];
 }
 
 // Costruisce le righe di esportazione dalla giacenza. Una riga per sku, oppure
@@ -180,7 +205,7 @@ export function dataOggiIt(): string {
 // formula costo x pezzi (se le colonne Costo e Pezzi sono presenti) e in fondo
 // c'e' la riga Totale con SUM su Pezzi e Valore. Nessuna immagine nelle celle:
 // la foto principale e' un collegamento cliccabile.
-export function costruisciXlsx(cols: DefinizioneColonnaExport[], righe: RigaExport[], titolo: string, conData: boolean): Buffer {
+export function costruisciXlsx(cols: DefinizioneColonnaExport[], righe: RigaExport[], titolo: string, conData: boolean, rigaTotale: boolean): Buffer {
   const aoa: (string | number | null)[][] = [];
   if (titolo.trim()) aoa.push([titolo.trim()]);
   if (conData) aoa.push([`Data: ${dataOggiIt()}`]);
@@ -207,9 +232,9 @@ export function costruisciXlsx(cols: DefinizioneColonnaExport[], righe: RigaExpo
         const pezzi = `${lettera(iPezzi)}${riga0 + 1}`;
         const calcolato = c.valore(x);
         // Con il valore gia' calcolato in cache il file si legge bene anche in anteprima; Excel ricalcola comunque.
-        ws[ref] = { t: "n", f: `IF(${costo}="","",${costo}*${pezzi})`, z: "#,##0.00", ...(typeof calcolato === "number" ? { v: calcolato } : {}) };
+        ws[ref] = { t: "n", f: `IF(${costo}="","",${costo}*${pezzi})`, z: FORMATO_EURO_XLSX, ...(typeof calcolato === "number" ? { v: calcolato } : {}) };
       } else if (c.tipo === "euro" && cella.t === "n") {
-        cella.z = "#,##0.00";
+        cella.z = FORMATO_EURO_XLSX;
       } else if (c.tipo === "link" && typeof cella.v === "string" && cella.v) {
         cella.l = { Target: cella.v, Tooltip: "Apri la foto" };
       }
@@ -217,7 +242,7 @@ export function costruisciXlsx(cols: DefinizioneColonnaExport[], righe: RigaExpo
   });
 
   // Riga Totale (solo se ci sono Pezzi e/o Valore e almeno una riga).
-  if (righe.length > 0 && (iPezzi >= 0 || iValore >= 0)) {
+  if (rigaTotale && righe.length > 0 && (iPezzi >= 0 || iValore >= 0)) {
     const rigaTot0 = ultimaDati + 1;
     if (iPezzi >= 0) {
       const col = lettera(iPezzi);
@@ -226,7 +251,7 @@ export function costruisciXlsx(cols: DefinizioneColonnaExport[], righe: RigaExpo
     if (iValore >= 0) {
       const col = lettera(iValore);
       const totaleValore = righe.reduce((t, x) => { const v = cols[iValore].valore(x); return t + (typeof v === "number" ? v : 0); }, 0);
-      ws[XLSX.utils.encode_cell({ r: rigaTot0, c: iValore })] = { t: "n", f: `SUM(${col}${primaDati + 1}:${col}${ultimaDati + 1})`, z: "#,##0.00", v: Math.round(totaleValore * 100) / 100 };
+      ws[XLSX.utils.encode_cell({ r: rigaTot0, c: iValore })] = { t: "n", f: `SUM(${col}${primaDati + 1}:${col}${ultimaDati + 1})`, z: FORMATO_EURO_XLSX, v: Math.round(totaleValore * 100) / 100 };
     }
     const iPrima = cols.findIndex((_, j) => j !== iPezzi && j !== iValore);
     if (iPrima >= 0) ws[XLSX.utils.encode_cell({ r: rigaTot0, c: iPrima })] = { t: "s", v: "Totale" };
@@ -241,7 +266,7 @@ export function costruisciXlsx(cols: DefinizioneColonnaExport[], righe: RigaExpo
 }
 
 // CSV per Excel italiano: separatore ";", virgola decimale, BOM UTF-8.
-export function costruisciCsv(cols: DefinizioneColonnaExport[], righe: RigaExport[], titolo: string, conData: boolean): string {
+export function costruisciCsv(cols: DefinizioneColonnaExport[], righe: RigaExport[], titolo: string, conData: boolean, rigaTotale: boolean): string {
   const esc = (v: string) => (/[;"\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const cella = (c: DefinizioneColonnaExport, x: RigaExport) => {
     const v = c.valore(x);
@@ -255,6 +280,20 @@ export function costruisciCsv(cols: DefinizioneColonnaExport[], righe: RigaExpor
   if (titolo.trim() || conData) linee.push("");
   linee.push(cols.map((c) => esc(c.etichetta)).join(";"));
   for (const x of righe) linee.push(cols.map((c) => cella(c, x)).join(";"));
+  if (rigaTotale && righe.length > 0) {
+    const iPezzi = cols.findIndex((c) => c.id === "pezzi");
+    const iValore = cols.findIndex((c) => c.id === "valore");
+    if (iPezzi >= 0 || iValore >= 0) {
+      const iEtichetta = cols.findIndex((_, j) => j !== iPezzi && j !== iValore);
+      const totPezzi = righe.reduce((t, x) => t + x.pezzi, 0);
+      const totValore = righe.reduce((t, x) => { const v = iValore >= 0 ? cols[iValore].valore(x) : 0; return t + (typeof v === "number" ? v : 0); }, 0);
+      linee.push(
+        cols
+          .map((_, j) => (j === iEtichetta ? "Totale" : j === iPezzi ? String(totPezzi) : j === iValore ? String(Math.round(totValore * 100) / 100).replace(".", ",") : ""))
+          .join(";")
+      );
+    }
+  }
   return "﻿" + linee.join("\r\n") + "\r\n";
 }
 

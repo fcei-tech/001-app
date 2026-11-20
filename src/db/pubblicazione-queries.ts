@@ -49,7 +49,6 @@ export async function creaCanale(dati: {
   nome: string;
   tipo: "statico" | "asta_online" | "asta_fisica";
   esclusivo?: boolean;
-  colori?: string[];
 }) {
   // Una casa d'asta fisica ha sempre il proprio deposito (stesso nome del
   // canale, nome/tipo bloccati in Manutenzione) dove finiscono i pezzi

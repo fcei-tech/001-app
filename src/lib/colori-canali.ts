@@ -91,10 +91,13 @@ export function fasceCanale(nomeCanale: string): string[] | undefined {
 
 // ---------------------------------------------------------------------------
 // Release 12 (2026-11-20): i colori vivono nella colonna "colori" della
-// tabella canali (da 1 a 4 colori hex, modificabili da Archivi > Portali).
-// La tabella per nome sopra resta SOLO come ripiego per i canali con la
-// colonna vuota (database nuovo prima della migrazione dei dati). Le pagine
-// usano queste funzioni, non piu' coloreCanale/fasceCanale per nome.
+// tabella canali (da 1 a 4 colori hex). NON si modificano dall'app (decisione
+// del cliente 2026-11-20: i portali si aggiungono a mano con Claude, con una
+// release): quando si aggiunge un portale si scrivono i suoi colori nella
+// migrazione e nella tabella per nome qui sopra, con la stessa regola (1 colore
+// = barra piena, 2-4 = fasce; sfondo tenue 12% del primo). Colori uguali fra
+// portali diversi sono ammessi. La tabella per nome resta come ripiego per i
+// canali con la colonna vuota (database nuovo).
 // ---------------------------------------------------------------------------
 export type CanaleConColori = { nome: string; colori?: string[] | null };
 
@@ -126,43 +129,4 @@ export function fasceDelCanale(canale: CanaleConColori): string[] | undefined {
 export function sfondoPaginaCanale(canale: CanaleConColori): string | undefined {
   const c = colorePrincipale(canale);
   return c ? `${c}1F` : undefined;
-}
-
-// Distanza fra due colori (euclidea su RGB, 0-441). Sotto SOGLIA_COLORI_SIMILI
-// il programma rifiuta il colore: "uguale o troppo simile a uno in uso".
-export const SOGLIA_COLORI_SIMILI = 45;
-
-function rgb(hex: string): [number, number, number] {
-  return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
-}
-
-export function distanzaColori(a: string, b: string): number {
-  const [r1, g1, b1] = rgb(a);
-  const [r2, g2, b2] = rgb(b);
-  return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
-}
-
-// Controlla i colori scelti per un portale contro quelli degli altri portali
-// (confronto sul colore PRINCIPALE di ciascuno, che e' quello che colora lo
-// sfondo; i colori interni a una fascia multipla sono liberi) e fra di loro.
-// Ritorna il messaggio di errore o null.
-export function erroreColoriPortale(
-  colori: string[],
-  altri: { nome: string; colori: string[] }[]
-): string | null {
-  if (colori.length < 1 || colori.length > 4) return "Servono da 1 a 4 colori.";
-  if (colori.some((c) => !HEX_COLORE.test(c))) return "Colore non valido (formato #RRGGBB).";
-  for (let i = 0; i < colori.length; i++) {
-    for (let j = i + 1; j < colori.length; j++) {
-      if (distanzaColori(colori[i], colori[j]) < 20) return "Due colori del portale sono praticamente uguali.";
-    }
-  }
-  for (const altro of altri) {
-    const principale = altro.colori[0];
-    if (!principale) continue;
-    if (distanzaColori(colori[0], principale) < SOGLIA_COLORI_SIMILI) {
-      return `Il primo colore e' troppo simile a quello di ${altro.nome}: scegline uno piu' diverso.`;
-    }
-  }
-  return null;
 }

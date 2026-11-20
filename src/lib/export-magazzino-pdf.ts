@@ -5,7 +5,7 @@
 // con i soli link. Mai link agli annunci dei portali.
 import { PDFArray, PDFDocument, PDFName, PDFString, StandardFonts, rgb, type PDFPage } from "pdf-lib";
 import { pulisciTesto, spezzaTesto, scaricaMiniatureInParallelo } from "./asta-fisica-pdf";
-import { dataOggiIt, type DefinizioneColonnaExport, type RigaExport } from "./export-magazzino";
+import { dataOggiIt, euroIt, type DefinizioneColonnaExport, type RigaExport } from "./export-magazzino";
 
 const L = 841.89;
 const H = 595.28;
@@ -22,7 +22,7 @@ const BLU = rgb(0.1, 0.25, 0.75);
 function formatta(c: DefinizioneColonnaExport, x: RigaExport): string {
   const v = c.valore(x);
   if (v === null || v === "") return "";
-  if (typeof v === "number") return c.tipo === "euro" ? v.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(v).replace(".", ",");
+  if (typeof v === "number") return c.tipo === "euro" ? euroIt(v) : String(v).replace(".", ",");
   return v;
 }
 
@@ -31,7 +31,8 @@ export async function costruisciPdf(
   righe: RigaExport[],
   titolo: string,
   conData: boolean,
-  conFoto: boolean
+  conFoto: boolean,
+  rigaTotale: boolean
 ): Promise<{ bytes: Uint8Array; senzaMiniatura: number }> {
   // In PDF la colonna "link foto" non serve: ci sono i link Foto 1..N.
   const colonne = cols.filter((c) => c.tipo !== "link");
@@ -54,7 +55,8 @@ export async function costruisciPdf(
   const senzaMiniatura = conFoto ? righe.filter((x, i) => x.fotoUrls.length > 0 && !miniature[i]).length : 0;
 
   const perPagina = Math.max(1, Math.floor((H - 2 * M - TESTATA - INT_H) / altezzaRiga));
-  const nPagine = Math.max(1, Math.ceil((righe.length + 1) / perPagina));
+  const haTotale = rigaTotale && righe.length > 0 && (colonne.some((c) => c.id === "pezzi") || colonne.some((c) => c.id === "valore"));
+  const nPagine = Math.max(1, Math.ceil((righe.length + (haTotale ? 1 : 0)) / perPagina));
   const annot = new Map<PDFPage, ReturnType<typeof doc.context.register>[]>();
 
   // Totali (Pezzi, Valore) in fondo, se le colonne ci sono.
@@ -92,7 +94,7 @@ export async function costruisciPdf(
       const yAlto = yTab - INT_H - i * altezzaRiga;
       const yBasso = yAlto - altezzaRiga;
       const eTotale = idx === righe.length;
-      if (eTotale && !(iPezzi >= 0 || iValore >= 0)) break;
+      if (eTotale && !haTotale) break;
       let xc = M;
       if (conFoto) {
         pag.drawRectangle({ x: xc, y: yBasso, width: COL_FOTO, height: altezzaRiga, borderColor: GRIGIO, borderWidth: 0.5 });
@@ -134,7 +136,7 @@ export async function costruisciPdf(
         if (eTotale) {
           grassetto = true;
           if (j === iPezzi) testo = String(totPezzi);
-          else if (j === iValore) testo = totValore.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          else if (j === iValore) testo = euroIt(Math.round(totValore * 100) / 100);
           else if (j === colonne.findIndex((_, k) => k !== iPezzi && k !== iValore)) testo = "Totale";
         } else {
           testo = formatta(c, righe[idx]);
