@@ -25,6 +25,7 @@ export default async function NuovoSkuPage({ searchParams }: { searchParams: Pro
     getTagBrevi(),
   ]);
   const famiglie = tuttiTag.filter((t) => t.tipo === "soggetto").map((t) => ({ id: t.id, nome: t.nome }));
+  const tagInterni = tuttiTag.filter((t) => t.tipo === "interno").map((t) => ({ id: t.id, nome: t.nome }));
 
   // Duplica: lo sku di partenza (nessun salvataggio finche' non si preme Salva).
   let duplicaDa: DuplicaDa | undefined;
@@ -54,6 +55,7 @@ export default async function NuovoSkuPage({ searchParams }: { searchParams: Pro
         riservaBidspirit: origine.riservaBidspirit,
         valoriCampi: leggiValori(origine.campiPersonalizzati),
         tagIds: tagIdsOrigine.filter((id) => idSoggetto.has(id)),
+        tagInterniIds: tagIdsOrigine.filter((id) => tagInterni.some((t) => t.id === id)),
         numeroFoto: fotoOrigine.length,
       };
     }
@@ -68,7 +70,7 @@ export default async function NuovoSkuPage({ searchParams }: { searchParams: Pro
             <ArrowLeft /> {duplicaDa ? "Torna alla scheda" : "Torna al Magazzino"}
           </Link>
         </Button>
-        <NuovoSkuFlow tipi={tipi} ubicazioni={ubicazioni} proprietari={proprietari} regole={regole} campiPersonalizzati={campiPersonalizzati} famiglie={famiglie} duplicaDa={duplicaDa} />
+        <NuovoSkuFlow tipi={tipi} ubicazioni={ubicazioni} proprietari={proprietari} regole={regole} campiPersonalizzati={campiPersonalizzati} famiglie={famiglie} tagInterni={tagInterni} duplicaDa={duplicaDa} />
       </main>
     </div>
   );

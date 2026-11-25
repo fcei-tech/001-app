@@ -69,7 +69,7 @@ function Striscia({ n, colore, maxRiserva, daInviare }: { n: NumeriCanale | unde
   return (
     <>
       <div className="flex min-w-0 flex-1 items-center">
-        <div className="relative flex h-[60px] overflow-hidden rounded-lg" style={{ width: `${larghezza}%`, backgroundColor: `${colore}33` }}>
+        <div className="relative flex h-[60px] overflow-hidden rounded-lg" style={{ width: `${larghezza}%`, minWidth: 250, backgroundColor: `${colore}33` }}>
           {n.lotti > 0 && (
             <div
               className="flex h-full items-center px-3"
@@ -81,7 +81,7 @@ function Striscia({ n, colore, maxRiserva, daInviare }: { n: NumeriCanale | unde
               </span>
             </div>
           )}
-          <div className="flex flex-1 items-center justify-end px-3">
+          <div className="flex flex-1 items-center justify-end px-3" style={{ minWidth: 112 }}>
             <span className="whitespace-nowrap text-lg font-semibold tabular-nums">{n.lotti > 0 ? euro(n.riserva) : "—"}</span>
           </div>
         </div>

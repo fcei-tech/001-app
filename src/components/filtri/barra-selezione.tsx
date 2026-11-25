@@ -12,7 +12,7 @@ export function BarraSelezione({
   totale,
   onDeseleziona,
   children,
-  className = "mb-4 rounded-lg border",
+  className = "mb-4 rounded-lg border border-primary/30",
 }: {
   n: number;
   totale: number;
@@ -22,7 +22,7 @@ export function BarraSelezione({
 }) {
   const tutti = totale > 1 && n === totale;
   return (
-    <div className={`sticky top-16 z-30 flex flex-wrap items-center gap-2 bg-background/95 px-3 py-2 shadow-sm backdrop-blur ${className}`}>
+    <div className={`sticky top-16 z-30 flex flex-wrap items-center gap-2 bg-primary/10 px-3 py-2 shadow-sm backdrop-blur ${className}`}>
       <span className="text-sm font-medium">
         {n} {n === 1 ? "selezionato" : "selezionati"}
         {tutti && <span className="ml-1 font-normal text-muted-foreground">(tutto l&apos;elenco)</span>}

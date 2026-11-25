@@ -3,13 +3,13 @@ import { getCampiPersonalizzati } from "@/db/campi-personalizzati-queries";
 import { Header } from "@/components/header";
 import { getMagazzino, getProprietariAttivi, getTipiOggetto, getUbicazioniAttive, type ColonnaOrdinabile } from "@/db/queries";
 import { getCanaliStatici } from "@/db/esposizione-queries";
-import { getDaSistemarePerSku } from "@/db/portale-queries";
 import { VistaMagazzino } from "@/components/magazzino/vista-magazzino";
 import { getTagBrevi } from "@/db/tag-queries";
 import { CodiciSku } from "@/components/magazzino/codici-sku";
 import { TestataMagazzino } from "@/components/magazzino/testata-magazzino";
 import { calcolaTestata } from "@/lib/testata-magazzino";
 import { getSkuEspostiIds } from "@/db/pubblicazione-numeri";
+import { campiMancanti } from "@/lib/campi-mancanti-pubblicazione";
 import { getBlocchiConUso, prossimoSkuLibero } from "@/db/codici-sku-queries";
 import { DIMENSIONE_BLOCCO_STANDARD } from "@/lib/codici-sku";
 import { leggiTagParam } from "@/lib/tag-filtro";
@@ -66,12 +66,11 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
 
   const regolePrezzi = await getRegolePrezzi();
   const campiPersonalizzati = await getCampiPersonalizzati();
-  const [righe, tipi, proprietari, ubicazioni, daSistemare, canaliStatici, tagDisponibili, prossimoLibero, blocchiCodici, skuEsposti, righeTutte] = await Promise.all([
+  const [righe, tipi, proprietari, ubicazioni, canaliStatici, tagDisponibili, prossimoLibero, blocchiCodici, skuEsposti, righeTutte] = await Promise.all([
     getMagazzino({ ricerca: q, tagIds, tipoId, condizione, proprietarioId, ubicazioneId, bloccato, disponibilita, senzaFoto, soloDatiMancanti, ordina, direzione }),
     getTipiOggetto(),
     getProprietariAttivi(),
     getUbicazioniAttive(),
-    getDaSistemarePerSku(),
     getCanaliStatici(),
     getTagBrevi(),
     prossimoSkuLibero(),
@@ -86,6 +85,14 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
     skuEsposti,
     regolePrezzi.sogliaMinimaCatawiki
   );
+
+  // Numeri sui chip veloci: su tutto il magazzino (non bloccati esclusi: qui si contano tutti).
+  const base = righeTutte ?? righe;
+  const conteggi = {
+    senzaFoto: base.filter((r) => r.numeroFoto === 0).length,
+    mancanti: base.filter((r) => campiMancanti(r, regolePrezzi.sogliaMinimaCatawiki).length > 0).length,
+    bloccati: base.filter((r) => r.bloccatoVendita).length,
+  };
 
   return (
     <div className="min-h-full flex flex-col">
@@ -106,7 +113,7 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
 
         <VistaMagazzino
           righe={righe}
-          daSistemare={daSistemare}
+          conteggi={conteggi}
           canaliStatici={canaliStatici.map((c) => ({ id: c.id, nome: c.nome }))}
           tagDisponibili={tagDisponibili}
           sogliaCatawiki={regolePrezzi.sogliaMinimaCatawiki}

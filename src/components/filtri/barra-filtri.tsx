@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,11 +32,16 @@ export function Scorciatoia({
   onClick,
   children,
   titolo,
+  punto,
+  conteggio,
 }: {
   attiva: boolean;
   onClick: () => void;
   children: ReactNode;
   titolo?: string;
+  // Pallino colorato (classe bg-*) e numero: quanti sku hanno questa caratteristica.
+  punto?: string;
+  conteggio?: number;
 }) {
   return (
     <button
@@ -48,7 +53,9 @@ export function Scorciatoia({
         attiva ? "border-primary bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       }`}
     >
+      {punto && <span className={`mr-1.5 size-2 rounded-full ${attiva ? "bg-primary-foreground" : punto}`} aria-hidden />}
       {children}
+      {conteggio !== undefined && <span className={`ml-1.5 tabular-nums ${attiva ? "opacity-80" : "text-muted-foreground/70"}`}>{conteggio}</span>}
     </button>
   );
 }
@@ -80,13 +87,27 @@ export function BarraFiltri({
   className?: string;
 }) {
   const [aperto, setAperto] = useState(false);
+  const campoRef = useRef<HTMLInputElement>(null);
   const n = chips.length;
+  // Tasto "/" = vai alla ricerca (se non stai gia' scrivendo da qualche parte).
+  useEffect(() => {
+    function tasto(e: KeyboardEvent) {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      e.preventDefault();
+      campoRef.current?.focus();
+    }
+    window.addEventListener("keydown", tasto);
+    return () => window.removeEventListener("keydown", tasto);
+  }, []);
   return (
     <div className={`flex flex-col gap-3 ${className}`}>
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[12rem] flex-1 basis-64">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            ref={campoRef}
             value={ricerca}
             onChange={(e) => onRicerca(e.target.value)}
             onKeyDown={(e) => {
@@ -97,8 +118,9 @@ export function BarraFiltri({
             }}
             placeholder={segnaposto}
             aria-label="Cerca"
-            className="pl-8"
+            className="h-11 pl-8 pr-8"
           />
+          {!ricerca && <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border bg-muted px-1.5 text-[11px] text-muted-foreground">/</kbd>}
         </div>
         {children && (
           <Button

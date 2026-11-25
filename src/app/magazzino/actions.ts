@@ -151,6 +151,9 @@ export async function creaNuovoSku(formData: FormData) {
   const tagScelti = [...new Set(formData.getAll("tagId").map((v) => Number(v)).filter((n) => idSoggetto.has(n)))];
   if (idSoggetto.size > 0 && tagScelti.length === 0) throw new Error("Scegli almeno una famiglia.");
   if (tagScelti.length > MASSIMO_FAMIGLIE) throw new Error(`Al massimo ${MASSIMO_FAMIGLIE} famiglie.`);
+  // Tag di lavoro (res / no res...): facoltativi, mai pubblicati sui portali.
+  const idInterni = new Set(tuttiTag.filter((t) => t.tipo === "interno").map((t) => t.id));
+  const tagInterniScelti = [...new Set(formData.getAll("tagInterno").map((v) => Number(v)).filter((n) => idInterni.has(n)))];
 
   const [nuovo] = await db
     .insert(sku)
@@ -177,7 +180,7 @@ export async function creaNuovoSku(formData: FormData) {
     .returning();
 
   if (Object.keys(personalizzati).length > 0) await impostaValoriSku(nuovo.id, personalizzati);
-  if (tagScelti.length > 0) await assegnaTag([nuovo.id], tagScelti);
+  if (tagScelti.length + tagInterniScelti.length > 0) await assegnaTag([nuovo.id], [...tagScelti, ...tagInterniScelti]);
 
   // Duplica sku con "Copia anche le foto": la copia punta agli stessi file.
   const copiaFotoDa = Number(formData.get("copiaFotoDa"));

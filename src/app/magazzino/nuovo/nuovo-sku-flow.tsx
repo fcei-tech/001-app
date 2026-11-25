@@ -61,6 +61,7 @@ export type DuplicaDa = {
   riservaBidspirit: string | null;
   valoriCampi: Record<number, string | number | boolean>;
   tagIds: number[];
+  tagInterniIds: number[];
   numeroFoto: number;
 };
 type Vocabolario = { id: number; nome: string }[];
@@ -108,9 +109,11 @@ export function NuovoSkuFlow({
   regole,
   campiPersonalizzati,
   famiglie,
+  tagInterni,
   duplicaDa,
 }: {
   famiglie: FamigliaOpzione[];
+  tagInterni: FamigliaOpzione[];
   duplicaDa?: DuplicaDa;
   regole: RegolePrezzi;
   campiPersonalizzati: CampoPersonalizzato[];
@@ -124,6 +127,7 @@ export function NuovoSkuFlow({
   const [mostraForm, setMostraForm] = React.useState(Boolean(duplicaDa));
   const [artistaForm, setArtistaForm] = React.useState(duplicaDa?.artista ?? "");
   const [operaForm, setOperaForm] = React.useState(duplicaDa?.opera ?? "");
+  const [interniScelti, setInterniScelti] = React.useState<number[]>(duplicaDa?.tagInterniIds ?? []);
   const [nFamiglie, setNFamiglie] = React.useState(duplicaDa?.tagIds.length ?? 0);
   const [copiaFoto, setCopiaFoto] = React.useState(false);
   const [candidatoScelto, setCandidatoScelto] = React.useState<Candidato | null>(null);
@@ -304,6 +308,31 @@ export function NuovoSkuFlow({
                   suggerisci={!duplicaDa}
                   onCambia={setNFamiglie}
                 />
+              </div>
+            )}
+            {tagInterni.length > 0 && (
+              <div className="mt-4 flex flex-col gap-1.5">
+                <Label>Di lavoro</Label>
+                <div className="flex flex-wrap gap-2" role="group" aria-label="Tag di lavoro">
+                  {tagInterni.map((t) => {
+                    const attivo = interniScelti.includes(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        aria-pressed={attivo}
+                        onClick={() => setInterniScelti((p) => (p.includes(t.id) ? p.filter((x) => x !== t.id) : [...p, t.id]))}
+                        className={"rounded-full border px-3.5 py-1.5 text-sm transition-colors " + (attivo ? "border-primary bg-primary/10 font-medium text-primary" : "hover:bg-muted/60")}
+                      >
+                        {t.nome}
+                      </button>
+                    );
+                  })}
+                </div>
+                {interniScelti.map((id) => (
+                  <input key={id} type="hidden" name="tagInterno" value={id} />
+                ))}
+                <p className="text-xs text-muted-foreground">Solo per te: non vanno mai sui portali.</p>
               </div>
             )}
             {duplicaDa && duplicaDa.numeroFoto > 0 && (

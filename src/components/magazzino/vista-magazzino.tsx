@@ -35,7 +35,6 @@ import {
   type VoceModificaInline,
 } from "@/lib/campi-inline";
 import { annullaEsposizioneAction, ritiraDaPortaliAction } from "@/app/pubblicazione/esposizione-actions";
-import type { DaSistemare } from "@/db/portale-queries";
 import { CellTesto, CellSelect, CellMisura } from "@/components/magazzino/editable-cell";
 import { CellaCampoPersonalizzato } from "@/components/magazzino/cella-campo-personalizzato";
 import type { CampoPersonalizzato } from "@/lib/campi-personalizzati";
@@ -276,7 +275,15 @@ const COLONNE: DefinizioneColonna[] = [
         {r.proprieta || "—"}
       </button>
     ) },
-  { id: "deposito", etichetta: "Deposito", defaultVisibile: true, render: (r) => r.depositi || "—" },
+  { id: "deposito", etichetta: "Deposito", defaultVisibile: true, render: (r) => (
+      r.depositi ? (
+        <span className="flex flex-wrap gap-1">
+          {r.depositi.split(/,\s*/).filter(Boolean).map((d, i) => (
+            <span key={i} className="rounded-md bg-muted px-1.5 py-0.5 text-xs">{d}</span>
+          ))}
+        </span>
+      ) : "—"
+    ) },
   { id: "disponibile", etichetta: "Disponibile", defaultVisibile: true, allineaDestra: true,
     render: (r, ctx) => (
       <CellaQuantita
@@ -468,7 +475,7 @@ export function VistaMagazzino({
   filtriIniziali,
   ordinaAttuale,
   direzioneAttuale,
-  daSistemare,
+  conteggi,
   canaliStatici,
   tagDisponibili,
   sogliaCatawiki,
@@ -478,7 +485,7 @@ export function VistaMagazzino({
   campiPersonalizzati: CampoPersonalizzato[];
   sogliaCatawiki: number;
   tagDisponibili: TagBreve[];
-  daSistemare: Record<number, DaSistemare[]>;
+  conteggi: { senzaFoto: number; mancanti: number; bloccati: number };
   canaliStatici: { id: number; nome: string }[];
   righe: RigaMagazzino[];
   tipi: { id: number; nome: string }[];
@@ -512,15 +519,8 @@ export function VistaMagazzino({
     setRigheLocal(righe);
   }
 
-  // Filtro locale "Da sistemare su un portale" (portali statici): non
-  // tocca l'URL, filtra solo le righe gia' caricate.
-  const [soloDaSistemare, setSoloDaSistemare] = useState(false);
   const [dialogEsportaAperto, setDialogEsportaAperto] = useState(false);
-  const nDaSistemare = useMemo(() => righeLocal.filter((r) => daSistemare[r.id]?.length).length, [righeLocal, daSistemare]);
-  const righeMostrate = useMemo(
-    () => (soloDaSistemare ? righeLocal.filter((r) => daSistemare[r.id]?.length) : righeLocal),
-    [soloDaSistemare, righeLocal, daSistemare]
-  );
+  const righeMostrate = righeLocal;
   // Blocco su portale in blocco (Altre azioni)
   const [dialogEliminaAperto, setDialogEliminaAperto] = useState(false);
   const [dialogBloccoAperto, setDialogBloccoAperto] = useState<"blocca" | "sblocca" | null>(null);
@@ -751,7 +751,6 @@ export function VistaMagazzino({
   function azzeraFiltri() {
     const vuoti: typeof filtri = { q: "", tipo: "tutti", condizione: "tutti", proprieta: "tutti", deposito: "tutti", bloccato: "tutti", disponibilita: "tutti", senzafoto: "no", mancanti: "no", tag: "" };
     setFiltri(vuoti);
-    setSoloDaSistemare(false);
     applicaFiltri(vuoti);
   }
 
@@ -930,7 +929,6 @@ export function VistaMagazzino({
   for (const t of tagDisponibili.filter((x) => leggiTagParam(filtri.tag).includes(x.id))) {
     chips.push({ id: `tag-${t.id}`, etichetta: "Tag", valore: t.nome, rimuovi: () => cambia({ tag: scriviTagParam(leggiTagParam(filtri.tag).filter((x) => x !== t.id)) }) });
   }
-  if (soloDaSistemare) chips.push({ id: "da-sistemare", etichetta: "Portali", valore: "Da sistemare", rimuovi: () => setSoloDaSistemare(false) });
 
   return (
     <>
@@ -987,14 +985,9 @@ export function VistaMagazzino({
         }
         veloci={
           <>
-            {canaliStatici.length > 0 && (nDaSistemare > 0 || soloDaSistemare) && (
-              <Scorciatoia attiva={soloDaSistemare} onClick={() => setSoloDaSistemare((v) => !v)} titolo="Sku da caricare, togliere o abbassare su un portale statico">
-                Da sistemare ({nDaSistemare})
-              </Scorciatoia>
-            )}
-            <Scorciatoia attiva={filtri.senzafoto === "si"} onClick={() => cambia({ senzafoto: filtri.senzafoto === "si" ? "no" : "si" })}>Senza foto</Scorciatoia>
-            <Scorciatoia attiva={filtri.mancanti === "si"} onClick={() => cambia({ mancanti: filtri.mancanti === "si" ? "no" : "si" })} titolo="Sku a cui manca qualcosa per la pubblicazione">Dati mancanti</Scorciatoia>
-            <Scorciatoia attiva={filtri.bloccato === "si"} onClick={() => cambia({ bloccato: filtri.bloccato === "si" ? "tutti" : "si" })}>Bloccati</Scorciatoia>
+            <Scorciatoia attiva={filtri.senzafoto === "si"} punto="bg-warning" conteggio={conteggi.senzaFoto} onClick={() => cambia({ senzafoto: filtri.senzafoto === "si" ? "no" : "si" })} titolo="Sku senza nessuna foto">Senza foto</Scorciatoia>
+            <Scorciatoia attiva={filtri.mancanti === "si"} punto="bg-warning" conteggio={conteggi.mancanti} onClick={() => cambia({ mancanti: filtri.mancanti === "si" ? "no" : "si" })} titolo="Sku a cui manca qualcosa per la pubblicazione">Dati mancanti</Scorciatoia>
+            <Scorciatoia attiva={filtri.bloccato === "si"} punto="bg-destructive" conteggio={conteggi.bloccati} onClick={() => cambia({ bloccato: filtri.bloccato === "si" ? "tutti" : "si" })} titolo="Sku bloccati alla vendita">Bloccati</Scorciatoia>
           </>
         }
       >
@@ -1221,17 +1214,12 @@ export function VistaMagazzino({
             </TableHeader>
             <TableBody>
               {righeMostrate.map((r) => (
-                <TableRow key={r.id}>
+                <TableRow key={r.id} data-state={selezionati.has(r.id) ? "selected" : undefined} className={selezionati.has(r.id) ? "bg-primary/5" : undefined}>
                   <TableCell onClickCapture={segnalaShift}>
                     <Checkbox checked={selezionati.has(r.id)} onCheckedChange={(v) => gestisciSeleziona(r.id, v === true)} aria-label={`Seleziona ${r.skuCode}`} />
                   </TableCell>
                   <TableCell className="p-0"><Link href={`/magazzino/${r.id}`} className="block font-mono text-xs p-3">
                       {r.skuCode}
-                      {daSistemare[r.id]?.length ? (
-                        <Badge variant="warning" className="ml-2 align-middle" title={daSistemare[r.id].map((d) => `${d.portale}: ${d.stato}`).join(" · ")}>
-                          {Array.from(new Set(daSistemare[r.id].map((d) => d.portale))).join(", ")}
-                        </Badge>
-                      ) : null}
                     </Link></TableCell>
                   {colonneVisibili.map((c) => (
                     <TableCell key={c.id} className={c.allineaDestra ? "text-right tabular-nums" : undefined}>
