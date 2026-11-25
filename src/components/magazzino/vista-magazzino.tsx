@@ -20,7 +20,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { Columns3, Download, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert, CircleAlert, Check, Lock, LockOpen, Pencil, Ellipsis, Warehouse, ChevronDown } from "lucide-react";
+import { Columns3, Download, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert, CircleAlert, Check, Lock, LockOpen, Pencil, Ellipsis, Warehouse, ChevronDown, ChevronUp } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 import { aggiornaCampiSkuInline, campoPersonalizzatoInBloccoAction, ripristinaCampoPersonalizzatoInBloccoAction, spostaSkuInDeposito, correggiQuantita, annullaMovimenti, annullaMovimentiMultipli, togliDalRegistro } from "@/app/magazzino/actions";
 import { CasellaRegistro } from "@/components/magazzino/casella-registro";
@@ -198,7 +198,6 @@ function IntestazioneOrdinabile({
   direzione,
   allineaDestra,
   onOrdina,
-  trascina,
 }: {
   etichetta: string;
   chiave: ColonnaOrdinabile;
@@ -206,32 +205,26 @@ function IntestazioneOrdinabile({
   direzione: "asc" | "desc";
   allineaDestra?: boolean;
   onOrdina: (chiave: ColonnaOrdinabile) => void;
-  // Riordino per trascinamento: id della colonna e funzione che la sposta.
-  trascina?: { id: string; onSposta: (da: string, a: string) => void };
 }) {
+  // Il riordino colonne NON passa piu' da qui (drag HTML5 rimosso il
+  // 2026-11-25: in WKWebView/Tauri su Mac il drag di un elemento generico
+  // viene intercettato dal sistema come "trascina fuori dalla pagina come
+  // immagine", non come riordino interno - limite nativo, non risolvibile
+  // via CSS. Il riordino si fa ora dal menu "Colonne" con le frecce su/giu',
+  // vedi spostaIntestazione piu' sotto).
   const Icona = attiva ? (direzione === "desc" ? ArrowDown : ArrowUp) : ArrowUpDown;
-  const [sopra, setSopra] = useState(false);
   return (
-    <TableHead
-      className={`${CLASSE_INTESTAZIONE_FISSA} ${allineaDestra ? "text-right" : ""} ${sopra ? "bg-accent" : ""}`}
-      draggable={Boolean(trascina)}
-      // WKWebView (Tauri su Mac) non avvia il drag HTML5 su elementi generici senza
-      // questa proprieta' non standard; Chrome la ignora senza problemi.
-      style={trascina ? ({ WebkitUserDrag: "element", WebkitUserSelect: "none", cursor: "grab" } as React.CSSProperties) : undefined}
-      title={trascina ? "Trascina per spostare la colonna" : undefined}
-      onDragStart={trascina ? (e) => { e.dataTransfer.setData("text/colonna", trascina.id); e.dataTransfer.effectAllowed = "move"; } : undefined}
-      onDragOver={trascina ? (e) => { if (e.dataTransfer.types.includes("text/colonna")) { e.preventDefault(); setSopra(true); } } : undefined}
-      onDragLeave={trascina ? () => setSopra(false) : undefined}
-      onDrop={trascina ? (e) => { e.preventDefault(); setSopra(false); const da = e.dataTransfer.getData("text/colonna"); if (da) trascina.onSposta(da, trascina.id); } : undefined}
-    >
-      <button
-        type="button"
+    <TableHead className={`${CLASSE_INTESTAZIONE_FISSA} ${allineaDestra ? "text-right" : ""}`}>
+      <span
+        role="button"
+        tabIndex={0}
         onClick={() => onOrdina(chiave)}
-        className={`inline-flex items-center gap-1 whitespace-nowrap hover:text-foreground ${attiva ? "font-medium text-foreground" : "text-muted-foreground"}`}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOrdina(chiave); } }}
+        className={`inline-flex cursor-pointer items-center gap-1 whitespace-nowrap hover:text-foreground ${attiva ? "font-medium text-foreground" : "text-muted-foreground"}`}
       >
         {etichetta}
         <Icona className={`size-3.5 ${attiva ? "" : "opacity-40"}`} />
-      </button>
+      </span>
     </TableHead>
   );
 }
@@ -1090,6 +1083,42 @@ export function VistaMagazzino({
                     {c.nome}
                   </DropdownMenuCheckboxItem>
                 ))}
+                {vociOrdinate.length > 1 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Ordine colonne</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {vociOrdinate.map((v, i) => (
+                      <div key={v.id} className="flex items-center justify-between gap-2 py-1 pl-2 pr-1 text-sm">
+                        <span className="truncate">{v.std ? v.std.etichetta : v.cp!.nome}</span>
+                        <div className="flex shrink-0 gap-0.5">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-6"
+                            disabled={i === 0}
+                            title="Sposta su"
+                            onClick={() => spostaIntestazione(v.id, vociOrdinate[i - 1].id)}
+                          >
+                            <ChevronUp className="size-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-6"
+                            disabled={i === vociOrdinate.length - 1}
+                            title="Sposta giù"
+                            onClick={() => spostaIntestazione(v.id, vociOrdinate[i + 1].id)}
+                          >
+                            <ChevronDown className="size-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={(e) => { e.preventDefault(); ripristinaColonne(); }}>
                   <RotateCcw /> Ripristina colonne predefinite
@@ -1308,7 +1337,6 @@ export function VistaMagazzino({
                         direzione={direzioneAttuale}
                         allineaDestra={c.allineaDestra}
                         onOrdina={gestisciOrdinamento}
-                        trascina={{ id: v.id, onSposta: spostaIntestazione }}
                       />
                     );
                   }
@@ -1323,7 +1351,6 @@ export function VistaMagazzino({
                       direzione={direzioneAttuale}
                       allineaDestra={c.tipo === "numero"}
                       onOrdina={gestisciOrdinamento}
-                      trascina={{ id: v.id, onSposta: spostaIntestazione }}
                     />
                   );
                 })}
