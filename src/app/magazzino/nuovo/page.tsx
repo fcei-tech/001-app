@@ -70,7 +70,21 @@ export default async function NuovoSkuPage({ searchParams }: { searchParams: Pro
             <ArrowLeft /> {duplicaDa ? "Torna alla scheda" : "Torna al Magazzino"}
           </Link>
         </Button>
-        <NuovoSkuFlow tipi={tipi} ubicazioni={ubicazioni} proprietari={proprietari} regole={regole} campiPersonalizzati={campiPersonalizzati} famiglie={famiglie} tagInterni={tagInterni} duplicaDa={duplicaDa} />
+        {/* key sulla provenienza: senza, il passaggio da "Carica su sku esistente" a
+            "Duplica questo sku" (stesso percorso, cambia solo ?duplica=) non
+            smontava il componente client e restava bloccato sulla schermata
+            precedente (il suo stato interno sopravviveva al cambio di props). */}
+        <NuovoSkuFlow
+          key={duplicaDa?.id ?? "nuovo"}
+          tipi={tipi}
+          ubicazioni={ubicazioni}
+          proprietari={proprietari}
+          regole={regole}
+          campiPersonalizzati={campiPersonalizzati}
+          famiglie={famiglie}
+          tagInterni={tagInterni}
+          duplicaDa={duplicaDa}
+        />
       </main>
     </div>
   );

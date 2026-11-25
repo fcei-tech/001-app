@@ -199,10 +199,13 @@ export function NuovoSkuFlow({
               <Input id="quantita" name="quantita" type="number" min={1} defaultValue={1} required />
             </div>
             <CasellaRegistro id="registro-esistente" name="inRegistro" defaultChecked />
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button type="submit">Aggiungi carico</Button>
               <Button type="button" variant="ghost" onClick={() => setCandidatoScelto(null)}>
                 Annulla
+              </Button>
+              <Button asChild type="button" variant="outline" className="ml-auto">
+                <Link href={`/magazzino/nuovo?duplica=${candidatoScelto.id}`}>Duplica questo sku</Link>
               </Button>
             </div>
           </form>
