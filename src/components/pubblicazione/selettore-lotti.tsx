@@ -27,6 +27,7 @@ import { TableEmpty } from "@/components/ui/table-empty";
 import { Columns3, ArrowUp, ArrowDown, ArrowUpDown, TriangleAlert, RotateCcw } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 import { aggiungiLottiABatch } from "@/app/pubblicazione/actions";
+import { applicaOrdine, spostaColonna, useOrdineColonne } from "@/lib/ordine-colonne";
 import { useSelezioneMultipla } from "@/lib/selezione-multipla";
 import { pl } from "@/lib/plurale";
 
@@ -155,6 +156,7 @@ function IntestazioneOrdinabile({
   direzione,
   allineaDestra,
   onOrdina,
+  trascina,
 }: {
   etichetta: string;
   chiave: ColonnaOrdinabile;
@@ -162,10 +164,21 @@ function IntestazioneOrdinabile({
   direzione: "asc" | "desc";
   allineaDestra?: boolean;
   onOrdina: (chiave: ColonnaOrdinabile) => void;
+  // Riordino per trascinamento: id della colonna e funzione che la sposta.
+  trascina?: { id: string; onSposta: (da: string, a: string) => void };
 }) {
   const Icona = attiva ? (direzione === "desc" ? ArrowDown : ArrowUp) : ArrowUpDown;
+  const [sopra, setSopra] = useState(false);
   return (
-    <TableHead className={allineaDestra ? "text-right" : undefined}>
+    <TableHead
+      className={`${allineaDestra ? "text-right" : ""} ${sopra ? "bg-accent" : ""}`}
+      draggable={Boolean(trascina)}
+      title={trascina ? "Trascina per spostare la colonna" : undefined}
+      onDragStart={trascina ? (e) => { e.dataTransfer.setData("text/colonna", trascina.id); e.dataTransfer.effectAllowed = "move"; } : undefined}
+      onDragOver={trascina ? (e) => { if (e.dataTransfer.types.includes("text/colonna")) { e.preventDefault(); setSopra(true); } } : undefined}
+      onDragLeave={trascina ? () => setSopra(false) : undefined}
+      onDrop={trascina ? (e) => { e.preventDefault(); setSopra(false); const da = e.dataTransfer.getData("text/colonna"); if (da) trascina.onSposta(da, trascina.id); } : undefined}
+    >
       <button
         type="button"
         onClick={() => onOrdina(chiave)}
@@ -270,7 +283,13 @@ export function SelettoreLottiBatch({
   const { selezionati, gestisciSeleziona, segnalaShift, selezionaTutti } = useSelezioneMultipla<number>(
     righe.map((r) => r.id)
   );
-  const colonneVisibili = useMemo(() => COLONNE.filter((c) => colonne[c.id]), [colonne]);
+  const colonneScelte = useMemo(() => COLONNE.filter((c) => colonne[c.id]), [colonne]);
+  // Ordine scelto trascinando le intestazioni (solo queste: Sku, Disponibile e Impegnato restano fermi).
+  const [ordineSalvato, impostaOrdine] = useOrdineColonne("posterclub.pubblicazione.selettoreLotti.ordineColonne.v1");
+  const colonneVisibili = useMemo(() => applicaOrdine(colonneScelte, ordineSalvato, (c) => c.id), [colonneScelte, ordineSalvato]);
+  function spostaIntestazione(da: string, a: string) {
+    impostaOrdine(spostaColonna(colonneVisibili.map((c) => c.id), ordineSalvato, da, a));
+  }
 
   function impostaColonna(id: ColonnaId, visibile: boolean) {
     scriviColonneSalvate({ ...colonne, [id]: visibile });
@@ -284,6 +303,7 @@ export function SelettoreLottiBatch({
   // picker degli altri canali, non solo quello aperto in questo momento.
   function ripristinaColonne() {
     scriviColonneSalvate(COLONNE_DI_DEFAULT);
+    impostaOrdine([]);
   }
 
   // Testo e numeri si applicano da soli dopo una breve pausa di scrittura (o
@@ -580,6 +600,7 @@ export function SelettoreLottiBatch({
                       direzione={direzioneAttuale}
                       allineaDestra={c.allineaDestra}
                       onOrdina={gestisciOrdinamento}
+                      trascina={{ id: c.id, onSposta: spostaIntestazione }}
                     />
                   ))}
                   <IntestazioneOrdinabile

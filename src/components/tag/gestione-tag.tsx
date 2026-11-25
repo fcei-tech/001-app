@@ -76,7 +76,7 @@ function RigaTag({ t, onEsito }: { t: TagInfo; onEsito: (ok: boolean, testo: str
           }
           className="size-4"
         />
-        Va su Shopify (non ancora attivo)
+        Va su Shopify
       </label>
       <Badge variant="secondary" className="ml-auto">{t.numeroSku} sku</Badge>
       {confermaElimina ? (

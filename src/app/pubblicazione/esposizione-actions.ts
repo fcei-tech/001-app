@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { sku } from "@/db/schema";
 import { getCanaleById } from "@/db/pubblicazione-queries";
 import { getFotoPerSkuIds } from "@/db/queries";
+import { getTagShopifyPerSku } from "@/db/tag-queries";
 import { getRegolePrezzi } from "@/db/impostazioni-app-queries";
 import { annullaModifiche, impostaBlocco } from "@/db/esposizione-queries";
 import {
@@ -317,7 +318,7 @@ async function generaFileShopify(canaleId: number, skuIds?: number[]): Promise<E
 
     const ids = daInviare.map((r) => r.skuId);
     const nuoviIds = daInviare.filter((r) => r.stato === "nuovo" && !r.idPortale).map((r) => r.skuId);
-    const [dati, fotoMappa] = await Promise.all([
+    const [dati, fotoMappa, tagMappa] = await Promise.all([
       db
         .select({
           id: sku.id,
@@ -333,6 +334,7 @@ async function generaFileShopify(canaleId: number, skuIds?: number[]): Promise<E
         .from(sku)
         .where(inArray(sku.id, ids)),
       getFotoPerSkuIds(nuoviIds),
+      getTagShopifyPerSku(nuoviIds),
     ]);
     const datiPerId = new Map(dati.map((d) => [d.id, d]));
 
@@ -360,7 +362,7 @@ async function generaFileShopify(canaleId: number, skuIds?: number[]): Promise<E
           scarta(d, ETICHETTA_SCARTO_SHOPIFY[motivo]);
           continue;
         }
-        prodotti.push({ sku: d, quantita: file.pezzi, foto, testo, prezzo: r.prezzoOggi });
+        prodotti.push({ sku: { ...d, tagTematici: tagMappa.get(d.id) ?? [] }, quantita: file.pezzi, foto, testo, prezzo: r.prezzoOggi });
         incluse.push({ ...file, idPortale: handleShopify(d.skuCode), titolo: buildTitolo(d) });
         continue;
       }

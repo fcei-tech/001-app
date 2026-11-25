@@ -5,7 +5,7 @@
 // Le opzioni compaiono solo quando servono (miniature solo PDF, Riga Totale solo con
 // Pezzi o Valore). Le colonne libere si rinominano nella loro riga. Link = solo foto.
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { ArrowDown, ArrowUp, Download, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ClipboardList, Download, FileText, SlidersHorizontal, X, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -24,8 +24,63 @@ import { anteprimaExportAction, eliminaModelloExportAction, esportaMagazzinoActi
 type Ambito = "selezionati" | "filtrati" | "tutto";
 
 const select = "h-9 w-full rounded-md border bg-background px-2 text-sm";
-const blocco = "flex flex-col gap-3 rounded-md border p-3";
 const titoloBlocco = "text-xs font-medium uppercase tracking-wide text-muted-foreground";
+
+function Segmentato<T extends string>({ valore, onCambia, voci, etichetta }: { valore: T; onCambia: (v: T) => void; voci: { v: T; et: string; abil?: boolean }[]; etichetta: string }) {
+  return (
+    <div className="inline-flex rounded-lg border p-0.5" role="group" aria-label={etichetta}>
+      {voci.map((x) => (
+        <button
+          key={x.v}
+          type="button"
+          disabled={x.abil === false}
+          aria-pressed={valore === x.v}
+          onClick={() => onCambia(x.v)}
+          className={`rounded-md px-3 py-1.5 text-sm transition-colors disabled:opacity-40 ${valore === x.v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+        >
+          {x.et}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Interruttore({ acceso, onCambia, titolo, spiegazione }: { acceso: boolean; onCambia: (v: boolean) => void; titolo: string; spiegazione: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={acceso}
+        aria-label={titolo}
+        onClick={() => onCambia(!acceso)}
+        className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${acceso ? "bg-primary" : "bg-muted-foreground/30"}`}
+      >
+        <span className={`inline-block size-4 rounded-full bg-white shadow transition-transform ${acceso ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+      </button>
+      <div className="flex flex-col">
+        <span className="text-sm font-medium leading-5">{titolo}</span>
+        <span className="text-xs text-muted-foreground">{spiegazione}</span>
+      </div>
+    </div>
+  );
+}
+
+function CartaScelta({ attiva, titolo, sotto, icona: Icona, onClick }: { attiva: boolean; titolo: string; sotto: string; icona: LucideIcon; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={attiva}
+      className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors ${attiva ? "border-2 border-primary bg-primary/5 p-[11px]" : "hover:bg-muted/50"}`}
+    >
+      <Icona className="size-5 text-muted-foreground" aria-hidden />
+      <span className="text-sm font-medium">{titolo}</span>
+      <span className="text-xs text-muted-foreground">{sotto}</span>
+    </button>
+  );
+}
+
 
 export function EsportaMagazzino({
   aperto,
@@ -221,7 +276,8 @@ export function EsportaMagazzino({
     setTitoliLibere(i === 0 ? [v, titoliLibere[1]] : [titoliLibere[0], v]);
   }
 
-  const chip = (attivo: boolean) => (attivo ? "default" : "outline") as "default" | "outline";
+  const [avanzate, setAvanzate] = useState(false);
+  const personalizzatoAttivo = modelloAttivo !== modelloFabbrica.nome && modelloAttivo !== modelloListino.nome;
 
   return (
     <Dialog open={aperto} onOpenChange={(a) => { if (!a) onChiudi(); }}>
@@ -231,19 +287,31 @@ export function EsportaMagazzino({
           <DialogDescription>Nei file ci sono solo i link alle foto, mai agli annunci dei portali.</DialogDescription>
         </DialogHeader>
 
-        {/* Modelli: un solo punto per sceglierli e salvarli */}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-muted-foreground">Modello</span>
-            <Button type="button" size="sm" variant={chip(modelloAttivo === modelloFabbrica.nome)} onClick={() => applicaModello(modelloFabbrica)}>Inventario FP</Button>
-            <Button type="button" size="sm" variant={chip(modelloAttivo === modelloListino.nome)} onClick={() => applicaModello(modelloListino)}>Listino commerciante</Button>
+        {/* Cosa vuoi: una scelta e sei gia' pronto */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <CartaScelta attiva={modelloAttivo === modelloFabbrica.nome} titolo="Inventario FP" sotto="Excel per il commercialista" icona={ClipboardList} onClick={() => applicaModello(modelloFabbrica)} />
+          <CartaScelta attiva={modelloAttivo === modelloListino.nome} titolo="Listino commerciante" sotto="PDF con colonna Prezzo" icona={FileText} onClick={() => applicaModello(modelloListino)} />
+          <CartaScelta
+            attiva={personalizzatoAttivo}
+            titolo="Personalizzato"
+            sotto="Scegli tu colonne e formato"
+            icona={SlidersHorizontal}
+            onClick={() => {
+              setModelloAttivo("");
+              setAvanzate(true);
+            }}
+          />
+        </div>
+        {modelli.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-muted-foreground">I tuoi modelli</span>
             {modelli.map((m) => (
-              <span key={m.nome} className={`inline-flex items-center overflow-hidden rounded-md border ${modelloAttivo === m.nome ? "border-primary bg-primary/15" : ""}`}>
-                <button type="button" className="px-2 py-1 hover:bg-muted" onClick={() => applicaModello(m)}>{m.nome}</button>
+              <span key={m.nome} className={`inline-flex items-center overflow-hidden rounded-full border ${modelloAttivo === m.nome ? "border-primary bg-primary/10" : ""}`}>
+                <button type="button" className="px-3 py-1 hover:bg-muted" onClick={() => applicaModello(m)}>{m.nome}</button>
                 <button
                   type="button"
                   aria-label={`Elimina il modello ${m.nome}`}
-                  className="border-l px-1.5 py-1 text-muted-foreground hover:bg-muted"
+                  className="border-l px-2 py-1 text-muted-foreground hover:bg-muted"
                   onClick={() => start(async () => { await eliminaModelloExportAction(m.nome); setModelli(await leggiModelliExportAction()); })}
                 >
                   ×
@@ -251,159 +319,161 @@ export function EsportaMagazzino({
               </span>
             ))}
           </div>
-          <Button type="button" size="sm" variant="outline" onClick={() => setSalvaAperto((v) => !v)}>Salva come modello…</Button>
-        </div>
-        {salvaAperto && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Input className="h-9 w-56" placeholder="Nome del modello" value={nomeModello} onChange={(e) => setNomeModello(e.target.value)} />
-            <Button type="button" size="sm" disabled={pending || !nomeModello.trim()} onClick={salvaModello}>Salva</Button>
-            {nomeAttivoSalvato && nomeModello.trim() === modelloAttivo && <span className="text-xs text-muted-foreground">Sostituisce il modello con lo stesso nome.</span>}
-          </div>
         )}
 
-        {/* 1 - Quali sku */}
-        <div>
-          <p className={`${titoloBlocco} mb-2`}>1 · Quali sku</p>
-          <div className={blocco}>
-            <div className="flex flex-wrap gap-x-6 gap-y-2">
-              {([
-                ["selezionati", "Selezionati", idsSelezionati.length > 0],
-                ["filtrati", filtriAttivi ? "Sku filtrati" : "In elenco", true],
-                ["tutto", "Tutto il magazzino", true],
-              ] as [Ambito, string, boolean][]).map(([v, et, abil]) => (
-                <label key={v} className={`flex items-center gap-2 text-sm ${abil ? "" : "opacity-50"}`}>
-                  <input type="radio" name="ambito" checked={ambito === v} disabled={!abil} onChange={() => setAmbito(v)} />
-                  {et}
-                </label>
-              ))}
-            </div>
+        {/* Quali sku e formato: una riga sola */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Quali sku</span>
+            <Segmentato<Ambito>
+              etichetta="Quali sku"
+              valore={ambito}
+              onCambia={setAmbito}
+              voci={[
+                { v: "selezionati", et: `Selezionati${idsSelezionati.length > 0 ? ` (${idsSelezionati.length})` : ""}`, abil: idsSelezionati.length > 0 },
+                { v: "filtrati", et: filtriAttivi ? "Filtrati" : "In elenco" },
+                { v: "tutto", et: "Tutto" },
+              ]}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Formato</span>
+            <Segmentato<FormatoExport> etichetta="Formato" valore={formato} onCambia={setFormato} voci={[{ v: "xlsx", et: "Excel" }, { v: "csv", et: "CSV" }, { v: "pdf", et: "PDF" }]} />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <Interruttore acceso={escludiAste} onCambia={setEscludiAste} titolo="Senza pezzi nelle aste fisiche" spiegazione="Quelli già consegnati a una casa d'asta restano fuori." />
+          <Interruttore acceso={escludiBloccati} onCambia={setEscludiBloccati} titolo="Senza sku bloccati" spiegazione="Gli sku bloccati alla vendita non compaiono." />
+        </div>
+
+        {/* Opzioni avanzate: solo se servono */}
+        <button type="button" onClick={() => setAvanzate((v) => !v)} aria-expanded={avanzate} className="inline-flex items-center gap-1.5 self-start text-sm text-muted-foreground hover:text-foreground">
+          {avanzate ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+          Personalizza colonne, titolo e totale
+        </button>
+
+        {avanzate && (
+          <div className="flex flex-col gap-5 rounded-xl border bg-muted/20 p-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="flex flex-col gap-2">
-                <span className="text-xs text-muted-foreground">Escludi</span>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={soloConPezzi} onCheckedChange={(v) => setSoloConPezzi(v === true)} />
+                Solo sku con pezzi disponibili
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Proprietario</span>
+                <select className={`${select} flex-1`} value={proprietarioId} onChange={(e) => setProprietarioId(Number(e.target.value))} aria-label="Proprietario">
+                  <option value={0}>Tutti</option>
+                  {proprietari.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-sm sm:col-span-2">
+                <span className="text-muted-foreground">Righe</span>
+                <select className={`${select} w-64`} value={giacenza} onChange={(e) => setGiacenza(e.target.value as GiacenzaExport)} aria-label="Giacenza">
+                  <option value="sku">Una riga per sku</option>
+                  <option value="sku_deposito">Una riga per sku e deposito</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {formato === "pdf" ? (
                 <label className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={escludiAste} onCheckedChange={(v) => setEscludiAste(v === true)} />
-                  Pezzi nelle aste fisiche
+                  <Checkbox checked={pdfFoto} onCheckedChange={(v) => setPdfFoto(v === true)} />
+                  Miniature e link alle foto
+                  <span className="rounded border border-dashed px-1.5 text-[11px] text-muted-foreground">solo PDF</span>
                 </label>
+              ) : (
+                <p className="text-xs text-muted-foreground">Nessuna immagine nelle celle: per il link alla foto principale scegli la colonna &quot;Foto principale (link)&quot;.</p>
+              )}
+              <div className="flex flex-wrap items-center gap-4">
+                <Input className="h-9 min-w-48 flex-1" placeholder="Titolo in testa (facoltativo)" value={titolo} onChange={(e) => setTitolo(e.target.value)} aria-label="Titolo in testa" />
                 <label className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={escludiBloccati} onCheckedChange={(v) => setEscludiBloccati(v === true)} />
-                  Sku bloccati alla vendita
+                  <Checkbox checked={conData} onCheckedChange={(v) => setConData(v === true)} />
+                  Data di oggi
                 </label>
               </div>
-              <div className="flex flex-col gap-2">
-                <span className="text-xs text-muted-foreground">Tieni solo</span>
+              {totalePossibile && (
                 <label className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={soloConPezzi} onCheckedChange={(v) => setSoloConPezzi(v === true)} />
-                  Con pezzi disponibili
+                  <Checkbox checked={rigaTotale} onCheckedChange={(v) => setRigaTotale(v === true)} />
+                  Riga Totale in fondo
+                  <span className="rounded border border-dashed px-1.5 text-[11px] text-muted-foreground">pezzi e valore</span>
                 </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <span className="text-xs text-muted-foreground">Proprietario</span>
-                  <select className={`${select} flex-1`} value={proprietarioId} onChange={(e) => setProprietarioId(Number(e.target.value))} aria-label="Proprietario">
-                    <option value={0}>Tutti</option>
-                    {proprietari.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
-                  </select>
-                </label>
-              </div>
+              )}
             </div>
-          </div>
-        </div>
 
-        {/* 2 - Formato */}
-        <div>
-          <p className={`${titoloBlocco} mb-2`}>2 · Formato</p>
-          <div className={blocco}>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" size="sm" variant={chip(formato === "xlsx")} onClick={() => setFormato("xlsx")}>Excel</Button>
-              <Button type="button" size="sm" variant={chip(formato === "csv")} onClick={() => setFormato("csv")}>CSV</Button>
-              <Button type="button" size="sm" variant={chip(formato === "pdf")} onClick={() => setFormato("pdf")}>PDF</Button>
-              <select className={`${select} ml-auto w-60`} value={giacenza} onChange={(e) => setGiacenza(e.target.value as GiacenzaExport)} aria-label="Giacenza">
-                <option value="sku">Una riga per sku</option>
-                <option value="sku_deposito">Una riga per sku e deposito</option>
-              </select>
-            </div>
-            {formato === "pdf" ? (
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={pdfFoto} onCheckedChange={(v) => setPdfFoto(v === true)} />
-                Miniature e link alle foto
-                <span className="rounded border border-dashed px-1.5 text-[11px] text-muted-foreground">solo PDF</span>
-              </label>
-            ) : (
-              <p className="text-xs text-muted-foreground">Nessuna immagine nelle celle: per il link alla foto principale scegli la colonna &quot;Foto principale (link)&quot;.</p>
-            )}
-            <div className="flex flex-wrap items-center gap-4">
-              <Input className="h-9 min-w-48 flex-1" placeholder="Titolo in testa (facoltativo)" value={titolo} onChange={(e) => setTitolo(e.target.value)} aria-label="Titolo in testa" />
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={conData} onCheckedChange={(v) => setConData(v === true)} />
-                Data di oggi
-              </label>
-            </div>
-            {totalePossibile && (
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={rigaTotale} onCheckedChange={(v) => setRigaTotale(v === true)} />
-                Riga Totale in fondo
-                <span className="rounded border border-dashed px-1.5 text-[11px] text-muted-foreground">pezzi e valore</span>
-              </label>
-            )}
-          </div>
-        </div>
-
-        {/* 3 - Colonne */}
-        <div>
-          <p className={`${titoloBlocco} mb-2`}>3 · Colonne</p>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="max-h-72 overflow-y-auto rounded-md border">
-              {colonne.length === 0 && <p className="p-3 text-sm text-muted-foreground">Nessuna colonna scelta.</p>}
-              {colonne.map((id, i) => {
-                const libera = id.startsWith("libera");
-                return (
-                  <div key={id} className={`flex items-center justify-between gap-2 border-b px-2 py-1 text-sm last:border-b-0 ${libera ? "bg-muted/40" : ""}`}>
-                    {libera ? (
-                      <span className="flex min-w-0 flex-1 items-center gap-2">
-                        <Input
-                          className="h-7 max-w-32"
-                          value={titoliLibere[id === "libera1" ? 0 : 1]}
-                          placeholder={`Colonna libera ${id === "libera1" ? 1 : 2}`}
-                          onChange={(e) => cambiaTitoloLibera(id, e.target.value)}
-                          aria-label={`Titolo colonna libera ${id === "libera1" ? 1 : 2}`}
-                        />
-                        <span className="whitespace-nowrap rounded border border-dashed px-1.5 text-[11px] text-muted-foreground">libera{formato === "pdf" ? " · compilabile" : ""}</span>
-                      </span>
-                    ) : (
-                      <span className="truncate">{etichetta(id)}</span>
+            <div>
+              <p className={`${titoloBlocco} mb-2`}>Colonne</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="max-h-72 overflow-y-auto rounded-md border bg-background">
+                  {colonne.length === 0 && <p className="p-3 text-sm text-muted-foreground">Nessuna colonna scelta.</p>}
+                  {colonne.map((id, i) => {
+                    const libera = id.startsWith("libera");
+                    return (
+                      <div key={id} className={`flex items-center justify-between gap-2 border-b px-2 py-1 text-sm last:border-b-0 ${libera ? "bg-muted/40" : ""}`}>
+                        {libera ? (
+                          <span className="flex min-w-0 flex-1 items-center gap-2">
+                            <Input
+                              className="h-7 max-w-32"
+                              value={titoliLibere[id === "libera1" ? 0 : 1]}
+                              placeholder={`Colonna libera ${id === "libera1" ? 1 : 2}`}
+                              onChange={(e) => cambiaTitoloLibera(id, e.target.value)}
+                              aria-label={`Titolo colonna libera ${id === "libera1" ? 1 : 2}`}
+                            />
+                            <span className="whitespace-nowrap rounded border border-dashed px-1.5 text-[11px] text-muted-foreground">libera{formato === "pdf" ? " · compilabile" : ""}</span>
+                          </span>
+                        ) : (
+                          <span className="truncate">{etichetta(id)}</span>
+                        )}
+                        <span className="flex items-center">
+                          <Button type="button" size="icon" variant="ghost" className="size-7" aria-label="Su" onClick={() => muovi(i, -1)}><ArrowUp className="size-4" /></Button>
+                          <Button type="button" size="icon" variant="ghost" className="size-7" aria-label="Giù" onClick={() => muovi(i, 1)}><ArrowDown className="size-4" /></Button>
+                          <Button type="button" size="icon" variant="ghost" className="size-7" aria-label={`Togli ${etichetta(id)}`} onClick={() => attiva(id, false)}><X className="size-4" /></Button>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Input className="h-9" placeholder="Cerca una colonna…" value={cerca} onChange={(e) => setCerca(e.target.value)} aria-label="Cerca una colonna" />
+                  <div className="max-h-60 overflow-y-auto rounded-md border bg-background">
+                    {normali.map((c) => (
+                      <label key={c.id} className="flex cursor-pointer items-center gap-2 border-b px-2 py-1 text-sm last:border-b-0 hover:bg-muted/50">
+                        <Checkbox checked={false} onCheckedChange={(v) => attiva(c.id, v === true)} />
+                        {c.etichetta}
+                      </label>
+                    ))}
+                    {libere.map((c, k) => (
+                      <label key={c.id} className={`flex cursor-pointer items-center justify-between gap-2 border-b px-2 py-1 text-sm last:border-b-0 hover:bg-muted/50 ${k === 0 ? "border-t border-dashed" : ""}`}>
+                        <span className="flex items-center gap-2">
+                          <Checkbox checked={false} onCheckedChange={(v) => attiva(c.id, v === true)} />
+                          {c.etichetta}
+                        </span>
+                        <span className="rounded border border-dashed px-1.5 text-[11px] text-muted-foreground">vuota</span>
+                      </label>
+                    ))}
+                    {normali.length === 0 && libere.length === 0 && (
+                      <p className="p-3 text-sm text-muted-foreground">{nonScelte.length === 0 ? "Hai scelto tutte le colonne." : "Nessuna colonna con questo nome."}</p>
                     )}
-                    <span className="flex items-center">
-                      <Button type="button" size="icon" variant="ghost" className="size-7" aria-label="Su" onClick={() => muovi(i, -1)}><ArrowUp className="size-4" /></Button>
-                      <Button type="button" size="icon" variant="ghost" className="size-7" aria-label="Giù" onClick={() => muovi(i, 1)}><ArrowDown className="size-4" /></Button>
-                      <Button type="button" size="icon" variant="ghost" className="size-7" aria-label={`Togli ${etichetta(id)}`} onClick={() => attiva(id, false)}><X className="size-4" /></Button>
-                    </span>
                   </div>
-                );
-              })}
+                </div>
+              </div>
             </div>
+
             <div className="flex flex-col gap-2">
-              <Input className="h-9" placeholder="Cerca una colonna…" value={cerca} onChange={(e) => setCerca(e.target.value)} aria-label="Cerca una colonna" />
-              <div className="max-h-60 overflow-y-auto rounded-md border">
-                {normali.map((c) => (
-                  <label key={c.id} className="flex cursor-pointer items-center gap-2 border-b px-2 py-1 text-sm last:border-b-0 hover:bg-muted/50">
-                    <Checkbox checked={false} onCheckedChange={(v) => attiva(c.id, v === true)} />
-                    {c.etichetta}
-                  </label>
-                ))}
-                {libere.map((c, k) => (
-                  <label key={c.id} className={`flex cursor-pointer items-center justify-between gap-2 border-b px-2 py-1 text-sm last:border-b-0 hover:bg-muted/50 ${k === 0 ? "border-t border-dashed" : ""}`}>
-                    <span className="flex items-center gap-2">
-                      <Checkbox checked={false} onCheckedChange={(v) => attiva(c.id, v === true)} />
-                      {c.etichetta}
-                    </span>
-                    <span className="rounded border border-dashed px-1.5 text-[11px] text-muted-foreground">vuota</span>
-                  </label>
-                ))}
-                {normali.length === 0 && libere.length === 0 && (
-                  <p className="p-3 text-sm text-muted-foreground">{nonScelte.length === 0 ? "Hai scelto tutte le colonne." : "Nessuna colonna con questo nome."}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => setSalvaAperto((v) => !v)}>Salva come modello…</Button>
+                {salvaAperto && (
+                  <>
+                    <Input className="h-9 w-56" placeholder="Nome del modello" value={nomeModello} onChange={(e) => setNomeModello(e.target.value)} />
+                    <Button type="button" size="sm" disabled={pending || !nomeModello.trim()} onClick={salvaModello}>Salva</Button>
+                  </>
                 )}
               </div>
+              {salvaAperto && nomeAttivoSalvato && nomeModello.trim() === modelloAttivo && <span className="text-xs text-muted-foreground">Sostituisce il modello con lo stesso nome.</span>}
             </div>
           </div>
-        </div>
+        )}
 
         <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
           {riepilogo === null || riepilogo.chiave !== chiaveRiepilogo ? (

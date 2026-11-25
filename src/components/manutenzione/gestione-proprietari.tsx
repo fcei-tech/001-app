@@ -1,8 +1,13 @@
 "use client";
 
+// Pagina Proprietari (ridisegnata 2026-11-25): una scheda per proprietario.
+// Nome, pezzi e movimenti come frase, Tipo a tre pulsanti, due interruttori con
+// una riga di spiegazione. Ogni modifica si salva da sola.
 import * as React from "react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Interruttore, SceltaTipo } from "./controlli-scheda";
 import {
   creaProprietario,
   aggiornaProprietario,
@@ -20,16 +25,20 @@ type Proprietario = {
   pezzi: number;
 };
 
-const CLASSE_SELECT =
-  "h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
-
 const TIPI = [
   { value: "azienda", label: "Azienda" },
-  { value: "soci", label: "Soci / privati" },
-  { value: "terzo", label: "Terzo (cliente)" },
+  { value: "soci", label: "Soci e privati" },
+  { value: "terzo", label: "Clienti" },
 ];
 
-function RigaProprietario({ p, altriNomi, onDisattivato }: { p: Proprietario; altriNomi: string[]; onDisattivato: (id: number) => void }) {
+function frase(pezzi: number, movimenti: number) {
+  if (pezzi === 0 && movimenti === 0) return "Nessun pezzo, nessun movimento.";
+  const p = pezzi === 1 ? "1 pezzo" : `${pezzi} pezzi`;
+  const m = movimenti === 1 ? "1 movimento" : `${movimenti} movimenti`;
+  return `${p} e ${m}.`;
+}
+
+function SchedaProprietario({ p, altriNomi, onDisattivato }: { p: Proprietario; altriNomi: string[]; onDisattivato: (id: number) => void }) {
   const [chiediConferma, setChiediConferma] = React.useState(false);
   const [nome, setNome] = React.useState(p.nome);
   const [tipo, setTipo] = React.useState(p.tipo);
@@ -48,11 +57,11 @@ function RigaProprietario({ p, altriNomi, onDisattivato }: { p: Proprietario; al
       attivo: sovrascrivi.attivo ?? attivo,
     };
     if (!dati.nome.trim()) {
-      setMessaggio({ testo: "Il nome non puo' essere vuoto", errore: true });
+      setMessaggio({ testo: "Il nome non può essere vuoto", errore: true });
       return;
     }
     if (altriNomi.some((n) => n.trim().toLowerCase() === dati.nome.trim().toLowerCase())) {
-      setMessaggio({ testo: "Esiste gia' un proprietario con questo nome", errore: true });
+      setMessaggio({ testo: "Nome già usato", errore: true });
       return;
     }
     startTransition(async () => {
@@ -65,9 +74,7 @@ function RigaProprietario({ p, altriNomi, onDisattivato }: { p: Proprietario; al
     });
   }
 
-  // Conferma "in riga" (due click) invece di window.confirm: nella finestra
-  // dell'app desktop il popup del browser non compare e il tasto sembrava
-  // non fare nulla.
+  // Conferma "in riga" (due click): nell'app desktop il popup del browser non compare.
   function elimina() {
     setChiediConferma(false);
     startTransition(async () => {
@@ -77,79 +84,58 @@ function RigaProprietario({ p, altriNomi, onDisattivato }: { p: Proprietario; al
   }
 
   return (
-    <tr className={attivo ? "" : "opacity-60"}>
-      <td className="p-2">
-        <Input
-          value={nome}
-          onChange={(e) => setNome(e.target.value)}
-          onBlur={() => nome !== p.nome && salva()}
-          aria-label="Nome proprietario"
-          aria-invalid={doppio}
-          className="w-full min-w-0"
-        />
-      </td>
-      <td className="p-2">
-        <select
-          value={tipo}
-          onChange={(e) => {
-            setTipo(e.target.value);
-            salva({ tipo: e.target.value });
-          }}
-          className={`${CLASSE_SELECT} w-full`}
-          aria-label="Tipo"
-        >
-          {TIPI.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-      </td>
-      <td className="p-2">
-        <div className="flex flex-col gap-1 text-xs">
-          <label className="flex items-center gap-1.5 whitespace-nowrap">
-            <input
-          type="checkbox"
-          className="size-4"
-          checked={conta}
-          onChange={(e) => {
-            setConta(e.target.checked);
-            salva({ conta: e.target.checked });
-          }}
-          aria-label="Conta nel valore aziendale"
-        />
-            Conta nel valore aziendale
-          </label>
-          <label className="flex items-center gap-1.5 whitespace-nowrap">
-            <input
-          type="checkbox"
-          className="size-4"
-          checked={attivo}
-          onChange={(e) => {
-            setAttivo(e.target.checked);
-            salva({ attivo: e.target.checked });
-          }}
-          aria-label="Attivo"
-        />
-            Attivo
-          </label>
+    <div className={`flex flex-col gap-4 rounded-xl border bg-card p-4 ${attivo ? "" : "opacity-60"}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <Input
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            onBlur={() => nome !== p.nome && salva()}
+            aria-label="Nome proprietario"
+            aria-invalid={doppio}
+            className="h-10 max-w-sm text-base font-medium"
+          />
+          <span className="text-sm text-muted-foreground">{frase(p.pezzi, p.movimenti)}</span>
         </div>
-      </td>
-      <td className="p-2 text-sm">
-        <div className="flex flex-col items-start gap-1">
-          <span className="whitespace-nowrap text-muted-foreground">{p.pezzi} pz · {p.movimenti} mov.</span>
-          <div>
-        {inCorso ? (
-          <span className="text-muted-foreground">Salvo…</span>
-        ) : messaggio ? (
-          <span className={messaggio.errore ? "text-destructive" : "text-muted-foreground"}>{messaggio.testo}</span>
-        ) : null}
-        {doppio && !messaggio && <span className="text-destructive">Nome gia&apos; usato</span>}
-          </div>
-          <div>
+        <SceltaTipo
+          opzioni={TIPI}
+          valore={tipo}
+          disabilitato={inCorso}
+          onCambia={(v) => {
+            setTipo(v);
+            salva({ tipo: v });
+          }}
+        />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Interruttore
+          acceso={conta}
+          disabilitato={inCorso}
+          titolo="Conta nel valore del magazzino"
+          spiegazione="Il costo dei suoi pezzi entra nel Valore di carico del Magazzino."
+          onCambia={(v) => {
+            setConta(v);
+            salva({ conta: v });
+          }}
+        />
+        <Interruttore
+          acceso={attivo}
+          disabilitato={inCorso}
+          titolo="Attivo"
+          spiegazione="Se spento non compare più nelle scelte. I suoi pezzi restano."
+          onCambia={(v) => {
+            setAttivo(v);
+            salva({ attivo: v });
+          }}
+        />
+      </div>
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-2 text-sm">
+        <span className={messaggio?.errore || (doppio && !messaggio) ? "text-destructive" : "text-muted-foreground"}>
+          {inCorso ? "Salvo…" : messaggio ? messaggio.testo : doppio ? "Nome già usato" : ""}
+        </span>
         {p.movimenti === 0 ? (
           chiediConferma ? (
-            <span className="flex items-center gap-1 whitespace-nowrap">
+            <span className="flex items-center gap-1">
               <Button type="button" variant="destructive" size="sm" onClick={elimina} disabled={inCorso}>
                 Sì, elimina
               </Button>
@@ -163,24 +149,22 @@ function RigaProprietario({ p, altriNomi, onDisattivato }: { p: Proprietario; al
             </Button>
           )
         ) : (
-          <span className="text-xs text-muted-foreground">in uso</span>
+          <span className="text-xs text-muted-foreground">In uso: non si elimina, si disattiva.</span>
         )}
-          </div>
-        </div>
-      </td>
-    </tr>
+      </div>
+    </div>
   );
 }
 
 export function GestioneProprietari({ proprietari }: { proprietari: Proprietario[] }) {
+  const [nuovoAperto, setNuovoAperto] = React.useState(false);
   const [nome, setNome] = React.useState("");
   const [tipo, setTipo] = React.useState("terzo");
   const [conta, setConta] = React.useState(false);
   const [esito, setEsito] = React.useState<EsitoManutenzione | null>(null);
   const [inCorso, startTransition] = React.useTransition();
   const [mostraDisattivati, setMostraDisattivati] = React.useState(false);
-  // Righe appena disattivate: restano visibili finche' non si lascia la
-  // pagina, cosi' si vede l'esito/avviso del salvataggio.
+  // Appena disattivato resta visibile finche' non si lascia la pagina.
   const [toccati, setToccati] = React.useState<Set<number>>(new Set());
   const nDisattivati = proprietari.filter((p) => !p.attivo).length;
   const visibili = proprietari.filter((p) => p.attivo || mostraDisattivati || toccati.has(p.id));
@@ -197,84 +181,68 @@ export function GestioneProprietari({ proprietari }: { proprietari: Proprietario
         setNome("");
         setTipo("terzo");
         setConta(false);
+        setNuovoAperto(false);
       }
     });
   }
 
   return (
-    <section className="flex flex-col gap-3">
-      <div>
-        <h2 className="text-lg font-semibold">Proprietari</h2>
-        <p className="text-sm text-muted-foreground">
-          Di chi sono i pezzi. &quot;Conta nel valore aziendale&quot; indica quali proprieta&apos; rientreranno nel valore di
-          magazzino dell&apos;azienda (per ora solo informativo). Un proprietario gia&apos; usato non si elimina: lo si
-          disattiva.
-        </p>
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Proprietari</h2>
+          <p className="text-sm text-muted-foreground">Di chi sono i pezzi.</p>
+        </div>
+        {!nuovoAperto && (
+          <Button type="button" onClick={() => setNuovoAperto(true)}>
+            <Plus /> Nuovo proprietario
+          </Button>
+        )}
       </div>
-      <div className="rounded-lg border">
-        <table className="w-full table-fixed text-sm">
-          <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
-            <tr>
-              <th className="w-[30%] p-2 font-medium">Nome</th>
-              <th className="w-[18%] p-2 font-medium">Tipo</th>
-              <th className="w-[28%] p-2 font-medium">Opzioni</th>
-              <th className="w-[24%] p-2 font-medium">Uso</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {visibili.map((p) => (
-              <RigaProprietario
-                key={p.id}
-                p={p}
-                onDisattivato={(id) => setToccati((t) => new Set(t).add(id))}
-                altriNomi={proprietari.filter((x) => x.id !== p.id).map((x) => x.nome)}
-              />
-            ))}
-          </tbody>
-        </table>
+
+      {nuovoAperto && (
+        <form onSubmit={aggiungi} className="flex flex-col gap-4 rounded-xl border border-dashed p-4">
+          <Input
+            autoFocus
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            placeholder="Nome, es. Mario Rossi"
+            aria-label="Nome del nuovo proprietario"
+            aria-invalid={doppio}
+            className="h-10 max-w-sm"
+          />
+          <SceltaTipo opzioni={TIPI} valore={tipo} onCambia={setTipo} />
+          <Interruttore acceso={conta} onCambia={setConta} titolo="Conta nel valore del magazzino" spiegazione="Il costo dei suoi pezzi entra nel Valore di carico del Magazzino." />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" disabled={inCorso || !nome.trim() || doppio}>
+              Aggiungi
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setNuovoAperto(false)}>
+              Annulla
+            </Button>
+            {doppio && nome.trim() && <span className="text-sm text-destructive">Nome già usato</span>}
+            {esito && !esito.ok && <span className="text-sm text-destructive">{esito.errore}</span>}
+          </div>
+        </form>
+      )}
+
+      <div className="flex flex-col gap-3">
+        {visibili.map((p) => (
+          <SchedaProprietario
+            key={p.id}
+            p={p}
+            onDisattivato={(id) => setToccati((t) => new Set(t).add(id))}
+            altriNomi={proprietari.filter((x) => x.id !== p.id).map((x) => x.nome)}
+          />
+        ))}
       </div>
+
       {nDisattivati > 0 && (
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <input type="checkbox" className="size-4" checked={mostraDisattivati} onChange={(e) => setMostraDisattivati(e.target.checked)} />
           Mostra anche i disattivati ({nDisattivati})
         </label>
       )}
-      <form onSubmit={aggiungi} className="flex flex-wrap items-end gap-3 rounded-lg border border-dashed p-3">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted-foreground" htmlFor="nuovo-prop-nome">
-            Nuovo proprietario
-          </label>
-          <Input
-            id="nuovo-prop-nome"
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            placeholder="es. Mario Rossi"
-            className="min-w-48"
-            aria-invalid={doppio}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted-foreground" htmlFor="nuovo-prop-tipo">
-            Tipo
-          </label>
-          <select id="nuovo-prop-tipo" value={tipo} onChange={(e) => setTipo(e.target.value)} className={CLASSE_SELECT}>
-            {TIPI.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <label className="flex items-center gap-2 pb-2 text-sm">
-          <input type="checkbox" className="size-4" checked={conta} onChange={(e) => setConta(e.target.checked)} />
-          Conta nel valore aziendale
-        </label>
-        <Button type="submit" size="sm" disabled={inCorso || !nome.trim() || doppio}>
-          Aggiungi
-        </Button>
-        {doppio && nome.trim() && <span className="pb-2 text-sm text-destructive">Nome gia&apos; usato</span>}
-        {esito && !esito.ok && <span className="pb-2 text-sm text-destructive">{esito.errore}</span>}
-      </form>
     </section>
   );
 }

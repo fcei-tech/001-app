@@ -46,6 +46,8 @@ export type SkuPerShopify = {
   altezza: string | null;
   supporto: string | null;
   anno: string | null;
+  // Tag tematici (tipo "soggetto" con "Va su Shopify" acceso), gia' filtrati da chi chiama.
+  tagTematici?: string[];
 };
 
 export type MotivoScartoShopify = "prezzo_ebay_mancante" | "zero_foto";
@@ -145,6 +147,7 @@ export function buildTag(sku: SkuPerShopify): string {
   } else if (eTela(sku.supporto)) {
     tag.push("LINEN BACKED");
   }
+  for (const t of sku.tagTematici ?? []) tag.push(pulisci(t));
   // Virgola nei tag spezzerebbe il tag in due.
   return tag.map((t) => t.replace(/,/g, " ")).join(", ");
 }

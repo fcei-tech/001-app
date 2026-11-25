@@ -68,7 +68,8 @@ export async function impostaTipoTag(id: number, tipo: string): Promise<void> {
   await db.update(tag).set({ tipo: tipo === "interno" ? "interno" : "soggetto" }).where(eq(tag.id, id));
 }
 
-// Interruttore pronto per dopo: oggi nessun file per i portali lo legge.
+// Interruttore "Va su Shopify": dal 2026-11-25 i tag tematici accesi finiscono nella colonna Tags
+// del file NUOVI di Shopify. I tag interni (res, no res) non escono mai, qualunque sia l'interruttore.
 export async function impostaVaiSuShopify(id: number, valore: boolean): Promise<void> {
   await db.update(tag).set({ vaiSuShopify: valore }).where(eq(tag.id, id));
 }
@@ -161,4 +162,22 @@ export async function suggerisciTagIdsPerArtista(artista: string, massimo = 2): 
     .sort((a, b) => b.n - a.n)
     .slice(0, massimo)
     .map((r) => r.tagId);
+}
+
+// Tag tematici da pubblicare su Shopify, per sku: solo tipo "soggetto" con interruttore acceso.
+export async function getTagShopifyPerSku(skuIds: number[]): Promise<Map<number, string[]>> {
+  const mappa = new Map<number, string[]>();
+  if (skuIds.length === 0) return mappa;
+  const righe = await db
+    .select({ skuId: skuTag.skuId, nome: tag.nome })
+    .from(skuTag)
+    .innerJoin(tag, eq(tag.id, skuTag.tagId))
+    .where(and(inArray(skuTag.skuId, skuIds), eq(tag.tipo, "soggetto"), eq(tag.vaiSuShopify, true)))
+    .orderBy(asc(sql`lower(${tag.nome})`));
+  for (const r of righe) {
+    const l = mappa.get(r.skuId) ?? [];
+    l.push(r.nome);
+    mappa.set(r.skuId, l);
+  }
+  return mappa;
 }

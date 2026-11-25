@@ -54,7 +54,7 @@ const PAGINA_L = 841.89;
 const PAGINA_H = 595.28;
 const MARGINE = 30;
 const ALTEZZA_TESTATA_PAGINA = 34;
-const ALTEZZA_INTESTAZIONE_TABELLA = 20;
+const ALTEZZA_INTESTAZIONE_TABELLA = 28;
 const ALTEZZA_RIGA = 78;
 const MASSIMO_LINK_FOTO = 5;
 
@@ -191,7 +191,10 @@ export async function generaPdfAstaFisica(parametri: ParametriPdfAstaFisica): Pr
         borderColor: GRIGIO_BORDO,
         borderWidth: 0.6,
       });
-      pagina.drawText(pulisciTesto(etichetta, fontBold), { x: x + 5, y: yAlto - 14, size: 9, font: fontBold, color: NERO });
+      // Titolo lungo: va a capo su due righe, poi tronca con "…" (mai fuori colonna).
+      const righeTitolo = spezzaTesto(pulisciTesto(etichetta, fontBold), fontBold, 8.5, larghezza - 10, 2);
+      const yPrima = righeTitolo.length === 1 ? yAlto - 17 : yAlto - 11;
+      righeTitolo.forEach((r, k) => pagina.drawText(r, { x: x + 5, y: yPrima - k * 10, size: 8.5, font: fontBold, color: NERO }));
       x += larghezza;
     }
   }

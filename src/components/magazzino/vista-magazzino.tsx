@@ -20,7 +20,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { Columns3, Download, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert, CircleAlert, Check, Pencil, Ellipsis, Warehouse, ChevronDown } from "lucide-react";
+import { Columns3, Download, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert, CircleAlert, Check, Lock, LockOpen, Pencil, Ellipsis, Warehouse, ChevronDown } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 import { aggiornaCampiSkuInline, campoPersonalizzatoInBloccoAction, ripristinaCampoPersonalizzatoInBloccoAction, spostaSkuInDeposito, correggiQuantita, annullaMovimenti, annullaMovimentiMultipli, togliDalRegistro } from "@/app/magazzino/actions";
 import { CasellaRegistro } from "@/components/magazzino/casella-registro";
@@ -47,6 +47,7 @@ import { EliminaSkuMultipli } from "@/components/magazzino/elimina-sku-multipli"
 import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
 import type { TagBreve } from "@/db/tag-queries";
 import { leggiTagParam, scriviTagParam } from "@/lib/tag-filtro";
+import { applicaOrdine, spostaColonna, useOrdineColonne } from "@/lib/ordine-colonne";
 import { coloreCanale } from "@/lib/colori-canali";
 import { campiMancanti, ETICHETTA_CAMPO_MANCANTE, spiegazioneCampoMancante } from "@/lib/campi-mancanti-pubblicazione";
 
@@ -198,6 +199,7 @@ function IntestazioneOrdinabile({
   direzione,
   allineaDestra,
   onOrdina,
+  trascina,
 }: {
   etichetta: string;
   chiave: ColonnaOrdinabile;
@@ -205,10 +207,21 @@ function IntestazioneOrdinabile({
   direzione: "asc" | "desc";
   allineaDestra?: boolean;
   onOrdina: (chiave: ColonnaOrdinabile) => void;
+  // Riordino per trascinamento: id della colonna e funzione che la sposta.
+  trascina?: { id: string; onSposta: (da: string, a: string) => void };
 }) {
   const Icona = attiva ? (direzione === "desc" ? ArrowDown : ArrowUp) : ArrowUpDown;
+  const [sopra, setSopra] = useState(false);
   return (
-    <TableHead className={`${CLASSE_INTESTAZIONE_FISSA} ${allineaDestra ? "text-right" : ""}`}>
+    <TableHead
+      className={`${CLASSE_INTESTAZIONE_FISSA} ${allineaDestra ? "text-right" : ""} ${sopra ? "bg-accent" : ""}`}
+      draggable={Boolean(trascina)}
+      title={trascina ? "Trascina per spostare la colonna" : undefined}
+      onDragStart={trascina ? (e) => { e.dataTransfer.setData("text/colonna", trascina.id); e.dataTransfer.effectAllowed = "move"; } : undefined}
+      onDragOver={trascina ? (e) => { if (e.dataTransfer.types.includes("text/colonna")) { e.preventDefault(); setSopra(true); } } : undefined}
+      onDragLeave={trascina ? () => setSopra(false) : undefined}
+      onDrop={trascina ? (e) => { e.preventDefault(); setSopra(false); const da = e.dataTransfer.getData("text/colonna"); if (da) trascina.onSposta(da, trascina.id); } : undefined}
+    >
       <button
         type="button"
         onClick={() => onOrdina(chiave)}
@@ -418,11 +431,23 @@ const COLONNE: DefinizioneColonna[] = [
   },
   {
     id: "stato", etichetta: "Stato", defaultVisibile: true,
+    // Un solo pulsante-etichetta (2026-11-25): prima casella + badge si confondevano
+    // con la casella di selezione della riga. Clic = blocca / sblocca.
     render: (r, ctx) => (
-      <label className="flex cursor-pointer items-center gap-2">
-        <Checkbox checked={r.bloccatoVendita} onCheckedChange={(v) => ctx.salvaBloccato(r, v === true)} />
-        {r.bloccatoVendita ? <Badge variant="destructive">Bloccato</Badge> : <span className="text-muted-foreground">—</span>}
-      </label>
+      <button
+        type="button"
+        onClick={() => ctx.salvaBloccato(r, !r.bloccatoVendita)}
+        title={r.bloccatoVendita ? "Bloccato: non esce su nessun portale. Clic per sbloccare." : "In vendita. Clic per bloccare."}
+        aria-pressed={r.bloccatoVendita}
+        className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+          r.bloccatoVendita
+            ? "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15"
+            : "text-muted-foreground hover:bg-muted"
+        }`}
+      >
+        {r.bloccatoVendita ? <Lock className="size-3.5" /> : <LockOpen className="size-3.5" />}
+        {r.bloccatoVendita ? "Bloccato" : "In vendita"}
+      </button>
     ),
   },
   {
@@ -797,9 +822,29 @@ export function VistaMagazzino({
   // riattivare/disattivare ogni checkbox a mano.
   function ripristinaColonne() {
     scriviColonneSalvate(COLONNE_DI_DEFAULT);
+    impostaOrdine([]);
   }
 
   const colonneVisibili = useMemo(() => COLONNE.filter((c) => colonne[c.id]), [colonne]);
+
+  // Ordine scelto trascinando le intestazioni: vale per le colonne standard e
+  // per quelle dei campi personalizzati (id "cp_<n>"). Sku e casella restano fermi.
+  const [ordineSalvato, impostaOrdine] = useOrdineColonne("posterclub.magazzino.ordineColonne.v1");
+  const vociOrdinate = useMemo(
+    () =>
+      applicaOrdine(
+        [
+          ...colonneVisibili.map((c) => ({ id: c.id as string, std: c, cp: undefined as CampoPersonalizzato | undefined })),
+          ...colonneCpVisibili.map((c) => ({ id: `cp_${c.id}`, std: undefined as DefinizioneColonna | undefined, cp: c })),
+        ],
+        ordineSalvato,
+        (v) => v.id
+      ),
+    [colonneVisibili, colonneCpVisibili, ordineSalvato]
+  );
+  function spostaIntestazione(da: string, a: string) {
+    impostaOrdine(spostaColonna(vociOrdinate.map((v) => v.id), ordineSalvato, da, a));
+  }
 
   function applicaFiltri(
     f: typeof filtri,
@@ -1267,24 +1312,25 @@ export function VistaMagazzino({
                   direzione={direzioneAttuale}
                   onOrdina={gestisciOrdinamento}
                 />
-                {colonneVisibili.map((c) => {
-                  // MAPPA_ORDINABILI e' un Record totale su ColonnaId (vedi
-                  // sopra): ogni colonna visibile ha sempre una chiave di
-                  // ordinamento, nessun fallback a intestazione statica.
-                  const chiaveOrdinamento = MAPPA_ORDINABILI[c.id];
-                  return (
-                    <IntestazioneOrdinabile
-                      key={c.id}
-                      etichetta={c.etichetta}
-                      chiave={chiaveOrdinamento}
-                      attiva={ordinamentoCorrente === chiaveOrdinamento}
-                      direzione={direzioneAttuale}
-                      allineaDestra={c.allineaDestra}
-                      onOrdina={gestisciOrdinamento}
-                    />
-                  );
-                })}
-                {colonneCpVisibili.map((c) => {
+                {vociOrdinate.map((v) => {
+                  if (v.std) {
+                    const c = v.std;
+                    // MAPPA_ORDINABILI e' un Record totale su ColonnaId: ogni colonna ha una chiave di ordinamento.
+                    const chiaveOrdinamento = MAPPA_ORDINABILI[c.id];
+                    return (
+                      <IntestazioneOrdinabile
+                        key={v.id}
+                        etichetta={c.etichetta}
+                        chiave={chiaveOrdinamento}
+                        attiva={ordinamentoCorrente === chiaveOrdinamento}
+                        direzione={direzioneAttuale}
+                        allineaDestra={c.allineaDestra}
+                        onOrdina={gestisciOrdinamento}
+                        trascina={{ id: v.id, onSposta: spostaIntestazione }}
+                      />
+                    );
+                  }
+                  const c = v.cp!;
                   const chiave = `cp_${c.id}` as ColonnaOrdinabile;
                   return (
                     <IntestazioneOrdinabile
@@ -1295,6 +1341,7 @@ export function VistaMagazzino({
                       direzione={direzioneAttuale}
                       allineaDestra={c.tipo === "numero"}
                       onOrdina={gestisciOrdinamento}
+                      trascina={{ id: v.id, onSposta: spostaIntestazione }}
                     />
                   );
                 })}
@@ -1309,16 +1356,17 @@ export function VistaMagazzino({
                   <TableCell className="p-0"><Link href={`/magazzino/${r.id}`} className="block font-mono text-xs p-3">
                       {r.skuCode}
                     </Link></TableCell>
-                  {colonneVisibili.map((c) => (
-                    <TableCell key={c.id} data-cella={`${r.id}:${c.id}`} className={c.allineaDestra ? "text-right tabular-nums" : undefined}>
-                      {c.render(r, ctx)}
-                    </TableCell>
-                  ))}
-                  {colonneCpVisibili.map((c) => (
-                    <TableCell key={`cp_${c.id}`} className={c.tipo === "numero" ? "text-right tabular-nums" : undefined}>
-                      <CellaCampoPersonalizzato skuId={r.id} campo={c} valore={r.campiPersonalizzati[String(c.id)]} />
-                    </TableCell>
-                  ))}
+                  {vociOrdinate.map((v) =>
+                    v.std ? (
+                      <TableCell key={v.id} data-cella={`${r.id}:${v.id}`} className={v.std.allineaDestra ? "text-right tabular-nums" : undefined}>
+                        {v.std.render(r, ctx)}
+                      </TableCell>
+                    ) : (
+                      <TableCell key={v.id} className={v.cp!.tipo === "numero" ? "text-right tabular-nums" : undefined}>
+                        <CellaCampoPersonalizzato skuId={r.id} campo={v.cp!} valore={r.campiPersonalizzati[String(v.cp!.id)]} />
+                      </TableCell>
+                    )
+                  )}
                 </TableRow>
               ))}
             </TableBody>
