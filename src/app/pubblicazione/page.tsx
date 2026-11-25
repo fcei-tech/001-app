@@ -26,11 +26,12 @@ function testoSu(hex: string | undefined): string {
   return l > 150 ? "#111" : "#fff";
 }
 
-function Contatore({ valore, etichetta }: { valore: number; etichetta: string }) {
-  const cifre = String(Math.min(valore, 9999)).padStart(4, "0");
-  const zeri = cifre.length - String(Math.min(valore, 9999)).length;
+function Contatore({ valore, etichetta, cifre: nCifre = 4 }: { valore: number; etichetta: string; cifre?: number }) {
+  const max = 10 ** nCifre - 1;
+  const cifre = String(Math.min(valore, max)).padStart(nCifre, "0");
+  const zeri = cifre.length - String(Math.min(valore, max)).length;
   return (
-    <div className="flex h-[60px] w-[104px] shrink-0 flex-col items-center justify-center rounded-lg border bg-muted/40">
+    <div className={`flex h-[60px] shrink-0 flex-col items-center justify-center rounded-lg border bg-muted/40 ${nCifre <= 2 ? "w-[72px]" : "w-[104px]"}`}>
       <span className="font-mono text-2xl font-semibold tabular-nums leading-none">
         <span className="opacity-25">{cifre.slice(0, zeri)}</span>
         {cifre.slice(zeri)}
@@ -86,6 +87,7 @@ function Striscia({ n, colore, maxRiserva, daInviare }: { n: NumeriCanale | unde
           </div>
         </div>
       </div>
+      <Contatore valore={n.batch} etichetta="batch" cifre={2} />
       <Contatore valore={n.lotti} etichetta="lotti" />
     </>
   );
