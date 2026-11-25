@@ -40,7 +40,6 @@ import { CellaCampoPersonalizzato } from "@/components/magazzino/cella-campo-per
 import type { CampoPersonalizzato } from "@/lib/campi-personalizzati";
 import { FiltroTag } from "@/components/tag/filtro-tag";
 import { BarraFiltri, CampoFiltro, Scorciatoia, type ChipFiltro } from "@/components/filtri/barra-filtri";
-import { MenuViste } from "@/components/filtri/menu-viste";
 import { BarraSelezione } from "@/components/filtri/barra-selezione";
 import { EsportaMagazzino } from "@/components/magazzino/esporta-magazzino";
 import { EliminaSkuMultipli } from "@/components/magazzino/elimina-sku-multipli";
@@ -216,6 +215,9 @@ function IntestazioneOrdinabile({
     <TableHead
       className={`${CLASSE_INTESTAZIONE_FISSA} ${allineaDestra ? "text-right" : ""} ${sopra ? "bg-accent" : ""}`}
       draggable={Boolean(trascina)}
+      // WKWebView (Tauri su Mac) non avvia il drag HTML5 su elementi generici senza
+      // questa proprieta' non standard; Chrome la ignora senza problemi.
+      style={trascina ? ({ WebkitUserDrag: "element", WebkitUserSelect: "none", cursor: "grab" } as React.CSSProperties) : undefined}
       title={trascina ? "Trascina per spostare la colonna" : undefined}
       onDragStart={trascina ? (e) => { e.dataTransfer.setData("text/colonna", trascina.id); e.dataTransfer.effectAllowed = "move"; } : undefined}
       onDragOver={trascina ? (e) => { if (e.dataTransfer.types.includes("text/colonna")) { e.preventDefault(); setSopra(true); } } : undefined}
@@ -638,25 +640,6 @@ export function VistaMagazzino({
     applicaFiltri(nuovi);
   }
 
-  function applicaVista(qs: string) {
-    const p = new URLSearchParams(qs);
-    const nuovi: typeof filtri = {
-      q: p.get("q") ?? "",
-      tipo: p.get("tipo") ?? "tutti",
-      condizione: p.get("condizione") ?? "tutti",
-      proprieta: p.get("proprieta") ?? "tutti",
-      deposito: p.get("deposito") ?? "tutti",
-      bloccato: p.get("bloccato") ?? "tutti",
-      disponibilita: p.get("disponibilita") ?? "tutti",
-      senzafoto: p.get("senzafoto") === "si" ? "si" : "no",
-      mancanti: p.get("mancanti") === "si" ? "si" : "no",
-      tag: p.get("tag") ?? "",
-    };
-    setFiltri(nuovi);
-    qApplicata.current = nuovi.q;
-    router.push(qs ? `/?${qs}` : "/", { scroll: false });
-  }
-
   // Selezione multipla stile file-manager (shift+click estende a un
   // intervallo) - 2026-09-25, punto 3 del backlog UX FINALIZZATO, vedi
   // src/lib/selezione-multipla.ts.
@@ -1074,7 +1057,6 @@ export function VistaMagazzino({
         onAzzera={azzeraFiltri}
         strumenti={
           <>
-            <MenuViste chiave="magazzino" onApplica={applicaVista} />
             <Button type="button" variant="outline" title="Esporta in Excel, CSV o PDF" onClick={() => setDialogEsportaAperto(true)}>
               <Download /> Esporta
             </Button>
