@@ -4,9 +4,9 @@
 // Il PDF e' il file che si allega alla mail alla casa d'asta: una persona
 // apre l'allegato, guarda le foto e compila a mano (o a video) la Riserva.
 // Per questo:
-// - colonne SOLO: Foto, Sku, Artista, Opera, Misure, Riserva proposta
-//   (niente prezzo, niente condizione/supporto/anno/quantita' - decisione
-//   esplicita del cliente);
+// - colonne: Foto + quelle scelte per il portale (dal 2026-11-25, vedi
+//   pdf-colonne-asta.ts); default le sei storiche Sku, Artista, Opera, Misure,
+//   Riserva proposta (mai prezzo/quantita'). Colonne libere compilabili;
 // - la cella Riserva e' un campo di testo compilabile a video (AcroForm) E
 //   resta un riquadro vuoto abbastanza grande per scriverci a mano dopo la
 //   stampa; se il cliente ha inserito una riserva proposta, e' precompilata;
@@ -18,6 +18,7 @@
 //
 // Funzione pura rispetto al database: riceve dati gia' pronti dal chiamante
 // (vedi generaFilePdfAstaFisicaAction in src/app/pubblicazione/actions.ts).
+import { COLONNE_PDF, CONFIG_PDF_PREDEFINITA, PESO_COLONNA_LIBERA, type ConfigColonnePdf, type IdColonnaPdf } from "./pdf-colonne-asta";
 import { PDFArray, PDFDocument, PDFFont, PDFName, PDFPage, PDFString, StandardFonts, rgb } from "pdf-lib";
 
 export type MiniaturaFoto = { bytes: Uint8Array; tipo: "jpg" | "png" };
@@ -27,6 +28,9 @@ export type LottoPdfAstaFisica = {
   artista: string;
   opera: string;
   misure: string;
+  anno?: string;
+  supporto?: string;
+  condizione?: string;
   /** Riserva proposta gia' inserita dal cliente (override), vuota se assente. */
   riserva: string;
   /** URL di tutte le foto dello sku, nell'ordine corretto. */
@@ -41,6 +45,8 @@ export type ParametriPdfAstaFisica = {
   /** Data gia' formattata per l'intestazione, es. "29/09/2026". */
   dataTesto: string;
   lotti: LottoPdfAstaFisica[];
+  /** Colonne scelte per il portale (default: le sei storiche). */
+  colonne?: ConfigColonnePdf;
 };
 
 // A4 orizzontale, in punti.
@@ -52,13 +58,25 @@ const ALTEZZA_INTESTAZIONE_TABELLA = 20;
 const ALTEZZA_RIGA = 78;
 const MASSIMO_LINK_FOTO = 5;
 
-// Larghezze colonne (somma = PAGINA_L - 2*MARGINE = 781.89).
 const COL_FOTO = 150;
-const COL_SKU = 90;
-const COL_ARTISTA = 150;
-const COL_OPERA = 190;
-const COL_MISURE = 90;
-const COL_RISERVA = PAGINA_L - 2 * MARGINE - COL_FOTO - COL_SKU - COL_ARTISTA - COL_OPERA - COL_MISURE;
+const LARGHEZZA_UTILE = PAGINA_L - 2 * MARGINE;
+
+// Colonne effettive dopo Foto: standard scelte + libere, con larghezze
+// proporzionali ai pesi che riempiono la pagina.
+type ColonnaEffettiva = { chiave: string; etichetta: string; larghezza: number; compilabile: boolean; id?: IdColonnaPdf };
+function costruisciColonne(config: ConfigColonnePdf): ColonnaEffettiva[] {
+
+  const voci: { chiave: string; etichetta: string; peso: number; compilabile: boolean; id?: IdColonnaPdf }[] = [];
+  for (const id of config.colonne) {
+    const d = COLONNE_PDF.find((c) => c.id === id);
+    if (d) voci.push({ chiave: id, etichetta: d.etichetta, peso: d.peso, compilabile: Boolean(d.compilabile), id });
+  }
+  config.libere.forEach((t, i) => voci.push({ chiave: `libera_${i}`, etichetta: t, peso: PESO_COLONNA_LIBERA, compilabile: true }));
+
+  const somma = voci.reduce((n, v) => n + v.peso, 0) || 1;
+  const utile = LARGHEZZA_UTILE - COL_FOTO;
+  return voci.map((v) => ({ chiave: v.chiave, etichetta: v.etichetta, larghezza: (v.peso / somma) * utile, compilabile: v.compilabile, id: v.id }));
+}
 
 const GRIGIO_BORDO = rgb(0.6, 0.6, 0.6);
 const GRIGIO_TESTO = rgb(0.35, 0.35, 0.35);
@@ -110,6 +128,7 @@ export function spezzaTesto(testo: string, font: PDFFont, dimensione: number, la
 
 export async function generaPdfAstaFisica(parametri: ParametriPdfAstaFisica): Promise<Uint8Array> {
   const { nomeCasa, batchId, dataTesto, lotti } = parametri;
+  const colonneEff = costruisciColonne(parametri.colonne ?? CONFIG_PDF_PREDEFINITA);
 
   const doc = await PDFDocument.create();
   doc.setTitle(`Lista lotti ${nomeCasa} - batch ${batchId}`);
@@ -160,14 +179,7 @@ export async function generaPdfAstaFisica(parametri: ParametriPdfAstaFisica): Pr
   }
 
   function disegnaIntestazioneTabella(pagina: PDFPage, yAlto: number) {
-    const colonne: [string, number][] = [
-      ["Foto", COL_FOTO],
-      ["Sku", COL_SKU],
-      ["Artista", COL_ARTISTA],
-      ["Opera", COL_OPERA],
-      ["Misure", COL_MISURE],
-      ["Riserva proposta", COL_RISERVA],
-    ];
+    const colonne: [string, number][] = [["Foto", COL_FOTO], ...colonneEff.map((c): [string, number] => [c.etichetta, c.larghezza])];
     let x = MARGINE;
     for (const [etichetta, larghezza] of colonne) {
       pagina.drawRectangle({
@@ -179,7 +191,7 @@ export async function generaPdfAstaFisica(parametri: ParametriPdfAstaFisica): Pr
         borderColor: GRIGIO_BORDO,
         borderWidth: 0.6,
       });
-      pagina.drawText(etichetta, { x: x + 5, y: yAlto - 14, size: 9, font: fontBold, color: NERO });
+      pagina.drawText(pulisciTesto(etichetta, fontBold), { x: x + 5, y: yAlto - 14, size: 9, font: fontBold, color: NERO });
       x += larghezza;
     }
   }
@@ -198,7 +210,7 @@ export async function generaPdfAstaFisica(parametri: ParametriPdfAstaFisica): Pr
 
       // Bordi delle 6 celle.
       let xCella = MARGINE;
-      for (const larghezza of [COL_FOTO, COL_SKU, COL_ARTISTA, COL_OPERA, COL_MISURE, COL_RISERVA]) {
+      for (const larghezza of [COL_FOTO, ...colonneEff.map((c) => c.larghezza)]) {
         pagina.drawRectangle({
           x: xCella,
           y: yBasso,
@@ -257,43 +269,43 @@ export async function generaPdfAstaFisica(parametri: ParametriPdfAstaFisica): Pr
         });
       }
 
-      // --- Sku ---
+      // --- Colonne scelte per il portale ---
       let xTesto = MARGINE + COL_FOTO;
-      const righeSku = spezzaTesto(pulisciTesto(lotto.skuCode, font), font, 9, COL_SKU - 10, 3);
-      righeSku.forEach((r, k) => pagina.drawText(r, { x: xTesto + 5, y: yAlto - 14 - k * 11, size: 9, font, color: NERO }));
-      xTesto += COL_SKU;
-
-      // --- Artista ---
-      const righeArtista = spezzaTesto(pulisciTesto(lotto.artista, font), font, 9.5, COL_ARTISTA - 10, 5);
-      righeArtista.forEach((r, k) =>
-        pagina.drawText(r, { x: xTesto + 5, y: yAlto - 14 - k * 12, size: 9.5, font: fontBold, color: NERO })
-      );
-      xTesto += COL_ARTISTA;
-
-      // --- Opera ---
-      const righeOpera = spezzaTesto(pulisciTesto(lotto.opera, font), font, 9.5, COL_OPERA - 10, 5);
-      righeOpera.forEach((r, k) => pagina.drawText(r, { x: xTesto + 5, y: yAlto - 14 - k * 12, size: 9.5, font, color: NERO }));
-      xTesto += COL_OPERA;
-
-      // --- Misure ---
-      const righeMisure = spezzaTesto(pulisciTesto(lotto.misure, font), font, 9, COL_MISURE - 10, 3);
-      righeMisure.forEach((r, k) => pagina.drawText(r, { x: xTesto + 5, y: yAlto - 14 - k * 11, size: 9, font, color: NERO }));
-      xTesto += COL_MISURE;
-
-      // --- Riserva proposta: campo compilabile a video, riquadro ampio per la scrittura a mano ---
-      const campo = form.createTextField(`riserva_${p}_${i}`);
-      if (lotto.riserva.trim()) campo.setText(pulisciTesto(lotto.riserva.trim(), font));
-      campo.addToPage(pagina, {
-        x: xTesto + 6,
-        y: yBasso + 6,
-        width: COL_RISERVA - 12,
-        height: ALTEZZA_RIGA - 12,
-        borderWidth: 0,
-        font,
-      });
-      // Dopo addToPage: prima di allora il campo non ha ancora la stringa di
-      // aspetto predefinita e setFontSize fallisce (MissingDAEntryError).
-      campo.setFontSize(11);
+      for (const col of colonneEff) {
+        if (col.compilabile) {
+          // Campo compilabile a video e riquadro ampio per la scrittura a mano.
+          const campo = form.createTextField(`${col.chiave}_${p}_${i}`);
+          if (col.id === "riserva" && lotto.riserva.trim()) campo.setText(pulisciTesto(lotto.riserva.trim(), font));
+          campo.addToPage(pagina, {
+            x: xTesto + 6,
+            y: yBasso + 6,
+            width: col.larghezza - 12,
+            height: ALTEZZA_RIGA - 12,
+            borderWidth: 0,
+            font,
+          });
+          // Dopo addToPage: prima di allora il campo non ha ancora la stringa di
+          // aspetto predefinita e setFontSize fallisce (MissingDAEntryError).
+          campo.setFontSize(11);
+        } else {
+          const testo =
+            col.id === "sku" ? lotto.skuCode
+            : col.id === "artista" ? lotto.artista
+            : col.id === "opera" ? lotto.opera
+            : col.id === "misure" ? lotto.misure
+            : col.id === "anno" ? (lotto.anno ?? "")
+            : col.id === "supporto" ? (lotto.supporto ?? "")
+            : (lotto.condizione ?? "");
+          const grassetto = col.id === "artista";
+          const dim = col.id === "artista" || col.id === "opera" ? 9.5 : 9;
+          const passo = dim + 2.5;
+          const righe = spezzaTesto(pulisciTesto(testo, font), font, dim, col.larghezza - 10, 5);
+          righe.forEach((r, k) =>
+            pagina.drawText(r, { x: xTesto + 5, y: yAlto - 14 - k * passo, size: dim, font: grassetto ? fontBold : font, color: NERO })
+          );
+        }
+        xTesto += col.larghezza;
+      }
     }
   }
 

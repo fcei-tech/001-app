@@ -20,7 +20,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { Columns3, Download, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert, Pencil, Ellipsis, Warehouse, ChevronDown } from "lucide-react";
+import { Columns3, Download, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, RotateCcw, TriangleAlert, CircleAlert, Check, Pencil, Ellipsis, Warehouse, ChevronDown } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 import { aggiornaCampiSkuInline, campoPersonalizzatoInBloccoAction, ripristinaCampoPersonalizzatoInBloccoAction, spostaSkuInDeposito, correggiQuantita, annullaMovimenti, annullaMovimentiMultipli, togliDalRegistro } from "@/app/magazzino/actions";
 import { CasellaRegistro } from "@/components/magazzino/casella-registro";
@@ -47,6 +47,7 @@ import { EliminaSkuMultipli } from "@/components/magazzino/elimina-sku-multipli"
 import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
 import type { TagBreve } from "@/db/tag-queries";
 import { leggiTagParam, scriviTagParam } from "@/lib/tag-filtro";
+import { coloreCanale } from "@/lib/colori-canali";
 import { campiMancanti, ETICHETTA_CAMPO_MANCANTE, spiegazioneCampoMancante } from "@/lib/campi-mancanti-pubblicazione";
 
 const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"];
@@ -124,6 +125,8 @@ type RenderCtx = {
   salvaBloccato: (r: RigaMagazzino, valore: boolean) => void;
   correggiDaTabella: (r: RigaMagazzino, riga: GiacenzaRiga, nuova: number) => void;
   apriGiacenza: (r: RigaMagazzino) => void;
+  vaiAllaCella: (r: RigaMagazzino, colonna: ColonnaId) => void;
+  apriScheda: (r: RigaMagazzino, ancora?: string) => void;
 };
 
 type DefinizioneColonna = {
@@ -215,6 +218,84 @@ function IntestazioneOrdinabile({
         <Icona className={`size-3.5 ${attiva ? "" : "opacity-40"}`} />
       </button>
     </TableHead>
+  );
+}
+
+// Colonna "Dati": cosa manca allo sku, con il clic che porta alla cella giusta.
+//  - pallino col colore del portale = dato proprio di quel portale (prezzo eBay, prezzo Catawiki)
+//  - icona ambra = dato generico (anno, foto)
+//  - triangolo rosso = giacenza negativa (clic: finestra Correggi quantita')
+//  - spunta grigia = tutto a posto
+export function giacenzaNegativa(r: RigaMagazzino) {
+  return r.giacenze.filter((g) => g.saldo < 0);
+}
+
+function CellaDati({ r, ctx }: { r: RigaMagazzino; ctx: RenderCtx }) {
+  const mancanti = campiMancanti(r, ctx.sogliaCatawiki);
+  const negative = giacenzaNegativa(r);
+  if (mancanti.length === 0 && negative.length === 0) {
+    return <Check className="size-4 text-muted-foreground/60" aria-label="Dati a posto" />;
+  }
+  const dePortale = mancanti.filter((m) => m === "prezzoEbay" || m === "prezzoCatawiki");
+  const generici = mancanti.filter((m) => m === "anno" || m === "foto");
+  const vai = (m: "prezzoEbay" | "prezzoCatawiki" | "anno" | "foto") => {
+    if (m === "foto") ctx.apriScheda(r, "foto");
+    else ctx.vaiAllaCella(r, m);
+  };
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {negative.length > 0 && (
+        <button
+          type="button"
+          onClick={() => ctx.apriGiacenza(r)}
+          title={negative.map((g) => `${g.ubicazioneNome}: ${g.saldo} pezzo. Correggi la quantità.`).join(" · ")}
+          className="rounded p-0.5 text-destructive hover:bg-destructive/10"
+          aria-label="Giacenza negativa: correggi la quantità"
+        >
+          <TriangleAlert className="size-4" />
+        </button>
+      )}
+      {dePortale.map((m) => (
+        <button
+          key={m}
+          type="button"
+          onClick={() => vai(m)}
+          title={`${spiegazioneCampoMancante(m, ctx.sogliaCatawiki)} — clic per correggere`}
+          aria-label={ETICHETTA_CAMPO_MANCANTE[m]}
+          className="rounded-full p-1 hover:bg-muted"
+        >
+          <span className="block size-2.5 rounded-full" style={{ backgroundColor: coloreCanale(m === "prezzoEbay" ? "eBay" : "Catawiki") }} />
+        </button>
+      ))}
+      {generici.length === 1 && (
+        <button
+          type="button"
+          onClick={() => vai(generici[0])}
+          title={`${spiegazioneCampoMancante(generici[0], ctx.sogliaCatawiki)} — clic per correggere`}
+          aria-label={ETICHETTA_CAMPO_MANCANTE[generici[0]]}
+          className="rounded p-0.5 text-warning hover:bg-warning/10"
+        >
+          <CircleAlert className="size-4" />
+        </button>
+      )}
+      {generici.length > 1 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" title="Dati mancanti" aria-label="Dati mancanti" className="inline-flex items-center gap-0.5 rounded p-0.5 text-warning hover:bg-warning/10">
+              <CircleAlert className="size-4" />
+              <span className="text-xs tabular-nums">{generici.length}</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {generici.map((m) => (
+              <DropdownMenuItem key={m} onSelect={() => vai(m)}>
+                {ETICHETTA_CAMPO_MANCANTE[m]}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </span>
   );
 }
 
@@ -352,20 +433,8 @@ const COLONNE: DefinizioneColonna[] = [
     // Etichette brevi in cella, spiegazione estesa (con la soglia Catawiki)
     // solo nel title/tooltip, altrimenti la cella diventa larghissima con
     // piu' campi mancanti insieme.
-    id: "datiMancanti", etichetta: "Dati mancanti", defaultVisibile: true,
-    render: (r, ctx) => {
-      const mancanti = campiMancanti(r, ctx.sogliaCatawiki);
-      if (mancanti.length === 0) return <span className="text-muted-foreground">—</span>;
-      return (
-        <span
-          className="inline-flex items-start gap-1 text-warning"
-          title={mancanti.map((m) => spiegazioneCampoMancante(m, ctx.sogliaCatawiki)).join(" · ")}
-        >
-          <TriangleAlert className="size-3.5 mt-0.5 shrink-0" />
-          <span className="text-xs font-medium">{mancanti.map((m) => ETICHETTA_CAMPO_MANCANTE[m]).join(", ")}</span>
-        </span>
-      );
-    },
+    id: "datiMancanti", etichetta: "Dati", defaultVisibile: true,
+    render: (r, ctx) => <CellaDati r={r} ctx={ctx} />,
   },
   { id: "creato", etichetta: "Creato il", defaultVisibile: false, render: (r) => <span className="text-muted-foreground">{formatData(r.createdAt)}</span> },
   { id: "aggiornato", etichetta: "Aggiornato il", defaultVisibile: false, render: (r) => <span className="text-muted-foreground">{formatData(r.updatedAt)}</span> },
@@ -677,10 +746,29 @@ export function VistaMagazzino({
     router.refresh();
   }
 
+  // Clic su un dato mancante: attiva la colonna se nascosta, porta la riga in
+  // vista e apre la cella in modifica (nessun messaggio).
+  function vaiAllaCella(r: RigaMagazzino, colonna: ColonnaId) {
+    if (!colonne[colonna]) scriviColonneSalvate({ ...colonne, [colonna]: true } as Record<ColonnaId, boolean>);
+    let tentativi = 0;
+    const prova = () => {
+      const cella = document.querySelector<HTMLElement>(`[data-cella="${r.id}:${colonna}"]`);
+      if (cella) {
+        cella.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+        cella.querySelector<HTMLElement>("button")?.click();
+      } else if (tentativi++ < 20) {
+        setTimeout(prova, 50);
+      }
+    };
+    setTimeout(prova, 50);
+  }
+
   const ctx: RenderCtx = {
     sogliaCatawiki,
     correggiDaTabella,
     apriGiacenza: (r) => setGiacenzaSkuId(r.id),
+    vaiAllaCella,
+    apriScheda: (r, ancora) => router.push(`/magazzino/${r.id}${ancora ? `#${ancora}` : ""}`),
     tipi,
     salvaTesto: (r, campo, valore) => salvaCampi([{ id: r.id, campi: { [campo]: valore } }], `${ETICHETTE_CAMPI[campo]} di ${r.skuCode}`),
     salvaMisura: (r, larghezza, altezza) => salvaCampi([{ id: r.id, campi: { larghezza, altezza } }], `Misura di ${r.skuCode}`),
@@ -1214,7 +1302,7 @@ export function VistaMagazzino({
             </TableHeader>
             <TableBody>
               {righeMostrate.map((r) => (
-                <TableRow key={r.id} data-state={selezionati.has(r.id) ? "selected" : undefined} className={selezionati.has(r.id) ? "bg-primary/5" : undefined}>
+                <TableRow key={r.id} data-state={selezionati.has(r.id) ? "selected" : undefined} className={`${selezionati.has(r.id) ? "bg-primary/5" : ""} ${giacenzaNegativa(r).length > 0 ? "shadow-[inset_3px_0_0_0_var(--destructive)]" : ""}`}>
                   <TableCell onClickCapture={segnalaShift}>
                     <Checkbox checked={selezionati.has(r.id)} onCheckedChange={(v) => gestisciSeleziona(r.id, v === true)} aria-label={`Seleziona ${r.skuCode}`} />
                   </TableCell>
@@ -1222,7 +1310,7 @@ export function VistaMagazzino({
                       {r.skuCode}
                     </Link></TableCell>
                   {colonneVisibili.map((c) => (
-                    <TableCell key={c.id} className={c.allineaDestra ? "text-right tabular-nums" : undefined}>
+                    <TableCell key={c.id} data-cella={`${r.id}:${c.id}`} className={c.allineaDestra ? "text-right tabular-nums" : undefined}>
                       {c.render(r, ctx)}
                     </TableCell>
                   ))}

@@ -28,7 +28,7 @@ import {
 import { getRegolePrezzi } from "@/db/impostazioni-app-queries";
 import { conversionePossibile } from "@/lib/batch-conversione";
 import { contaLottiConsegnati, spostaBatchSuCanale } from "@/db/pubblicazione-numeri";
-import { getCanaleById } from "@/db/pubblicazione-queries";
+import { getCanaleById, salvaColonnePdfCanale } from "@/db/pubblicazione-queries";
 import { getFotoPerSkuIds, getSaldiSkuPerUbicazione, getTipiOggetto, getUbicazioniAttive } from "@/db/queries";
 import {
   silenziaErrore as silenziaErroreQuery,
@@ -52,6 +52,7 @@ import {
 } from "@/lib/catawiki-resolver";
 import { generaCsvCatawiki } from "@/lib/catawiki-export";
 import { generaXlsxBidspiritBase64 } from "@/lib/bidspirit-export";
+import { configPdfDaImpostazioni, normalizzaConfigPdf } from "@/lib/pdf-colonne-asta";
 import { generaPdfAstaFisica, scaricaMiniatureInParallelo } from "@/lib/asta-fisica-pdf";
 
 type StatoBatch = "bozza" | "confermato" | "pubblicato";
@@ -993,6 +994,9 @@ export async function generaFilePdfAstaFisicaAction(batchId: number): Promise<{
       artista: l.sku.artista,
       opera: l.sku.opera,
       misure: haMisure ? `${pulisciMisura(l.sku.larghezza)} \u00d7 ${pulisciMisura(l.sku.altezza)} cm` : "",
+      anno: l.sku.anno ?? "",
+      supporto: l.sku.supporto ?? "",
+      condizione: l.sku.condizione ?? "",
       riserva: ((l.override as OverrideLotto | null)?.riservaProposta ?? "").trim(),
       fotoUrls,
     };
@@ -1027,6 +1031,7 @@ export async function generaFilePdfAstaFisicaAction(batchId: number): Promise<{
     batchId,
     dataTesto,
     lotti: lotti.map((l, idx) => ({ ...l, miniatura: miniature[idx] })),
+    colonne: configPdfDaImpostazioni(batch.canale.impostazioni),
   });
 
   // Il passaggio di stato avviene SOLO a PDF costruito con successo.
@@ -1048,6 +1053,14 @@ export async function generaFilePdfAstaFisicaAction(batchId: number): Promise<{
     senzaFoto: lotti.map((l, i) => i).filter((i) => lotti[i].fotoUrls.length === 0).map(descrivi),
     passatoAPubblicato,
   };
+}
+
+// Salva le colonne del PDF per un portale (aste fisiche).
+export async function salvaColonnePdfAction(canaleId: number, config: { colonne: string[]; libere: string[] }) {
+  const c = await getCanaleById(canaleId);
+  if (!c || c.tipo !== "asta_fisica") throw new Error("Le colonne del PDF valgono solo per le aste fisiche");
+  await salvaColonnePdfCanale(canaleId, normalizzaConfigPdf(config));
+  revalidatePath(`/pubblicazione/${canaleId}`, "layout");
 }
 
 // Rinomina un batch (qualsiasi canale, qualsiasi stato). Nome vuoto = "Batch #N".

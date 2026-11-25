@@ -48,6 +48,8 @@ import { RimuoviLottiMultipli } from "@/components/pubblicazione/rimuovi-lotti-m
 import { AzioneLottiGruppo } from "@/components/pubblicazione/azione-lotti-gruppo";
 import { GeneraFileBidspiritButton } from "@/components/pubblicazione/genera-file-bidspirit-button";
 import { GeneraFileCatawikiButton } from "@/components/pubblicazione/genera-file-catawiki-button";
+import { ColonnePdfButton } from "@/components/pubblicazione/colonne-pdf-button";
+import { configPdfDaImpostazioni } from "@/lib/pdf-colonne-asta";
 import { GeneraFileAstaFisicaButton } from "@/components/pubblicazione/genera-file-asta-fisica-button";
 import { buildDescription } from "@/lib/catawiki-export";
 import { SelettoreColonneLotti, type ColonnaLottiBatch } from "@/components/pubblicazione/selettore-colonne-lotti";
@@ -471,6 +473,9 @@ export default async function BatchPubblicazionePage({
                 {batch.canale.tipo === "asta_fisica" && (
                   // PDF lista lotti: da Pronto genera e passa a Inviato; da Inviato
                   // rigenera senza cambiare stato (la Riserva proposta resta modificabile).
+                  <ColonnePdfButton canaleId={batch.canaleId} nomeCanale={batch.canale.nome} config={configPdfDaImpostazioni(batch.canale.impostazioni)} />
+                )}
+                {batch.canale.tipo === "asta_fisica" && (
                   <GeneraFileAstaFisicaButton
                     batchId={batch.id}
                     disabled={batch.lotti.length === 0}

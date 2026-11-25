@@ -603,3 +603,12 @@ export async function eliminaBatch(batchId: number) {
     await tx.delete(batchPubblicazione).where(eq(batchPubblicazione.id, batchId));
   });
 }
+
+// Colonne del PDF delle aste fisiche, per portale (2026-11-25): stanno in
+// canali.impostazioni.pdfColonne, senza toccare le altre impostazioni del canale.
+export async function salvaColonnePdfCanale(canaleId: number, config: { colonne: string[]; libere: string[] }) {
+  const c = await getCanaleById(canaleId);
+  if (!c) throw new Error("Portale non trovato");
+  const nuove = { ...((c.impostazioni ?? {}) as Record<string, unknown>), pdfColonne: config };
+  await db.update(canali).set({ impostazioni: nuove }).where(eq(canali.id, canaleId));
+}
