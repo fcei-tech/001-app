@@ -10,7 +10,7 @@ import { convertiOverride, statoLottoIniziale } from "@/lib/batch-conversione";
 // online = batch 'Inviato' (stato pubblicato); fisiche = lotti 'Consegnati' (consegnatoAt).
 // Chi e' solo in preparazione/pronto/accettato ma non ancora partito non conta.
 export type NumeriVetrina = { tipo: "vetrina"; esposti: number; disponibili: number };
-export type NumeriAsta = { tipo: "asta"; lotti: number; costo: number; riserva: number; costoMancanti: number };
+export type NumeriAsta = { tipo: "asta"; lotti: number; costo: number; riserva: number; costoMancanti: number; batch: number };
 export type NumeriCanale = NumeriVetrina | NumeriAsta;
 
 function num(v: unknown): number {
@@ -19,7 +19,7 @@ function num(v: unknown): number {
 }
 
 export async function getNumeriPubblicazione(): Promise<Map<number, NumeriCanale>> {
-  const [elenco, base, esposti, lotti] = await Promise.all([
+  const [elenco, base, esposti, lotti, batchi] = await Promise.all([
     db.select().from(canali).where(eq(canali.attivo, true)),
     getBaseSku(),
     db.select().from(esposizioneCanale).where(eq(esposizioneCanale.inVetrina, true)),
@@ -40,6 +40,12 @@ export async function getNumeriPubblicazione(): Promise<Map<number, NumeriCanale
       .innerJoin(batchPubblicazione, eq(batchLotti.batchId, batchPubblicazione.id))
       .innerJoin(canali, eq(batchPubblicazione.canaleId, canali.id))
       .innerJoin(sku, eq(batchLotti.skuId, sku.id)),
+    // Numero di batch per canale: solo confermato/pubblicato, la bozza non
+    // conta (stesso criterio di impegnatoSql()/contaLottiConPrenotazione() -
+    // finche' e' in bozza non e' ancora una prenotazione reale). Mostrato
+    // solo sulle aste, dove ha senso parlare di "quanti batch", non sui
+    // portali statici (richiesta cliente 2026-11-25).
+    db.select({ canaleId: batchPubblicazione.canaleId, stato: batchPubblicazione.stato }).from(batchPubblicazione),
   ]);
 
   const disponibiliIds = new Set(
@@ -52,8 +58,14 @@ export async function getNumeriPubblicazione(): Promise<Map<number, NumeriCanale
       const n = esposti.filter((e) => e.canaleId === c.id && e.quantitaCaricata > 0 && disponibiliIds.has(e.skuId)).length;
       risultato.set(c.id, { tipo: "vetrina", esposti: n, disponibili: disponibiliIds.size });
     } else {
-      risultato.set(c.id, { tipo: "asta", lotti: 0, costo: 0, riserva: 0, costoMancanti: 0 });
+      risultato.set(c.id, { tipo: "asta", lotti: 0, costo: 0, riserva: 0, costoMancanti: 0, batch: 0 });
     }
+  }
+
+  for (const b of batchi) {
+    if (b.stato === "bozza") continue;
+    const n = risultato.get(b.canaleId);
+    if (n && n.tipo === "asta") n.batch += 1;
   }
 
   for (const l of lotti) {
