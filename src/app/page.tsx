@@ -8,7 +8,6 @@ import { getTagBrevi } from "@/db/tag-queries";
 import { CodiciSku } from "@/components/magazzino/codici-sku";
 import { TestataMagazzino } from "@/components/magazzino/testata-magazzino";
 import { calcolaTestata } from "@/lib/testata-magazzino";
-import { getSkuEspostiIds } from "@/db/pubblicazione-numeri";
 import { campiMancanti } from "@/lib/campi-mancanti-pubblicazione";
 import { getBlocchiConUso, prossimoSkuLibero } from "@/db/codici-sku-queries";
 import { DIMENSIONE_BLOCCO_STANDARD } from "@/lib/codici-sku";
@@ -66,7 +65,7 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
 
   const regolePrezzi = await getRegolePrezzi();
   const campiPersonalizzati = await getCampiPersonalizzati();
-  const [righe, tipi, proprietari, ubicazioni, canaliStatici, tagDisponibili, prossimoLibero, blocchiCodici, skuEsposti, righeTutte] = await Promise.all([
+  const [righe, tipi, proprietari, ubicazioni, canaliStatici, tagDisponibili, prossimoLibero, blocchiCodici, righeTutte] = await Promise.all([
     getMagazzino({ ricerca: q, tagIds, tipoId, condizione, proprietarioId, ubicazioneId, bloccato, disponibilita, senzaFoto, soloDatiMancanti, ordina, direzione }),
     getTipiOggetto(),
     getProprietariAttivi(),
@@ -75,14 +74,12 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
     getTagBrevi(),
     prossimoSkuLibero(),
     getBlocchiConUso(),
-    getSkuEspostiIds(),
     // La testata vale per tutto il magazzino: se ci sono filtri serve l'elenco completo.
     filtriAttivi ? getMagazzino({}) : Promise.resolve(null),
   ]);
   const testata = calcolaTestata(
     righeTutte ?? righe,
     new Set(proprietari.filter((p) => p.contaValoreAziendale).map((p) => p.id)),
-    skuEsposti,
     regolePrezzi.sogliaMinimaCatawiki
   );
 
