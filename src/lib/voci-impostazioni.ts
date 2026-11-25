@@ -20,13 +20,15 @@ export const GRUPPI_IMPOSTAZIONI: GruppoImpostazioni[] = [
       { href: "/archivi/tag", etichetta: "Tag", icona: "tags" },
       { href: "/archivi/campi-sku", etichetta: "Campi personalizzati", icona: "list-plus" },
       { href: "/archivi/regole-prezzi", etichetta: "Regole prezzi", icona: "euro" },
+      // Spostato qui da "Sicurezza dei dati" il 2026-11-25: e' un controllo di
+      // completezza del catalogo prima di pubblicare, non una cosa di sicurezza.
+      { href: "/sistema/controllo-dati", etichetta: "Controllo dati", icona: "shield-check" },
     ],
   },
   {
     titolo: "Sicurezza dei dati",
     voci: [
       { href: "/sistema/dati", etichetta: "Copie di sicurezza", icona: "database-backup" },
-      { href: "/sistema/controllo-dati", etichetta: "Controllo dati", icona: "shield-check" },
       { href: "/sistema/pulizia", etichetta: "Pulizia dati", icona: "eraser" },
       { href: "/sistema/zona-pericolo", etichetta: "Zona pericolo", icona: "triangle-alert", pericolo: true },
     ],
