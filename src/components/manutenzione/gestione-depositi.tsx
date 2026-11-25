@@ -29,7 +29,6 @@ const CLASSE_SELECT =
 const TIPI = [
   { value: "deposito", label: "Aziendale" },
   { value: "presso_proprietario", label: "Presso il proprietario" },
-  { value: "esposizione", label: "Esposizione" },
 ];
 
 const ETICHETTA_ASTA = "Casa d'asta";

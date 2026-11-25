@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { getBatch, type OverrideLotto } from "@/db/pubblicazione-queries";
+import { getBatch, getCanali, type OverrideLotto } from "@/db/pubblicazione-queries";
 import {
   getSkuSelezionabiliPerBatch,
   getTipiOggetto,
@@ -486,6 +486,9 @@ export default async function BatchPubblicazionePage({
               numeroLottiConPrenotazione={numeroLottiConPrenotazione}
               numeroLottiConsegnati={batch.lotti.filter((l) => l.consegnatoAt !== null).length}
               avvisoRegistroPortale={batch.canale.tipo === "statico" && batch.stato !== "bozza"}
+              destinazioni={(await getCanali())
+                .filter((c) => c.tipo === batch.canale.tipo && c.id !== batch.canale.id && batch.canale.tipo !== "statico")
+                .map((c) => ({ id: c.id, nome: c.nome }))}
             />
           </div>
         </div>

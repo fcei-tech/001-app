@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { cambiaStatoBatchAction, duplicaBatchAction, rinominaBatchAction } from "@/app/pubblicazione/actions";
+import { cambiaStatoBatchAction, duplicaBatchAction, rinominaBatchAction, spostaBatchAction } from "@/app/pubblicazione/actions";
 import { EliminaBatchDialog } from "@/components/pubblicazione/elimina-batch-button";
 
 type Stato = "bozza" | "confermato" | "pubblicato";
@@ -34,6 +35,7 @@ export function MenuAzioniBatch({
   numeroLottiConPrenotazione,
   numeroLottiConsegnati,
   avvisoRegistroPortale,
+  destinazioni,
 }: {
   batchId: number;
   canaleId: number;
@@ -42,7 +44,12 @@ export function MenuAzioniBatch({
   numeroLottiConPrenotazione: number;
   numeroLottiConsegnati: number;
   avvisoRegistroPortale: boolean;
+  destinazioni: { id: number; nome: string }[];
 }) {
+  const router = useRouter();
+  const [spostaAperto, setSpostaAperto] = useState(false);
+  const [destId, setDestId] = useState<number | null>(null);
+  const [erroreSposta, setErroreSposta] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [eliminaAperto, setEliminaAperto] = useState(false);
   const [rinominaAperto, setRinominaAperto] = useState(false);
@@ -67,6 +74,19 @@ export function MenuAzioniBatch({
     start(async () => {
       await rinominaBatchAction(fd);
       setRinominaAperto(false);
+    });
+  }
+
+  function sposta() {
+    if (!destId) return;
+    start(async () => {
+      const r = await spostaBatchAction(batchId, destId);
+      if (!r.ok) {
+        setErroreSposta(r.errore);
+        return;
+      }
+      setSpostaAperto(false);
+      router.push(`/pubblicazione/${destId}/${batchId}`);
     });
   }
 
@@ -96,6 +116,11 @@ export function MenuAzioniBatch({
             <span className="flex items-center gap-2"><Copy className="size-4" /> Duplica batch</span>
             <span className="text-xs text-muted-foreground">Crea una copia in bozza con gli stessi lotti e le stesse impostazioni.</span>
           </DropdownMenuItem>
+          {destinazioni.length > 0 && (
+            <DropdownMenuItem onSelect={() => { setDestId(null); setErroreSposta(null); setSpostaAperto(true); }}>
+              <ArrowRightLeft /> Sposta su un altro portale…
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           {VOCI.filter((v) => v.stato !== stato).map((v) => (
             <DropdownMenuItem key={v.stato} className="flex-col items-start gap-0.5" onSelect={() => vaiA(v.stato)}>
@@ -133,6 +158,31 @@ export function MenuAzioniBatch({
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setRinominaAperto(false)} disabled={pending}>Annulla</Button>
             <Button type="button" onClick={salvaNome} disabled={pending}>{pending ? "Salvo…" : "Salva nome"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={spostaAperto} onOpenChange={setSpostaAperto}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sposta batch</DialogTitle>
+            <DialogDescription>Lotti, riserve e stato restano uguali.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            {destinazioni.map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                onClick={() => { setDestId(d.id); setErroreSposta(null); }}
+                className={`rounded-lg border px-4 py-3 text-left text-sm font-medium transition-colors ${destId === d.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
+              >
+                {d.nome}
+              </button>
+            ))}
+          </div>
+          {erroreSposta && <p className="text-sm text-destructive">{erroreSposta}</p>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setSpostaAperto(false)} disabled={pending}>Annulla</Button>
+            <Button type="button" onClick={sposta} disabled={pending || !destId}>{pending ? "Sposto…" : "Sposta"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

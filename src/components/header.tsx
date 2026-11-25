@@ -15,12 +15,12 @@ import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 // (elenchi di base) e Sistema (collegamenti, dati, zona pericolo).
 const VOCI = [
   { href: "/", etichetta: "Magazzino" },
-  { href: "/carica", etichetta: "Carica" },
+  { href: "/carica", etichetta: "Dati" },
   { href: "/pubblicazione", etichetta: "Pubblicazione" },
   { href: "/impostazioni", etichetta: "Impostazioni" },
 ];
 
-// Pagine che appartengono a "Carica" (ingressi di dati: Excel, foto, nuovi articoli (BATCH Web), righe per Excel).
+// Pagine che appartengono a "Dati" (ingressi di dati: Excel, foto, nuovi articoli (BATCH Web), righe per Excel).
 const PREFISSI_CARICA = ["/carica", "/importa-excel", "/importa-schede", "/importa-foto", "/righe-excel"];
 
 // Pagine che appartengono a "Impostazioni" (elenchi, prezzi, dati, sistema).

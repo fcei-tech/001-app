@@ -34,7 +34,7 @@ export const COLORE_CANALE: Record<string, string> = {
   Wannenes: "#5B3256",
   // "Libero": dal 2026-11-20 ha un grigio proposto (tutti i portali hanno un
   // colore e sono modificabili da Archivi > Portali).
-  Libero: "#6B7280",
+  "Conto esposizione": "#6B7280",
 };
 
 export function coloreCanale(nomeCanale: string): string | undefined {

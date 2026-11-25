@@ -11,7 +11,7 @@ import { movimentiMagazzino, proprietari, ubicazioni } from "@/db/schema";
 export type EsitoManutenzione = { ok: boolean; errore?: string; avviso?: string };
 
 const TIPI_PROPRIETARIO = ["azienda", "soci", "terzo"] as const;
-const TIPI_DEPOSITO = ["deposito", "presso_proprietario", "esposizione"] as const;
+const TIPI_DEPOSITO = ["deposito", "presso_proprietario"] as const;
 
 function aggiornaViste() {
   revalidatePath("/archivi", "layout");

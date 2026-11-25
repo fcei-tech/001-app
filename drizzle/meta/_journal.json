@@ -127,6 +127,20 @@
       "when": 1794310580922,
       "tag": "0017_colori_canali",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794400000000,
+      "tag": "0018_conto_esposizione",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794500000000,
+      "tag": "0019_tag_famiglie",
+      "breakpoints": true
     }
   ]
 }

@@ -26,6 +26,8 @@ import {
   getBatch,
 } from "@/db/pubblicazione-queries";
 import { getRegolePrezzi } from "@/db/impostazioni-app-queries";
+import { contaLottiConsegnati, spostaBatchSuCanale } from "@/db/pubblicazione-numeri";
+import { getCanaleById } from "@/db/pubblicazione-queries";
 import { getFotoPerSkuIds, getSaldiSkuPerUbicazione, getTipiOggetto, getUbicazioniAttive } from "@/db/queries";
 import {
   silenziaErrore as silenziaErroreQuery,
@@ -1065,4 +1067,24 @@ export async function duplicaBatchAction(formData: FormData) {
   const nuovo = await duplicaBatchQuery(batchId);
   revalidatePath(`/pubblicazione/${canaleId}`);
   redirect(`/pubblicazione/${canaleId}/${nuovo.id}`);
+}
+
+// Sposta un batch su un altro portale dello stesso tipo (lotti, riserve e stato restano).
+// Bloccato se anche un solo lotto e' consegnato.
+export async function spostaBatchAction(
+  batchId: number,
+  nuovoCanaleId: number
+): Promise<{ ok: true; nome: string } | { ok: false; errore: string }> {
+  const batch = await getBatch(batchId);
+  const dest = await getCanaleById(nuovoCanaleId);
+  if (!batch || !dest || !dest.attivo) return { ok: false, errore: "Portale non valido." };
+  if (batch.canale.id === dest.id) return { ok: false, errore: "E' gia' su questo portale." };
+  if (batch.canale.tipo !== dest.tipo) return { ok: false, errore: "Solo su un portale dello stesso tipo." };
+  if ((await contaLottiConsegnati(batchId)) > 0) return { ok: false, errore: "Ci sono lotti consegnati. Falli rientrare prima." };
+  const vecchio = batch.canale.id;
+  await spostaBatchSuCanale(batchId, dest.id);
+  revalidatePath("/pubblicazione");
+  revalidatePath(`/pubblicazione/${vecchio}`);
+  revalidatePath(`/pubblicazione/${dest.id}`);
+  return { ok: true, nome: dest.nome };
 }

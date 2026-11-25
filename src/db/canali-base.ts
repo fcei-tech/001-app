@@ -25,7 +25,7 @@ export const CANALI_INIZIALI: (typeof canali.$inferInsert)[] = [
   { nome: "Cambi", tipo: "asta_fisica", esclusivo: true },
   { nome: "Bolaffi", tipo: "asta_fisica", esclusivo: true },
   { nome: "Wannenes", tipo: "asta_fisica", esclusivo: true },
-  { nome: "Libero", tipo: "asta_fisica", esclusivo: true },
+  { nome: "Conto esposizione", tipo: "asta_fisica", esclusivo: true },
 ];
 
 // Tipizzato "largo" apposta: accetta sia il client node-postgres (Neon/
