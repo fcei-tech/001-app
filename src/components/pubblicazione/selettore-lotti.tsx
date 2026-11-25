@@ -19,7 +19,6 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FiltroTag } from "@/components/tag/filtro-tag";
 import { BarraFiltri, CampoFiltro, type ChipFiltro } from "@/components/filtri/barra-filtri";
-import { MenuViste } from "@/components/filtri/menu-viste";
 import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
 import type { TagBreve } from "@/db/tag-queries";
 import { leggiTagParam, scriviTagParam } from "@/lib/tag-filtro";
@@ -173,6 +172,9 @@ function IntestazioneOrdinabile({
     <TableHead
       className={`${allineaDestra ? "text-right" : ""} ${sopra ? "bg-accent" : ""}`}
       draggable={Boolean(trascina)}
+      // WKWebView (Tauri su Mac) non avvia il drag HTML5 su elementi generici senza
+      // questa proprieta' non standard; Chrome la ignora senza problemi.
+      style={trascina ? ({ WebkitUserDrag: "element", WebkitUserSelect: "none", cursor: "grab" } as React.CSSProperties) : undefined}
       title={trascina ? "Trascina per spostare la colonna" : undefined}
       onDragStart={trascina ? (e) => { e.dataTransfer.setData("text/colonna", trascina.id); e.dataTransfer.effectAllowed = "move"; } : undefined}
       onDragOver={trascina ? (e) => { if (e.dataTransfer.types.includes("text/colonna")) { e.preventDefault(); setSopra(true); } } : undefined}
@@ -325,22 +327,6 @@ export function SelettoreLottiBatch({
     applicaFiltri(nuovi);
   }
 
-  function applicaVista(qs: string) {
-    const p = new URLSearchParams(qs);
-    const g = (k: string, d = "") => p.get(k) ?? d;
-    const nuovi: typeof filtri = {
-      q: g("q"), tipo: g("tipo", "tutti"), condizione: g("condizione", "tutti"), proprieta: g("proprieta", "tutti"),
-      confoto: g("confoto") === "si" ? "si" : "no",
-      prezzoEbayMin: g("prezzoEbayMin"), prezzoEbayMax: g("prezzoEbayMax"),
-      prezzoCatawikiMin: g("prezzoCatawikiMin"), prezzoCatawikiMax: g("prezzoCatawikiMax"),
-      riservaCatawikiMin: g("riservaCatawikiMin"), riservaCatawikiMax: g("riservaCatawikiMax"),
-      quantitaMin: g("quantitaMin"), quantitaMax: g("quantitaMax"), tag: g("tag"),
-    };
-    setFiltri(nuovi);
-    testoApplicato.current = chiaveTestoDi(nuovi);
-    router.push(qs ? `${basePath}?${qs}` : basePath, { scroll: false });
-  }
-
   function applicaFiltri(
     f: typeof filtri,
     ordinaOverride?: ColonnaOrdinabile,
@@ -434,7 +420,6 @@ export function SelettoreLottiBatch({
         onAzzera={azzeraFiltri}
         strumenti={
           <>
-            <MenuViste chiave={`selettore-${canaleId}`} onApplica={applicaVista} ignora={["aggiunti", "confermato"]} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="outline" title="Scegli quali colonne vedere nella tabella">
