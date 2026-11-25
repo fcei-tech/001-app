@@ -32,6 +32,7 @@ import { getTagBrevi } from "@/db/tag-queries";
 import { leggiTagParam } from "@/lib/tag-filtro";
 import { SezioneAggiungiLotti } from "@/components/pubblicazione/sezione-aggiungi-lotti";
 import { MenuAzioniBatch } from "@/components/pubblicazione/menu-azioni-batch";
+import { conversionePossibile } from "@/lib/batch-conversione";
 import { OverrideLottoForm } from "@/components/pubblicazione/override-lotto-form";
 import { ConsegnaLottoForm } from "@/components/pubblicazione/consegna-lotto-form";
 import { MenuAltreAzioni } from "@/components/menu-altre-azioni";
@@ -486,9 +487,10 @@ export default async function BatchPubblicazionePage({
               numeroLottiConPrenotazione={numeroLottiConPrenotazione}
               numeroLottiConsegnati={batch.lotti.filter((l) => l.consegnatoAt !== null).length}
               avvisoRegistroPortale={batch.canale.tipo === "statico" && batch.stato !== "bozza"}
+              tipoCanale={batch.canale.tipo}
               destinazioni={(await getCanali())
-                .filter((c) => c.tipo === batch.canale.tipo && c.id !== batch.canale.id && batch.canale.tipo !== "statico")
-                .map((c) => ({ id: c.id, nome: c.nome }))}
+                .filter((c) => c.attivo && c.id !== batch.canale.id && batch.canale.tipo !== "statico" && conversionePossibile(batch.canale.tipo, c.tipo))
+                .map((c) => ({ id: c.id, nome: c.nome, tipo: c.tipo }))}
             />
           </div>
         </div>

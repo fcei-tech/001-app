@@ -7,6 +7,7 @@ import {
   movimentiMagazzino,
   ubicazioni,
 } from "./schema";
+import { conversionePossibile, convertiOverride, statoLottoIniziale } from "@/lib/batch-conversione";
 
 // Canale non e' esportato come tipo da schema.ts (nessuna convenzione
 // $inferSelect in uso li') - derivato qui localmente.
@@ -83,23 +84,30 @@ export async function rinominaBatch(batchId: number, nome: string) {
     .where(eq(batchPubblicazione.id, batchId));
 }
 
-// Duplica un batch: nuovo batch in bozza nello stesso canale con le stesse
-// impostazioni e gli stessi lotti (override compresi). Non copia stato lotto,
-// consegne, snapshot: il nuovo batch riparte da zero, come uno appena creato.
-export async function duplicaBatch(batchId: number) {
+// Duplica un batch: nuovo batch in bozza (nello stesso portale, oppure in un'altra
+// asta se si passa canaleDestId) con le stesse impostazioni e gli stessi lotti
+// (override compresi). Non copia stato lotto, consegne, snapshot: il nuovo batch
+// riparte da zero, come uno appena creato. Verso un'asta di tipo diverso la riserva
+// segue il lotto e le impostazioni del batch non si portano.
+export async function duplicaBatch(batchId: number, canaleDestId?: number) {
   const origine = await db.query.batchPubblicazione.findFirst({
     where: (b, { eq }) => eq(b.id, batchId),
     with: { canale: true, lotti: true },
   });
   if (!origine) throw new Error("Batch non trovato");
-  const statoIniziale: "attivo" | "candidato" = origine.canale.tipo === "asta_fisica" ? "candidato" : "attivo";
+  const dest = canaleDestId && canaleDestId !== origine.canaleId
+    ? await db.query.canali.findFirst({ where: (c, { eq }) => eq(c.id, canaleDestId) })
+    : origine.canale;
+  if (!dest) throw new Error("Portale non trovato");
+  if (!conversionePossibile(origine.canale.tipo, dest.tipo)) throw new Error("Portale non valido");
+  const statoIniziale = statoLottoIniziale(dest.tipo);
   return db.transaction(async (tx) => {
     const [nuovo] = await tx
       .insert(batchPubblicazione)
       .values({
-        canaleId: origine.canaleId,
+        canaleId: dest.id,
         nome: `${origine.nome?.trim() || `Batch #${origine.id}`} (copia)`.slice(0, 80),
-        impostazioniBatch: origine.impostazioniBatch,
+        impostazioniBatch: origine.canale.tipo === dest.tipo ? origine.impostazioniBatch : {},
       })
       .returning();
     if (origine.lotti.length > 0) {
@@ -108,7 +116,7 @@ export async function duplicaBatch(batchId: number) {
           batchId: nuovo.id,
           skuId: l.skuId,
           statoRiga: statoIniziale,
-          override: l.override,
+          override: convertiOverride(l.override, origine.canale.tipo, dest.tipo),
         }))
       );
     }

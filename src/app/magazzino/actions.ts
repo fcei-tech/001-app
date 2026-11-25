@@ -10,6 +10,8 @@ import { db } from "@/db";
 import { batchLotti, bloccoSkuCanale, esposizioneCanale, fotoSku, movimentiMagazzino, proprietari, silenziamentiErrore, sku, skuTag, storicoPortale, overridePortale, ubicazioni } from "@/db/schema";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { cercaCandidatiDuplicati, getDisponibileSku, getImpegnatoPerSku } from "@/db/queries";
+import { assegnaTag, getTagBrevi, suggerisciTagIdsPerArtista } from "@/db/tag-queries";
+import { MASSIMO_FAMIGLIE, suggerisciDaTesto } from "@/lib/famiglie-suggerimenti";
 import { CAUSALE_CORREZIONE, CAUSALE_MODIFICA } from "@/lib/giacenza";
 import { caricaFotoSuShopify } from "@/lib/shopify";
 import type {
@@ -21,6 +23,24 @@ import type {
 
 export async function cercaCandidati(query: string) {
   return cercaCandidatiDuplicati(query);
+}
+
+// Famiglie suggerite per un nuovo sku: prima dalle parole di artista e titolo,
+// altrimenti da quelle usate sugli altri sku dello stesso artista. Sempre
+// modificabili da chi compila il form.
+export async function suggerisciFamiglie(
+  artista: string,
+  opera: string
+): Promise<{ tagIds: number[]; origine: "parole" | "storico" | null }> {
+  const soggetti = (await getTagBrevi()).filter((t) => t.tipo === "soggetto");
+  const perNome = new Map(soggetti.map((t) => [t.nome.trim().toLowerCase(), t.id]));
+  const daParole = suggerisciDaTesto(artista, opera)
+    .map((n) => perNome.get(n.toLowerCase()))
+    .filter((id): id is number => id !== undefined);
+  if (daParole.length > 0) return { tagIds: daParole, origine: "parole" };
+  const daStorico = await suggerisciTagIdsPerArtista(artista, MASSIMO_FAMIGLIE);
+  if (daStorico.length > 0) return { tagIds: daStorico, origine: "storico" };
+  return { tagIds: [], origine: null };
 }
 
 const CONDIZIONI = ["A", "A-", "B+", "B", "B-", "C"] as const;
@@ -124,6 +144,14 @@ export async function creaNuovoSku(formData: FormData) {
     if (c) normalizzaValoreCampo(c, grezzo);
   }
 
+  // Famiglie (tag soggetto): almeno una, al massimo MASSIMO_FAMIGLIE. Validate
+  // PRIMA di creare lo sku. Se nel database non c'e' nessun tag soggetto non si blocca.
+  const tuttiTag = await getTagBrevi();
+  const idSoggetto = new Set(tuttiTag.filter((t) => t.tipo === "soggetto").map((t) => t.id));
+  const tagScelti = [...new Set(formData.getAll("tagId").map((v) => Number(v)).filter((n) => idSoggetto.has(n)))];
+  if (idSoggetto.size > 0 && tagScelti.length === 0) throw new Error("Scegli almeno una famiglia.");
+  if (tagScelti.length > MASSIMO_FAMIGLIE) throw new Error(`Al massimo ${MASSIMO_FAMIGLIE} famiglie.`);
+
   const [nuovo] = await db
     .insert(sku)
     .values({
@@ -134,6 +162,7 @@ export async function creaNuovoSku(formData: FormData) {
       altezza: numeroOVuoto(formData.get("altezza")),
       supporto: testoOVuoto(formData.get("supporto")),
       anno: testoOVuoto(formData.get("anno")),
+      note: testoOVuoto(formData.get("note")),
       condizione,
       tipoId: Number(formData.get("tipoId")),
       valoreCarico: numeroOVuoto(formData.get("valoreCarico")),
@@ -148,6 +177,16 @@ export async function creaNuovoSku(formData: FormData) {
     .returning();
 
   if (Object.keys(personalizzati).length > 0) await impostaValoriSku(nuovo.id, personalizzati);
+  if (tagScelti.length > 0) await assegnaTag([nuovo.id], tagScelti);
+
+  // Duplica sku con "Copia anche le foto": la copia punta agli stessi file.
+  const copiaFotoDa = Number(formData.get("copiaFotoDa"));
+  if (Number.isInteger(copiaFotoDa) && copiaFotoDa > 0) {
+    const foto = await db.select().from(fotoSku).where(eq(fotoSku.skuId, copiaFotoDa)).orderBy(asc(fotoSku.ordine));
+    if (foto.length > 0) {
+      await db.insert(fotoSku).values(foto.map((f, i) => ({ skuId: nuovo.id, url: f.url, ordine: i })));
+    }
+  }
 
   if (quantita > 0) {
     // Casella "Scrivi nel registro": spuntata = carico visibile; tolta =

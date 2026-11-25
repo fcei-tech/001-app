@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./index";
-import { skuTag, tag } from "./schema";
+import { sku, skuTag, tag } from "./schema";
 
 // Tag degli sku (2026-10-30). Elenco gestito in Archivi > Tag; assegnazione
 // dalla scheda sku e in blocco dal Magazzino.
@@ -136,4 +136,29 @@ export async function getTagIdsPerSku(): Promise<Record<number, number[]>> {
   const mappa: Record<number, number[]> = {};
   for (const x of r) (mappa[x.skuId] ??= []).push(x.tagId);
   return mappa;
+}
+
+// Famiglie gia' usate dagli altri sku dello stesso artista: servono da suggerimento
+// nel form Nuovo sku. Contano solo se l'artista ha almeno 2 sku e la famiglia e' su
+// almeno meta' di essi (un artista con temi misti non da' nessun suggerimento).
+export async function suggerisciTagIdsPerArtista(artista: string, massimo = 2): Promise<number[]> {
+  const nome = artista.trim();
+  if (!nome) return [];
+  const [tot] = await db
+    .select({ n: sql<number>`count(*)`.mapWith(Number) })
+    .from(sku)
+    .where(sql`lower(trim(${sku.artista})) = lower(${nome})`);
+  if (!tot || tot.n < 2) return [];
+  const righe = await db
+    .select({ tagId: skuTag.tagId, n: sql<number>`count(distinct ${sku.id})`.mapWith(Number) })
+    .from(skuTag)
+    .innerJoin(sku, eq(sku.id, skuTag.skuId))
+    .innerJoin(tag, eq(tag.id, skuTag.tagId))
+    .where(sql`lower(trim(${sku.artista})) = lower(${nome}) and ${tag.tipo} = 'soggetto'`)
+    .groupBy(skuTag.tagId);
+  return righe
+    .filter((r) => r.n * 2 >= tot.n)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, massimo)
+    .map((r) => r.tagId);
 }

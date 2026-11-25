@@ -5,7 +5,8 @@
 // prenotati servono a chi scrive righe su Excel: BATCH non li assegna.
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, Check } from "lucide-react";
+import Link from "next/link";
+import { Copy, Check, Plus, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -52,16 +53,41 @@ export function CodiciSku({ prossimo, blocchi: tuttiBlocchi, dimensioneStandard 
     });
   }
 
+  async function condividi() {
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+        await navigator.share({ text: prossimo });
+        return;
+      }
+    } catch (e) {
+      // Chiuso dall'utente: nessun effetto.
+      if (e instanceof DOMException && e.name === "AbortError") return;
+    }
+    await copia();
+  }
+
   return (
     <>
-      <div className="flex flex-wrap items-center gap-x-3 text-xs text-primary">
-        <button type="button" onClick={copia} className="inline-flex items-center gap-1 hover:underline" title="Clic per copiare il codice">
-          Prossimo sku libero: <span className="font-mono font-medium">{prossimo}</span>
-          {copiato ? <Check className="size-3" /> : <Copy className="size-3 opacity-60" />}
-        </button>
-        <button type="button" onClick={() => setAperto(true)} className="hover:underline">
-          Prenota codici{blocchi.length > 0 ? ` (${blocchi.length})` : ""}…
-        </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Prossimo codice</span>
+          <span className="font-mono text-xl font-semibold leading-tight">{prossimo}</span>
+        </div>
+        <Button type="button" variant="outline" className="h-11" onClick={copia} title="Copia il codice">
+          {copiato ? <Check /> : <Copy />} {copiato ? "Copiato" : "Copia"}
+        </Button>
+        <Button type="button" variant="outline" className="h-11" onClick={condividi} title="Condividi il codice (AirDrop, Messaggi...)">
+          <Share2 /> Condividi
+        </Button>
+        <span className="hidden h-8 w-px bg-border sm:block" aria-hidden />
+        <Button asChild className="h-11 px-5">
+          <Link href="/magazzino/nuovo">
+            <Plus /> Nuovo sku
+          </Link>
+        </Button>
+        <Button type="button" variant="ghost" className="h-11" onClick={() => setAperto(true)}>
+          Prenota codici{blocchi.length > 0 ? ` (${blocchi.length})` : ""}
+        </Button>
       </div>
       <Dialog open={aperto} onOpenChange={setAperto}>
         <DialogContent className="max-w-lg">

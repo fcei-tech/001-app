@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ArrowRightLeft, Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Copy, CopyPlus, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { cambiaStatoBatchAction, duplicaBatchAction, rinominaBatchAction, spostaBatchAction } from "@/app/pubblicazione/actions";
+import { cambiaStatoBatchAction, duplicaBatchAction, duplicaBatchSuCanaleAction, rinominaBatchAction, spostaBatchAction } from "@/app/pubblicazione/actions";
 import { EliminaBatchDialog } from "@/components/pubblicazione/elimina-batch-button";
 
 type Stato = "bozza" | "confermato" | "pubblicato";
@@ -35,6 +35,7 @@ export function MenuAzioniBatch({
   numeroLottiConPrenotazione,
   numeroLottiConsegnati,
   avvisoRegistroPortale,
+  tipoCanale,
   destinazioni,
 }: {
   batchId: number;
@@ -44,10 +45,12 @@ export function MenuAzioniBatch({
   numeroLottiConPrenotazione: number;
   numeroLottiConsegnati: number;
   avvisoRegistroPortale: boolean;
-  destinazioni: { id: number; nome: string }[];
+  tipoCanale: string;
+  destinazioni: { id: number; nome: string; tipo: string }[];
 }) {
   const router = useRouter();
   const [spostaAperto, setSpostaAperto] = useState(false);
+  const [modo, setModo] = useState<"sposta" | "duplica">("sposta");
   const [destId, setDestId] = useState<number | null>(null);
   const [erroreSposta, setErroreSposta] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -77,18 +80,31 @@ export function MenuAzioniBatch({
     });
   }
 
-  function sposta() {
+  function conferma() {
     if (!destId) return;
     start(async () => {
-      const r = await spostaBatchAction(batchId, destId);
-      if (!r.ok) {
-        setErroreSposta(r.errore);
-        return;
+      if (modo === "sposta") {
+        const r = await spostaBatchAction(batchId, destId);
+        if (!r.ok) {
+          setErroreSposta(r.errore);
+          return;
+        }
+        setSpostaAperto(false);
+        router.push(`/pubblicazione/${destId}/${batchId}`);
+      } else {
+        const r = await duplicaBatchSuCanaleAction(batchId, destId);
+        if (!r.ok) {
+          setErroreSposta(r.errore);
+          return;
+        }
+        setSpostaAperto(false);
+        router.push(`/pubblicazione/${r.canaleId}/${r.batchId}`);
       }
-      setSpostaAperto(false);
-      router.push(`/pubblicazione/${destId}/${batchId}`);
     });
   }
+
+  const destScelta = destinazioni.find((d) => d.id === destId);
+  const cambioTipo = !!destScelta && destScelta.tipo !== tipoCanale;
 
   function vaiA(nuovoStato: Stato) {
     const fd = new FormData();
@@ -117,9 +133,14 @@ export function MenuAzioniBatch({
             <span className="text-xs text-muted-foreground">Crea una copia in bozza con gli stessi lotti e le stesse impostazioni.</span>
           </DropdownMenuItem>
           {destinazioni.length > 0 && (
-            <DropdownMenuItem onSelect={() => { setDestId(null); setErroreSposta(null); setSpostaAperto(true); }}>
-              <ArrowRightLeft /> Sposta su un altro portale…
-            </DropdownMenuItem>
+            <>
+              <DropdownMenuItem onSelect={() => { setModo("sposta"); setDestId(null); setErroreSposta(null); setSpostaAperto(true); }}>
+                <ArrowRightLeft /> Sposta su un altro portale…
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => { setModo("duplica"); setDestId(null); setErroreSposta(null); setSpostaAperto(true); }}>
+                <CopyPlus /> Duplica su un altro portale…
+              </DropdownMenuItem>
+            </>
           )}
           <DropdownMenuSeparator />
           {VOCI.filter((v) => v.stato !== stato).map((v) => (
@@ -164,8 +185,10 @@ export function MenuAzioniBatch({
       <Dialog open={spostaAperto} onOpenChange={setSpostaAperto}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Sposta batch</DialogTitle>
-            <DialogDescription>Lotti, riserve e stato restano uguali.</DialogDescription>
+            <DialogTitle>{modo === "sposta" ? "Sposta batch" : "Duplica batch"}</DialogTitle>
+            <DialogDescription>
+              {modo === "sposta" ? "Lotti, riserve e stato restano uguali." : "Crea una copia in preparazione con gli stessi lotti."}
+            </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2">
             {destinazioni.map((d) => (
@@ -179,10 +202,19 @@ export function MenuAzioniBatch({
               </button>
             ))}
           </div>
+          {cambioTipo && (
+            <p className="text-sm text-muted-foreground">
+              {modo === "sposta"
+                ? "Cambia il tipo di asta: il batch torna in preparazione e i lotti ripartono da capo. Le riserve restano."
+                : "Cambia il tipo di asta: i lotti ripartono da capo. Le riserve restano."}
+            </p>
+          )}
           {erroreSposta && <p className="text-sm text-destructive">{erroreSposta}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setSpostaAperto(false)} disabled={pending}>Annulla</Button>
-            <Button type="button" onClick={sposta} disabled={pending || !destId}>{pending ? "Sposto…" : "Sposta"}</Button>
+            <Button type="button" onClick={conferma} disabled={pending || !destId}>
+              {pending ? (modo === "sposta" ? "Sposto…" : "Duplico…") : modo === "sposta" ? "Sposta" : "Duplica"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

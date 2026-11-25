@@ -1,15 +1,15 @@
-import Link from "next/link";
 import { getRegolePrezzi } from "@/db/impostazioni-app-queries";
 import { getCampiPersonalizzati } from "@/db/campi-personalizzati-queries";
 import { Header } from "@/components/header";
-import { Button } from "@/components/ui/button";
 import { getMagazzino, getProprietariAttivi, getTipiOggetto, getUbicazioniAttive, type ColonnaOrdinabile } from "@/db/queries";
-import { Plus } from "lucide-react";
 import { getCanaliStatici } from "@/db/esposizione-queries";
 import { getDaSistemarePerSku } from "@/db/portale-queries";
 import { VistaMagazzino } from "@/components/magazzino/vista-magazzino";
 import { getTagBrevi } from "@/db/tag-queries";
 import { CodiciSku } from "@/components/magazzino/codici-sku";
+import { TestataMagazzino } from "@/components/magazzino/testata-magazzino";
+import { calcolaTestata } from "@/lib/testata-magazzino";
+import { getSkuEspostiIds } from "@/db/pubblicazione-numeri";
 import { getBlocchiConUso, prossimoSkuLibero } from "@/db/codici-sku-queries";
 import { DIMENSIONE_BLOCCO_STANDARD } from "@/lib/codici-sku";
 import { leggiTagParam } from "@/lib/tag-filtro";
@@ -66,7 +66,7 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
 
   const regolePrezzi = await getRegolePrezzi();
   const campiPersonalizzati = await getCampiPersonalizzati();
-  const [righe, tipi, proprietari, ubicazioni, daSistemare, canaliStatici, tagDisponibili, prossimoLibero, blocchiCodici] = await Promise.all([
+  const [righe, tipi, proprietari, ubicazioni, daSistemare, canaliStatici, tagDisponibili, prossimoLibero, blocchiCodici, skuEsposti, righeTutte] = await Promise.all([
     getMagazzino({ ricerca: q, tagIds, tipoId, condizione, proprietarioId, ubicazioneId, bloccato, disponibilita, senzaFoto, soloDatiMancanti, ordina, direzione }),
     getTipiOggetto(),
     getProprietariAttivi(),
@@ -76,7 +76,16 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
     getTagBrevi(),
     prossimoSkuLibero(),
     getBlocchiConUso(),
+    getSkuEspostiIds(),
+    // La testata vale per tutto il magazzino: se ci sono filtri serve l'elenco completo.
+    filtriAttivi ? getMagazzino({}) : Promise.resolve(null),
   ]);
+  const testata = calcolaTestata(
+    righeTutte ?? righe,
+    new Set(proprietari.filter((p) => p.contaValoreAziendale).map((p) => p.id)),
+    skuEsposti,
+    regolePrezzi.sogliaMinimaCatawiki
+  );
 
   return (
     <div className="min-h-full flex flex-col">
@@ -85,16 +94,15 @@ export default async function MagazzinoPage({ searchParams }: { searchParams: Pr
         {skueliminato && (
           <div className="mb-4 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">Sku eliminato.</div>
         )}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-1">
             <h1 className="text-xl font-semibold tracking-tight">Magazzino</h1>
             <p className="text-sm text-muted-foreground">{righe.length} sku {filtriAttivi ? "con questi filtri" : "totali"}</p>
-            <CodiciSku prossimo={prossimoLibero} blocchi={blocchiCodici} dimensioneStandard={DIMENSIONE_BLOCCO_STANDARD} />
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild><Link href="/magazzino/nuovo"><Plus /> Nuovo sku</Link></Button>
-          </div>
+          <CodiciSku prossimo={prossimoLibero} blocchi={blocchiCodici} dimensioneStandard={DIMENSIONE_BLOCCO_STANDARD} />
         </div>
+
+        <TestataMagazzino dati={testata} />
 
         <VistaMagazzino
           righe={righe}

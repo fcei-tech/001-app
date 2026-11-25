@@ -26,6 +26,7 @@ import {
   getBatch,
 } from "@/db/pubblicazione-queries";
 import { getRegolePrezzi } from "@/db/impostazioni-app-queries";
+import { conversionePossibile } from "@/lib/batch-conversione";
 import { contaLottiConsegnati, spostaBatchSuCanale } from "@/db/pubblicazione-numeri";
 import { getCanaleById } from "@/db/pubblicazione-queries";
 import { getFotoPerSkuIds, getSaldiSkuPerUbicazione, getTipiOggetto, getUbicazioniAttive } from "@/db/queries";
@@ -1069,22 +1070,39 @@ export async function duplicaBatchAction(formData: FormData) {
   redirect(`/pubblicazione/${canaleId}/${nuovo.id}`);
 }
 
-// Sposta un batch su un altro portale dello stesso tipo (lotti, riserve e stato restano).
+// Sposta un batch su un altro portale: stesso tipo, oppure da un'asta all'altra
+// (online <-> fisica, in entrambe le direzioni). Tra tipi diversi il batch torna
+// "In preparazione" e i lotti ripartono dallo stato iniziale del nuovo tipo.
 // Bloccato se anche un solo lotto e' consegnato.
 export async function spostaBatchAction(
   batchId: number,
   nuovoCanaleId: number
-): Promise<{ ok: true; nome: string } | { ok: false; errore: string }> {
+): Promise<{ ok: true; nome: string; cambioTipo: boolean } | { ok: false; errore: string }> {
   const batch = await getBatch(batchId);
   const dest = await getCanaleById(nuovoCanaleId);
   if (!batch || !dest || !dest.attivo) return { ok: false, errore: "Portale non valido." };
   if (batch.canale.id === dest.id) return { ok: false, errore: "E' gia' su questo portale." };
-  if (batch.canale.tipo !== dest.tipo) return { ok: false, errore: "Solo su un portale dello stesso tipo." };
+  if (!conversionePossibile(batch.canale.tipo, dest.tipo)) return { ok: false, errore: "Solo tra aste o su un portale dello stesso tipo." };
   if ((await contaLottiConsegnati(batchId)) > 0) return { ok: false, errore: "Ci sono lotti consegnati. Falli rientrare prima." };
   const vecchio = batch.canale.id;
   await spostaBatchSuCanale(batchId, dest.id);
   revalidatePath("/pubblicazione");
   revalidatePath(`/pubblicazione/${vecchio}`);
   revalidatePath(`/pubblicazione/${dest.id}`);
-  return { ok: true, nome: dest.nome };
+  return { ok: true, nome: dest.nome, cambioTipo: batch.canale.tipo !== dest.tipo };
+}
+
+// Duplica un batch in un'altra asta (online o fisica). Il nuovo batch nasce "In preparazione".
+export async function duplicaBatchSuCanaleAction(
+  batchId: number,
+  nuovoCanaleId: number
+): Promise<{ ok: true; canaleId: number; batchId: number } | { ok: false; errore: string }> {
+  const batch = await getBatch(batchId);
+  const dest = await getCanaleById(nuovoCanaleId);
+  if (!batch || !dest || !dest.attivo) return { ok: false, errore: "Portale non valido." };
+  if (!conversionePossibile(batch.canale.tipo, dest.tipo)) return { ok: false, errore: "Solo tra aste o su un portale dello stesso tipo." };
+  const nuovo = await duplicaBatchQuery(batchId, dest.id);
+  revalidatePath("/pubblicazione");
+  revalidatePath(`/pubblicazione/${dest.id}`);
+  return { ok: true, canaleId: dest.id, batchId: nuovo.id };
 }

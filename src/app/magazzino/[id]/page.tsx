@@ -1,5 +1,6 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown, CopyPlus } from "lucide-react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -75,6 +76,13 @@ export default async function ModificaSkuPage({
     <div className="min-h-full flex flex-col">
       <Header />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+        <div className="mb-4 flex justify-end">
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/magazzino/nuovo?duplica=${item.id}`}>
+              <CopyPlus /> Duplica
+            </Link>
+          </Button>
+        </div>
         <SchedaSkuForm key={String(item.updatedAt)} item={item} tipi={tipi} disponibile={disponibile} esito={esito} tagDisponibili={tagDisponibili} tagIdsSku={tagIdsSku} regole={regole} campiPersonalizzati={campiPersonalizzati} valoriCampi={leggiValori(item.campiPersonalizzati)} />
 
         <ValoriExcel
