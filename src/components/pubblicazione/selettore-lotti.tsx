@@ -23,7 +23,7 @@ import { AssegnaTagSelezione } from "@/components/tag/assegna-tag-dialog";
 import type { TagBreve } from "@/db/tag-queries";
 import { leggiTagParam, scriviTagParam } from "@/lib/tag-filtro";
 import { TableEmpty } from "@/components/ui/table-empty";
-import { Columns3, ArrowUp, ArrowDown, ArrowUpDown, TriangleAlert, RotateCcw } from "lucide-react";
+import { Columns3, ArrowUp, ArrowDown, ArrowUpDown, TriangleAlert, RotateCcw, ChevronUp, ChevronDown } from "lucide-react";
 import type { RigaMagazzino, ColonnaOrdinabile } from "@/db/queries";
 import { aggiungiLottiABatch } from "@/app/pubblicazione/actions";
 import { applicaOrdine, spostaColonna, useOrdineColonne } from "@/lib/ordine-colonne";
@@ -155,7 +155,6 @@ function IntestazioneOrdinabile({
   direzione,
   allineaDestra,
   onOrdina,
-  trascina,
 }: {
   etichetta: string;
   chiave: ColonnaOrdinabile;
@@ -163,32 +162,26 @@ function IntestazioneOrdinabile({
   direzione: "asc" | "desc";
   allineaDestra?: boolean;
   onOrdina: (chiave: ColonnaOrdinabile) => void;
-  // Riordino per trascinamento: id della colonna e funzione che la sposta.
-  trascina?: { id: string; onSposta: (da: string, a: string) => void };
 }) {
+  // Il riordino colonne NON passa piu' da qui (drag HTML5 rimosso il
+  // 2026-11-25: in WKWebView/Tauri su Mac il drag di un elemento generico
+  // viene intercettato dal sistema come "trascina fuori dalla pagina come
+  // immagine", non come riordino interno - limite nativo, non risolvibile
+  // via CSS. Il riordino si fa ora dal menu "Colonne" con le frecce su/giu',
+  // vedi spostaIntestazione piu' sopra).
   const Icona = attiva ? (direzione === "desc" ? ArrowDown : ArrowUp) : ArrowUpDown;
-  const [sopra, setSopra] = useState(false);
   return (
-    <TableHead
-      className={`${allineaDestra ? "text-right" : ""} ${sopra ? "bg-accent" : ""}`}
-      draggable={Boolean(trascina)}
-      // WKWebView (Tauri su Mac) non avvia il drag HTML5 su elementi generici senza
-      // questa proprieta' non standard; Chrome la ignora senza problemi.
-      style={trascina ? ({ WebkitUserDrag: "element", WebkitUserSelect: "none", cursor: "grab" } as React.CSSProperties) : undefined}
-      title={trascina ? "Trascina per spostare la colonna" : undefined}
-      onDragStart={trascina ? (e) => { e.dataTransfer.setData("text/colonna", trascina.id); e.dataTransfer.effectAllowed = "move"; } : undefined}
-      onDragOver={trascina ? (e) => { if (e.dataTransfer.types.includes("text/colonna")) { e.preventDefault(); setSopra(true); } } : undefined}
-      onDragLeave={trascina ? () => setSopra(false) : undefined}
-      onDrop={trascina ? (e) => { e.preventDefault(); setSopra(false); const da = e.dataTransfer.getData("text/colonna"); if (da) trascina.onSposta(da, trascina.id); } : undefined}
-    >
-      <button
-        type="button"
+    <TableHead className={allineaDestra ? "text-right" : ""}>
+      <span
+        role="button"
+        tabIndex={0}
         onClick={() => onOrdina(chiave)}
-        className={`inline-flex items-center gap-1 whitespace-nowrap hover:text-foreground ${attiva ? "font-medium text-foreground" : "text-muted-foreground"}`}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOrdina(chiave); } }}
+        className={`inline-flex cursor-pointer items-center gap-1 whitespace-nowrap hover:text-foreground ${attiva ? "font-medium text-foreground" : "text-muted-foreground"}`}
       >
         {etichetta}
         <Icona className={`size-3.5 ${attiva ? "" : "opacity-40"}`} />
-      </button>
+      </span>
     </TableHead>
   );
 }
@@ -439,6 +432,42 @@ export function SelettoreLottiBatch({
                     {c.etichetta}
                   </DropdownMenuCheckboxItem>
                 ))}
+                {colonneVisibili.length > 1 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Ordine colonne</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {colonneVisibili.map((c, i) => (
+                      <div key={c.id} className="flex items-center justify-between gap-2 py-1 pl-2 pr-1 text-sm">
+                        <span className="truncate">{c.etichetta}</span>
+                        <div className="flex shrink-0 gap-0.5">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-6"
+                            disabled={i === 0}
+                            title="Sposta su"
+                            onClick={() => spostaIntestazione(c.id, colonneVisibili[i - 1].id)}
+                          >
+                            <ChevronUp className="size-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-6"
+                            disabled={i === colonneVisibili.length - 1}
+                            title="Sposta giù"
+                            onClick={() => spostaIntestazione(c.id, colonneVisibili[i + 1].id)}
+                          >
+                            <ChevronDown className="size-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={(e) => { e.preventDefault(); ripristinaColonne(); }}>
                   <RotateCcw /> Ripristina colonne predefinite
@@ -585,7 +614,6 @@ export function SelettoreLottiBatch({
                       direzione={direzioneAttuale}
                       allineaDestra={c.allineaDestra}
                       onOrdina={gestisciOrdinamento}
-                      trascina={{ id: c.id, onSposta: spostaIntestazione }}
                     />
                   ))}
                   <IntestazioneOrdinabile
