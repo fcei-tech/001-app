@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Archive, Send, Tags, Upload } from "lucide-react";
+import { Download, Plus, ShieldCheck, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -13,14 +13,18 @@ import {
   impostaBenvenutoNascosto,
 } from "@/lib/benvenuto-preferenza";
 
-// Finestra guida: il giro di lavoro del programma in quattro passi, ognuno
-// porta alla pagina giusta. Compare una volta per apertura dell'app (salvo
-// "Non mostrare più") e si riapre sempre dal tasto "?" nella barra in alto.
+// Finestra guida (ridisegnata 2026-11-25, seconda versione): non le 4 aree del
+// menu (prima versione, confusa - la card "Chiudi" coincideva col pulsante di
+// chiusura della finestra) ma le 4 funzioni usate più spesso, scelte dal
+// cliente: Importa dati (FP/CV, la più frequente, in alto a sinistra), Nuovo
+// sku, Sistema quello che manca (va a Controllo dati), Pubblica su un portale.
+// Compare una volta per apertura dell'app (salvo "Non mostrare più") e si
+// riapre sempre dal tasto "?" nella barra in alto.
 const PASSI = [
-  { id: "carica", titolo: "Dati", testo: "Importa ed esporta: Excel, foto, nuovo sku", href: "/carica", Icona: Upload },
-  { id: "organizza", titolo: "Organizza", testo: "Dati, tag, viste del magazzino", href: "/", Icona: Tags },
-  { id: "pubblica", titolo: "Pubblica", testo: "Portali e aste", href: "/pubblicazione", Icona: Send },
-  { id: "chiudi", titolo: "Chiudi", testo: "Vendite, giacenze, copia di sicurezza", href: "/sistema/dati", Icona: Archive },
+  { id: "importa", titolo: "Importa dati", testo: "Allinea il Magazzino ai fogli FP e CV", href: "/importa-excel", Icona: Upload },
+  { id: "nuovo-sku", titolo: "Nuovo sku", testo: "Crea una scheda, o cerca per duplicarne una", href: "/magazzino/nuovo", Icona: Plus },
+  { id: "controllo", titolo: "Sistema quello che manca", testo: "Foto, prezzi e anni mancanti, sku per sku", href: "/sistema/controllo-dati", Icona: ShieldCheck },
+  { id: "pubblica", titolo: "Pubblica su un portale", testo: "Genera il file per Shopify, eBay, Catawiki...", href: "/pubblicazione", Icona: Download },
 ] as const;
 
 export function Benvenuto() {
@@ -68,17 +72,19 @@ export function Benvenuto() {
         <DialogHeader>
           <DialogTitle>Cosa vuoi fare?</DialogTitle>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {PASSI.map(({ id, titolo, testo, href, Icona }) => (
             <Link
               key={id}
               href={href}
               onClick={() => { impostaBenvenutoNascosto(nonMostrare); setAperto(false); }}
-              className="flex flex-col items-center gap-2 rounded-lg border bg-muted/30 px-3 py-4 text-center transition-colors hover:bg-muted"
+              className="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3 transition-colors hover:bg-muted"
             >
-              <Icona className="size-8 text-primary" aria-hidden />
-              <span className="text-sm font-medium">{titolo}</span>
-              <span className="text-xs text-muted-foreground">{testo}</span>
+              <Icona className="size-6 shrink-0 text-primary" aria-hidden />
+              <span className="flex flex-col">
+                <span className="text-sm font-medium">{titolo}</span>
+                <span className="text-xs text-muted-foreground">{testo}</span>
+              </span>
             </Link>
           ))}
         </div>
